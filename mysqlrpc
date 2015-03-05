@@ -2,8 +2,8 @@
 #
 # Test bitcoin-rpc
 
-import sys, socket
-import sqlite3 as db
+import sys, socket, datetime
+import MySQLdb as db
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 from decimal import *
 import json, mmh3
@@ -49,34 +49,35 @@ def mkaddr(v):
      
 def main(blk):
     rpc = AuthServiceProxy("http://bogustester:cZ9k7ca22UIwPobTGQUm@127.0.0.1:8332")
+    sql = db.connect('localhost','btctest','test623btc','bitcoin')
     while True:
         blkhash = rpc.getblockhash(blk)
         if blkhash:
             data = rpc.getblock(blkhash)
             if data:
-                with db.connect('bitcoin.db') as sql:
-                    cur = sql.cursor()
-                    insertBlock(cur, rpc, data)
+                with sql:
+                    insertBlock(sql.cursor(), rpc, data)
             blk += 1
 
 def insertAddress(cur, addr):
     addrhash = mmh3.hash(addr)
-    cur.execute("select addr from address where hash=?", (addrhash,))
+    cur.execute("select addr from address where hash=%s", (addrhash,))
     row = cur.fetchone()
     if row == None or row[0] != addr:
         # find an unused hash entry for this address by scanning up
         while True:
             try: 
-                cur.execute("insert into address (hash,addr) values(?,?)", (addrhash, addr))
+                cur.execute("insert into address (hash,addr) values(%s,%s)", (addrhash, addr))
             except db.IntegrityError:
                 addrhash += 1
             else: break
     return addrhash
     
 def insertBlock(cur, rpc, data):
-    print "Inserting block", data['height']
-    cur.execute("insert into blocks (height,orphan,hash,time) values (?,?,?,?);", (data['height'], False, db.Binary(data['hash'].decode('hex')), data['time']))
+    print "Inserting block", data['height'],
+    cur.execute("insert into blocks (height,orphan,hash,time) values (%s,%s,%s,%s);", (data['height'], 0, data['hash'].decode('hex'), data['time']))
     blkid = cur.lastrowid
+    trxcount = 0
     for txhash in data['tx']:
         inputs = ''
         try:
@@ -84,22 +85,25 @@ def insertBlock(cur, rpc, data):
         except JSONRPCException as e:
             print "Err", e.args
             continue
-        print "Inserting tx", txhash
+        #print "Inserting tx", txhash
         for vin in txdata['vin']:
             if 'txid' in vin:
-                cur.execute("select o.id from outputs as o, trxs as t where t.hash=? and o.trx_id=t.id limit 1 offset ?", (db.Binary(vin['txid'].decode('hex')), vin['vout']))
+                cur.execute("select o.id from outputs as o, trxs as t where t.hash=%s and o.trx_id=t.id limit 1 offset %s", (vin['txid'].decode('hex'), vin['vout']))
                 outid = cur.fetchone()[0]
                 inputs += '%08x' % outid
-        cur.execute("insert into trxs (block_id,hash,inputs) values (?,?,?);", (blkid, db.Binary(txhash.decode('hex')), db.Binary(inputs.decode('hex'))))
+                cur.execute("insert into scripts (out_id,script) values (%s,%s)", (outid, vin['scriptSig']['hex'].decode('hex')))
+        cur.execute("insert into trxs (block_id,hash,inputs) values (%s,%s,%s);", (blkid, txhash.decode('hex'), inputs.decode('hex')))
         txid = cur.lastrowid
+        trxcount += 1
         outputs = ''
         for vout in txdata['vout']:
             if 'addresses' in vout['scriptPubKey']:
                 addrhash = insertAddress(cur, b58bin(vout['scriptPubKey']['addresses'][0]))
-                cur.execute("insert into outputs (trx_id,addrhash,value) values(?,?,?)", (txid, addrhash, int(vout['value']*Decimal(1e8))))
+                cur.execute("insert into outputs (trx_id,addrhash,value) values(%s,%s,%s)", (txid, addrhash, int(vout['value']*Decimal(1e8))))
                 outputs += '%08x' % cur.lastrowid      
         if len(outputs) > 0:
-            cur.execute("update trxs set outputs=? where id=?;", (db.Binary(outputs.decode('hex')), txid))
+            cur.execute("update trxs set outputs=%s where id=%s;", (outputs.decode('hex'), txid))
+    print "[ %3d trxs - %s ]" % (trxcount, datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'))
 
     
 if __name__ == '__main__':
