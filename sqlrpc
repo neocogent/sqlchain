@@ -68,48 +68,49 @@ def main(blk):
             blk += 1
 
 def insertAddress(cur, addr):
-    addrid, = unpack('<q', addr[:5]+'\0'*3) 
-    cur.execute("select addr from address where id=?", (addrid,))
+    addr_id, = unpack('<q', addr[:5]+'\0'*3) 
+    cur.execute("select addr from address where id=?", (addr_id,))
     row = cur.fetchone()
     if row == None or row[0] != addr:
         while True:
             try: 
-                cur.execute("insert into address (id,addr) values(?,?)", (addrid, addr))
+                cur.execute("insert into address (id,addr) values(?,?)", (addr_id, addr))
             except db.IntegrityError:
                 print '!',
-                addrid += 1
+                addr_id += 1
             else: break
-    return addrid
+    return addr_id
     
-def insertTrx(cur, blk_id, txhash, inputs):
-    txid, = unpack('<q', txhash[:5]+'\0'*3)
-    txid /= 16
+def insertTx(cur, blk_id, txhash, inputs):
+    tx_id, = unpack('<q', txhash[:5]+'\0'*3)
+    tx_id /= 16
     while True:
         try: 
-            cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", (txid, txhash, inputs, blk_id))
+            cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", (tx_id, txhash, inputs, blk_id))
         except db.IntegrityError:
             print '#',
-            txid += 1
+            tx_id += 1
         else: break
-    return txid
+    return tx_id
     
-def findTrx(cur, txhash):
-    txid, = unpack('<q', txhash[:5]+'\0'*3) 
-    txid /= 16
+def findTx(cur, txhash):
+    tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
+    tx_id /= 16
     while True:
-        cur.execute("select hash from trxs where id=?", (txid,))
+        cur.execute("select hash from trxs where id=?", (tx_id,))
         row = cur.fetchone()
         if row and row[0] == txhash:
-            return txid
-        txid += 1
+            return tx_id
+        tx_id += 1
 
 def insertBlock(cur, rpc, data):
     print "block", data['height'],
     blkstart = time.time()
-    cur.execute("insert into blocks (height,orphan,hash,time) values (?,?,?,?);", (data['height'], False, db.Binary(data['hash'].decode('hex')), data['time']))
-    blkid = cur.lastrowid
-    trxcount = 0
-    inscnt = 1
+    blk_id = data['height']*8
+    hdr = ('%08x%s%s%s%08x%08x' % (int(data['version']),data.get('previousblockhash', '0'*64),data['merkleroot'],data['bits'],data['time'],data['nonce'])).decode('hex')
+    cur.execute("insert into blocks (id,hash,hdr) values (?,?,?);", (blk_id, db.Binary(data['hash'].decode('hex')), hdr))
+    txcount = 0
+    qcnt = 1
     for txhash in data['tx']:
         try:
             txdata = rpc.getrawtransaction(txhash, 1)
@@ -118,33 +119,43 @@ def insertBlock(cur, rpc, data):
             continue
         inputs = ''
         for vin in txdata['vin']:
+            if 'coinbase' in vin:
+                cur.execute("update blocks set coinbase=? where id=?", (db.Binary(vin['coinbase'].decode('hex')), blk_id))
+                qcnt += 1
             if 'txid' in vin:
-                txid = findTrx(cur, db.Binary(vin['txid'].decode('hex')))
-                inputs += '%012x' % (txid*4096+vin['vout'])
-                inscnt += 1
-                cur.execute("insert into scripts (out_id,script) values (?,?)", (txid*4096+vin['vout'], db.Binary(vin['scriptSig']['hex'].decode('hex'))))
-        txid = insertTrx(cur, blkid, db.Binary(txhash.decode('hex')), db.Binary(inputs.decode('hex')))
-        trxcount += 1
-        inscnt += 1
+                tx_id = findTx(cur, db.Binary(vin['txid'].decode('hex')))
+                in_id = tx_id*4096 + vin['vout']
+                inputs += '%012x' % in_id
+                script_in = vin['scriptSig']['hex'] + '%08x' % vin['sequence']
+                cur.execute("update scripts set script_in=? where out_id=?", (db.Binary(script_in.decode('hex')), in_id))
+                qcnt += 2
+        tx_id = insertTx(cur, blk_id, db.Binary(txhash.decode('hex')), db.Binary(inputs.decode('hex')))
+        txcount += 1
+        qcnt += 1
         outputs = ''
         for vout in txdata['vout']:
             if 'addresses' in vout['scriptPubKey']:
-                addrid = insertAddress(cur, b58bin(vout['scriptPubKey']['addresses'][0]))
-                cur.execute("insert into outputs (id,addr_id,value) values(?,?,?)", (txid*4096+vout['n'], addrid, int(vout['value']*Decimal(1e8))))
-                outputs += '%012x' % (txid*4096+vout['n'])
-                inscnt += 2      
+                out_id = tx_id*4096 + vout['n']
+                addr_id = insertAddress(cur, b58bin(vout['scriptPubKey']['addresses'][0]))
+                cur.execute("insert into outputs (id,addr_id,value) values(?,?,?)", (out_id, addr_id, int(vout['value']*Decimal(1e8))))
+                script_out = vout['scriptPubKey']['hex']
+                if vout['n']+1 == len(txdata['vout']):
+                    script_out += '%08x%08x' % (txdata['version'], txdata['locktime'])
+                cur.execute("insert into scripts (out_id,script_out) values (?,?)", (out_id, db.Binary(script_out.decode('hex'))))
+                outputs += '%012x' % out_id
+                qcnt += 3      
         if len(outputs) > 0:
-            cur.execute("update trxs set outputs=? where id=?;", (db.Binary(outputs.decode('hex')), txid))
-            inscnt += 1
+            cur.execute("update trxs set outputs=? where id=?;", (db.Binary(outputs.decode('hex')), tx_id))
+            qcnt += 1
     blktime = time.time() - blkstart
-    print "[ %3d trxs - %s - %5d i/s ]" % (trxcount, datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(inscnt/blktime))
+    print "[ %3d txs - %s - %4d q/s ]" % (txcount, datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(qcnt/blktime))
 
     
 if __name__ == '__main__':
     
 
     try:
-        main(int(sys.argv[1]) if len(sys.argv) > 1 else 1)
+        main(int(sys.argv[1]) if len(sys.argv) > 1 else 0)
     except socket.error:
         sys.exit("Cannot connect to rpc")
     except KeyboardInterrupt:
