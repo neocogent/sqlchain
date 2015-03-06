@@ -6,6 +6,7 @@ import sys, socket, datetime
 import sqlite3 as db
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 from decimal import *
+from struct import unpack
 import json, mmh3
 
 # encode json btc values as satoshis
@@ -49,57 +50,83 @@ def mkaddr(v):
      
 def main(blk):
     rpc = AuthServiceProxy("http://bogustester:cZ9k7ca22UIwPobTGQUm@127.0.0.1:8332")
+    sql = db.connect('bitcoin.db')
+    cur = sql.cursor()
+    cur.execute("PRAGMA synchronous = OFF")
+    cur.execute("PRAGMA journal_mode = OFF")
     while True:
         blkhash = rpc.getblockhash(blk)
         if blkhash:
             data = rpc.getblock(blkhash)
             if data:
-                with db.connect('bitcoin.db') as sql:
-                    cur = sql.cursor()
+                try:
                     insertBlock(cur, rpc, data)
+                    sql.commit()
+                except db.Error as err:
+                    print err
+                    sql.rollback()
             blk += 1
 
 def insertAddress(cur, addr):
-    addrhash = mmh3.hash(addr)
-    cur.execute("select addr from address where hash=?", (addrhash,))
+    addrid, = unpack('=L', addr[:4]) #mmh3.hash(addr)
+    cur.execute("select addr from address where id=?", (addrid,))
     row = cur.fetchone()
     if row == None or row[0] != addr:
-        # find an unused hash entry for this address by scanning up
         while True:
             try: 
-                cur.execute("insert into address (hash,addr) values(?,?)", (addrhash, addr))
+                cur.execute("insert into address (id,addr) values(?,?)", (addrid, addr))
             except db.IntegrityError:
-                addrhash += 1
+                print '!',
+                addrid += 1
             else: break
-    return addrhash
+    return addrid
     
+def insertTrx(cur, blk_id, txhash, inputs):
+    txid, = unpack('=L', txhash[:4]) #mmh3.hash(txhash)
+    while True:
+        try: 
+            cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", (txid, txhash, inputs, blk_id))
+        except db.IntegrityError:
+            print '#',
+            txid += 1
+        else: break
+    return txid
+    
+def findTrx(cur, txhash):
+    txid, = unpack('=L', txhash[:4]) #mmh3.hash(txhash)
+    while True:
+        cur.execute("select hash from trxs where id=?", (txid,))
+        row = cur.fetchone()
+        if row and row[0] == txhash:
+            return txid
+        txid += 1
+
 def insertBlock(cur, rpc, data):
-    print "Inserting block", data['height'],
+    print "block", data['height'],
     cur.execute("insert into blocks (height,orphan,hash,time) values (?,?,?,?);", (data['height'], False, db.Binary(data['hash'].decode('hex')), data['time']))
     blkid = cur.lastrowid
     trxcount = 0
     for txhash in data['tx']:
-        inputs = ''
         try:
             txdata = rpc.getrawtransaction(txhash, 1)
         except JSONRPCException as e:
             print "Err", e.args
             continue
-        #print "Inserting tx", txhash
+        inputs = ''
         for vin in txdata['vin']:
             if 'txid' in vin:
-                cur.execute("select o.id from outputs as o, trxs as t where t.hash=? and o.trx_id=t.id limit 1 offset ?", (db.Binary(vin['txid'].decode('hex')), vin['vout']))
+                txid = findTrx(cur, db.Binary(vin['txid'].decode('hex')))
+                cur.execute("select id from outputs where trx_id=? limit 1 offset ?", (txid, vin['vout']))
                 outid = cur.fetchone()[0]
                 inputs += '%08x' % outid
                 cur.execute("insert into scripts (out_id,script) values (?,?)", (outid, db.Binary(vin['scriptSig']['hex'].decode('hex'))))
-        cur.execute("insert into trxs (block_id,hash,inputs) values (?,?,?);", (blkid, db.Binary(txhash.decode('hex')), db.Binary(inputs.decode('hex'))))
-        txid = cur.lastrowid
+        txid = insertTrx(cur, blkid, db.Binary(txhash.decode('hex')), db.Binary(inputs.decode('hex')))
         trxcount += 1
         outputs = ''
         for vout in txdata['vout']:
             if 'addresses' in vout['scriptPubKey']:
-                addrhash = insertAddress(cur, b58bin(vout['scriptPubKey']['addresses'][0]))
-                cur.execute("insert into outputs (trx_id,addrhash,value) values(?,?,?)", (txid, addrhash, int(vout['value']*Decimal(1e8))))
+                addrid = insertAddress(cur, b58bin(vout['scriptPubKey']['addresses'][0]))
+                cur.execute("insert into outputs (trx_id,addr_id,value) values(?,?,?)", (txid, addrid, int(vout['value']*Decimal(1e8))))
                 outputs += '%08x' % cur.lastrowid      
         if len(outputs) > 0:
             cur.execute("update trxs set outputs=? where id=?;", (db.Binary(outputs.decode('hex')), txid))
