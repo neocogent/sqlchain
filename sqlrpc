@@ -2,12 +2,15 @@
 #
 # Test bitcoin-rpc
 
-import sys, socket, datetime, time
+import os, sys, socket, datetime, time
+import select, termios, fcntl
 import sqlite3 as db
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 from decimal import *
 from struct import unpack
 import json
+
+state = { 'pause':False }
 
 # encode json btc values as satoshis
 class btcEncoder(json.JSONEncoder):
@@ -47,14 +50,47 @@ def mkaddr(v):
         num,m = divmod(num, 58)
         out = alphabet[m] + out
     return pad + alphabet[num] + out    
-     
-def main(blk):
+   
+def IsKbdCmd(cur):
+    while True:
+        if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
+            key = sys.stdin.read(1)
+            if key == 'x':
+                return False
+            elif key == ' ':
+                state['pause'] = not state['pause']
+                if state['pause']:
+                    print "\n--- press space to resume ---"
+            elif key == 's':
+                cur.execute('select count() from trxs')
+                print "\nTx: {:,}".format(cur.fetchone()[0])
+                cur.execute('select count() from outputs')
+                outs = cur.fetchone()[0]
+                cur.execute('select count() from scripts where length(script_in) > 0')
+                spent = cur.fetchone()[0]
+                print "TxO: {:,}\nuTxO: {:,} - {:.0%}".format(outs, outs-spent, float(outs-spent)/outs)
+                cur.execute('select count() from address')
+                print "Addr: {:,}".format(cur.fetchone()[0])
+                print "Size: %4.1f MB" % (os.path.getsize('bitcoin.db')/1e6)
+                print
+            elif key == 'b':
+                import shutil
+                print "\n--- backing up db ---"
+                shutil.copy2('bitcoin.db', 'bitcoin.db.bak')
+            
+        if not state['pause']:
+            return True
+        time.sleep(0.5)
+
+def main():
     rpc = AuthServiceProxy("http://bogustester:cZ9k7ca22UIwPobTGQUm@127.0.0.1:8332")
     sql = db.connect('bitcoin.db')
     cur = sql.cursor()
     cur.execute("PRAGMA synchronous = OFF")
     cur.execute("PRAGMA journal_mode = OFF")
-    while True:
+    cur.execute('select ifnull(max(id)/8, -1) from blocks')
+    blk = cur.fetchone()[0] + 1
+    while IsKbdCmd(cur):
         blkhash = rpc.getblockhash(blk)
         if blkhash:
             data = rpc.getblock(blkhash)
@@ -152,15 +188,28 @@ def insertBlock(cur, rpc, data):
 
     
 if __name__ == '__main__':
+
+    # set console for non-blocking key input
+    fd = sys.stdin.fileno()
+    oldterm = termios.tcgetattr(fd)
+    newattr = termios.tcgetattr(fd)
+    newattr[3] = newattr[3] & ~termios.ICANON & ~termios.ECHO
+    termios.tcsetattr(fd, termios.TCSANOW, newattr)
     
+    oldflags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, oldflags | os.O_NONBLOCK)
 
     try:
-        main(int(sys.argv[1]) if len(sys.argv) > 1 else 0)
+        main()
     except socket.error:
-        sys.exit("Cannot connect to rpc")
+        print "Cannot connect to rpc"
     except KeyboardInterrupt:
-        sys.exit(0)
-
+        pass
+    finally:
+        # restore console
+        termios.tcsetattr(fd, termios.TCSAFLUSH, oldterm)
+        fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
+    
 
 
     
