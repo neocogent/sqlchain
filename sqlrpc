@@ -7,8 +7,8 @@ import select, termios, fcntl
 import sqlite3 as db
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 from decimal import *
-from struct import unpack
-import json
+from struct import unpack, unpack_from
+import json, hashlib
 
 state = { 'pause':False }
 
@@ -19,7 +19,7 @@ class btcEncoder(json.JSONEncoder):
             return int(o*Decimal(1e8))
         return super(btcEncoder, self).default(o)
 
-alphabet="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 def b58bin(v):
     long_value = 0L
@@ -94,15 +94,91 @@ def main():
         blkhash = rpc.getblockhash(blk)
         if blkhash:
             data = rpc.getblock(blkhash)
-            if data:
-                try:
-                    insertBlock(cur, rpc, data)
-                    sql.commit()
-                except db.Error as err:
-                    print err
-                    sql.rollback()
+            #if data:
+            checkBlock(data, decodeBlock(rpc.getblock(blkhash, False).decode('hex')))
+            return
+            #    try:
+            #        insertBlock(cur, rpc, data)
+            #        sql.commit()
+            #    except db.Error as err:
+            #        print err
+            #        sql.rollback()
             blk += 1
 
+def decodeBlock(data):
+    hdr = ['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
+    hv = unpack_from('<I32s32s3I', data)
+    block = dict(zip(hdr,hv))
+    block['hash'] = hashlib.sha256(hashlib.sha256(data[:80]).digest()).digest()[::-1].encode('hex')
+    block['previousblockhash'] = block['previousblockhash'][::-1].encode('hex') # make rtc order for now
+    block['merkleroot'] = block['merkleroot'][::-1].encode('hex') # make rtc order for now
+    block['bits'] = '%08x' % block['bits']
+    txcnt,off = decodeInt(data[80:89])
+    off += 80
+    n = 0
+    block['txdata'] = []
+    block['tx'] = []
+    while n < txcnt:
+        txdata,toff = decodeTx(data[off:])
+        block['txdata'].append(txdata)
+        block['tx'].append(txdata['txid'])
+        off += toff
+        n += 1
+    #print "block", block
+    return block
+    
+def checkBlock(data, raw):
+    hdr = ['hash', 'version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
+    for k in hdr:
+        if data[k] != raw[k]:
+            print "BlkFail", k, json.dumps(data[k]), json.dumps(raw[k])
+            return False
+    for n,tx in enumerate(data['tx']):
+        if tx != raw['tx'][n]:
+            print "TxFail", tx, raw['tx'][n]
+            return False
+    return True
+    
+def decodeTx(data):
+    vers, = unpack_from('<I', data)
+    txdata = { 'version': vers, 'vin':[], 'vout':[] }
+    vicnt,off = decodeInt(data[4:13])
+    off += 4
+    n = 0
+    while n < vicnt:
+        txid,vout = unpack_from('<32sI', data, off)
+        sigsz,soff = decodeInt(data[off+36:off+36+9])
+        off += soff+36
+        seq, = unpack_from('<I', data, off+sigsz)
+        txdata['vin'].append({'txid':txid.encode('hex'), 'vout':vout, 'scriptSig':{'hex':data[off:off+sigsz].encode('hex')}, 'sequence':seq })
+        off += sigsz+4
+        n += 1
+    vocnt,voff = decodeInt(data[off:off+9])
+    off += voff
+    n = 0
+    while n < vocnt:
+        value, = unpack_from('<Q', data, off)
+        pksz,soff = decodeInt(data[off+8:off+8+9])
+        off += 8+soff
+        txdata['vout'].append({'value':value, 'n':n, 'scriptPubKey':{'hex':data[off:off+pksz].encode('hex') ,'addresses':[] }}) # todo, decode pkhash
+        off += pksz
+        n += 1
+    txdata['locktime'], = unpack_from('<I', data, off)
+    txdata['txid'] = hashlib.sha256(hashlib.sha256(data[:off+4]).digest()).digest()[::-1].encode('hex')
+    return txdata,off+4
+    
+def checkTx(txdata, txraw):
+    return True
+
+def decodeInt(v):
+    if v[0] <= '\xfc':
+        return unpack('<B', v[0])[0],1
+    if v[0] == '\xfd':
+        return unpack('<H', v[1:3])[0],3
+    if v[0] == '\xfe':
+        return unpack('<I', v[1:5])[0],5
+    return unpack('<Q', v[1:9])[0],9
+    
 def insertAddress(cur, addr):
     addr_id, = unpack('<q', addr[:5]+'\0'*3) 
     cur.execute("select addr from address where id=?", (addr_id,))
@@ -172,7 +248,7 @@ def insertBlock(cur, rpc, data):
         for vout in txdata['vout']:
             if 'addresses' in vout['scriptPubKey']:
                 out_id = tx_id*4096 + vout['n']
-                addr_id = insertAddress(cur, b58bin(vout['scriptPubKey']['addresses'][0]))
+                addr_id = insertAddress(cur, b58bin(vout['scriptPubKey']['addresses'][0])) #todo, handle addr list for P2SH
                 cur.execute("insert into outputs (id,addr_id,value) values(?,?,?)", (out_id, addr_id, int(vout['value']*Decimal(1e8))))
                 script_out = vout['scriptPubKey']['hex']
                 if vout['n']+1 == len(txdata['vout']):
