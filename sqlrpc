@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 #
-# Test bitcoin-rpc
+# sqlcoin - build sql blockchain db
+#
 
 import os, sys, socket, datetime, time
 import select, termios, fcntl
-import sqlite3 as db
-from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
+from bitcoinrpc.authproxy import AuthServiceProxy
 from decimal import *
-from struct import unpack, unpack_from
+from struct import pack, unpack, unpack_from
 import json, hashlib
+import sqlite3 as db
 
 state = { 'pause':False }
 
@@ -21,7 +22,13 @@ class btcEncoder(json.JSONEncoder):
 
 alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
-def b58bin(v):
+def mkpkh(pk):
+    pad = ""
+    rmd = hashlib.new('ripemd160')
+    rmd.update(hashlib.sha256(pk).digest())
+    return rmd.digest()
+
+def addr2pkh(v):
     long_value = 0L
     for (i, c) in enumerate(v[::-1]):
         long_value += alphabet.find(c) * (58**i)
@@ -38,9 +45,9 @@ def b58bin(v):
     result = chr(0)*nPad + result
     return buffer(result[1:-4])
 
-def mkaddr(v):
+def mkaddr(pkh):
     pad = ''
-    an = chr(0) + str(v)
+    an = chr(0) + str(pkh)
     for c in an:
         if c == '\0': pad += '1'
         else: break
@@ -66,7 +73,7 @@ def IsKbdCmd(cur):
                 print "\nTx: {:,}".format(cur.fetchone()[0])
                 cur.execute('select count() from outputs')
                 outs = cur.fetchone()[0]
-                cur.execute('select count() from scripts where length(script_in) > 0')
+                cur.execute('select count() from scripts where length(sig) > 0')
                 spent = cur.fetchone()[0]
                 print "TxO: {:,}\nuTxO: {:,} - {:.0%}".format(outs, outs-spent, float(outs-spent)/outs)
                 cur.execute('select count() from address')
@@ -88,89 +95,126 @@ def main():
     cur = sql.cursor()
     cur.execute("PRAGMA synchronous = OFF")
     cur.execute("PRAGMA journal_mode = OFF")
-    cur.execute('select ifnull(max(id)/8, -1) from blocks')
+    cur.execute('select ifnull(max(id)/4, -1) from blocks')
     blk = cur.fetchone()[0] + 1
     while IsKbdCmd(cur):
         blkhash = rpc.getblockhash(blk)
         if blkhash:
-            data = rpc.getblock(blkhash)
-            #if data:
-            checkBlock(data, decodeBlock(rpc.getblock(blkhash, False).decode('hex')))
-            return
-            #    try:
-            #        insertBlock(cur, rpc, data)
-            #        sql.commit()
-            #    except db.Error as err:
-            #        print err
-            #        sql.rollback()
-            blk += 1
+            data = decodeBlock(rpc.getblock(blkhash, False).decode('hex'))
+            if data and verifyBlock(cur, data):
+                try:
+                    insertBlock(cur, data)
+                    sql.commit()
+                except db.Error as err:
+                    print err
+                    sql.rollback()
+                blk += 1
+            else: 
+                return
 
 def decodeBlock(data):
     hdr = ['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
     hv = unpack_from('<I32s32s3I', data)
     block = dict(zip(hdr,hv))
-    block['hash'] = hashlib.sha256(hashlib.sha256(data[:80]).digest()).digest()[::-1].encode('hex')
-    block['previousblockhash'] = block['previousblockhash'][::-1].encode('hex') # make rtc order for now
-    block['merkleroot'] = block['merkleroot'][::-1].encode('hex') # make rtc order for now
-    block['bits'] = '%08x' % block['bits']
-    txcnt,off = decodeInt(data[80:89])
+    block['hdr'] = data[:80]
+    block['hash'] = hashlib.sha256(hashlib.sha256(block['hdr']).digest()).digest()
+    block['bits'] = '%08x' % block['bits'] 
+    txcnt,off = decodeVarInt(data[80:89])
     off += 80
-    n = 0
-    block['txdata'] = []
     block['tx'] = []
-    while n < txcnt:
+    while txcnt > 0:
         txdata,toff = decodeTx(data[off:])
-        block['txdata'].append(txdata)
-        block['tx'].append(txdata['txid'])
+        block['tx'].append(txdata)
         off += toff
-        n += 1
-    #print "block", block
+        txcnt -= 1
+    block['height'] = 0
+    if block['version'] > 1:
+        block['height'] = unpack('<I', block['tx'][0]['vin'][0]['coinbase'][1:4]+'\0')[0]
     return block
+
+def verifyBlock(cur, data):
+    cur.execute("select id from blocks where hash=?", (db.Binary(data['previousblockhash']),))
+    row = cur.fetchone()
+    if row:
+        height = row[0] / 4 + 1
+        if data['height'] != 0 and data['height'] != height:
+            print "block height mismatch - coinbase height bad"
+            return False
+        data['height'] = height
+    elif data['height'] != 0:
+        print "orphan block - previous hash not found"
     
-def checkBlock(data, raw):
-    hdr = ['hash', 'version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
-    for k in hdr:
-        if data[k] != raw[k]:
-            print "BlkFail", k, json.dumps(data[k]), json.dumps(raw[k])
+    mkt = [ tx['txid'] for tx in data['tx'] ]
+    while len(mkt) > 1:
+        if len(mkt) % 2 == 1:
+            mkt.append(mkt[-1])
+        mkt = [ hashlib.sha256(hashlib.sha256(mkt[i]+mkt[i+1]).digest()).digest() for i in range(0,len(mkt),2) ]
+    if mkt[0] != data['merkleroot']:
+        print "merkle tree failure"
+    
+    totalfees = 0
+    for tx in data['tx']:
+        valid,fee = verifyTx(cur, tx)
+        if not valid:
             return False
-    for n,tx in enumerate(data['tx']):
-        if tx != raw['tx'][n]:
-            print "TxFail", tx, raw['tx'][n]
-            return False
+        totalfees += fee
+    
+    payout = ( int(50e8) >> ( data['height']/210000 ) ) + totalfees
+    for vout in data['tx'][0]['vout']:
+        payout -= vout['value']
+    if payout != 0:
+        #print "coinbase payout off by", payout
+        pass#return False
+    # todo,check time and bits
     return True
     
 def decodeTx(data):
     vers, = unpack_from('<I', data)
     txdata = { 'version': vers, 'vin':[], 'vout':[] }
-    vicnt,off = decodeInt(data[4:13])
+    vicnt,off = decodeVarInt(data[4:13])
     off += 4
-    n = 0
-    while n < vicnt:
+    while vicnt > 0:
         txid,vout = unpack_from('<32sI', data, off)
-        sigsz,soff = decodeInt(data[off+36:off+36+9])
+        sigsz,soff = decodeVarInt(data[off+36:off+36+9])
         off += soff+36
         seq, = unpack_from('<I', data, off+sigsz)
-        txdata['vin'].append({'txid':txid.encode('hex'), 'vout':vout, 'scriptSig':{'hex':data[off:off+sigsz].encode('hex')}, 'sequence':seq })
+        if txid == '\0'*32 and vout == 0xffffffff: 
+            txdata['vin'].append({'coinbase':data[off:off+sigsz], 'sequence':seq })
+        else:
+            txdata['vin'].append({'txid':txid, 'vout':vout, 'scriptSig':data[off:off+sigsz], 'sequence':seq })
         off += sigsz+4
-        n += 1
-    vocnt,voff = decodeInt(data[off:off+9])
+        vicnt -= 1
+    vocnt,voff = decodeVarInt(data[off:off+9])
     off += voff
     n = 0
     while n < vocnt:
         value, = unpack_from('<Q', data, off)
-        pksz,soff = decodeInt(data[off+8:off+8+9])
+        pksz,soff = decodeVarInt(data[off+8:off+8+9])
         off += 8+soff
-        txdata['vout'].append({'value':value, 'n':n, 'scriptPubKey':{'hex':data[off:off+pksz].encode('hex') ,'addresses':[] }}) # todo, decode pkhash
+        txdata['vout'].append({'value':value, 'n':n, 'scriptPubKey':decodeScriptPK( data[off:off+pksz] ) }) 
         off += pksz
         n += 1
     txdata['locktime'], = unpack_from('<I', data, off)
-    txdata['txid'] = hashlib.sha256(hashlib.sha256(data[:off+4]).digest()).digest()[::-1].encode('hex')
+    txdata['txid'] = hashlib.sha256(hashlib.sha256(data[:off+4]).digest()).digest()
     return txdata,off+4
     
-def checkTx(txdata, txraw):
-    return True
+def verifyTx(cur, txdata):
+    # check inputs valid
+    # check input values >= output values, calc fee
+    return True,0
 
-def decodeInt(v):
+def decodeScriptPK(data):
+    if data[:2] == '\x76\xa9\x14' and data[24:25] == '\x88\xac': # P2PKH
+        return { 'type':'p2pkh', 'data':'', 'addr':data[3:24] };
+    if data[0] == '\xa9' and data[21] == '\x87': # P2SH
+        return { 'type':'p2sh', 'data':'', 'addr':data[1:21] };
+    if data[0] == '\x41' and data[66] == '\xac': # P2PK
+        return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[0:64])) };
+    if len(data) <= 41 and data[0] == '\x6a': # NULL
+        return { 'type':'null', 'data':data };
+    return { 'type':'other', 'data':data } # other, non-std
+
+def decodeVarInt(v):
     if v[0] <= '\xfc':
         return unpack('<B', v[0])[0],1
     if v[0] == '\xfd':
@@ -180,25 +224,29 @@ def decodeInt(v):
     return unpack('<Q', v[1:9])[0],9
     
 def insertAddress(cur, addr):
-    addr_id, = unpack('<q', addr[:5]+'\0'*3) 
+    pkh = addr2pkh(addr)
+    addr_id, = unpack('<q', pkh[:5]+'\0'*3) 
+    addr_id *= 2
+    if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
+        addr_id += 1
     cur.execute("select addr from address where id=?", (addr_id,))
     row = cur.fetchone()
-    if row == None or row[0] != addr:
+    if row == None or str(row[0]) != str(pkh):
         while True:
             try: 
-                cur.execute("insert into address (id,addr) values(?,?)", (addr_id, addr))
+                cur.execute("insert into address (id,addr) values(?,?)", (addr_id, pkh))
             except db.IntegrityError:
                 print '!',
-                addr_id += 1
+                addr_id += 2
             else: break
     return addr_id
     
-def insertTx(cur, blk_id, txhash, inputs):
+def insertTx(cur, blk_id, txhash, inputs, extra): # extra is prunable: vers, locktime
     tx_id, = unpack('<q', txhash[:5]+'\0'*3)
     tx_id /= 16
     while True:
         try: 
-            cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", (tx_id, txhash, inputs, blk_id))
+            cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", (tx_id, db.Binary(txhash+extra), inputs, blk_id))
         except db.IntegrityError:
             print '#',
             tx_id += 1
@@ -211,56 +259,45 @@ def findTx(cur, txhash):
     while True:
         cur.execute("select hash from trxs where id=?", (tx_id,))
         row = cur.fetchone()
-        if row and row[0] == txhash:
+        if row and str(row[0][:32]) == str(txhash):
             return tx_id
         tx_id += 1
 
-def insertBlock(cur, rpc, data):
+def insertBlock(cur, data):
     print "block", data['height'],
     blkstart = time.time()
-    blk_id = data['height']*8
-    hdr = ('%08x%s%s%s%08x%08x' % (int(data['version']),data.get('previousblockhash', '0'*64),data['merkleroot'],data['bits'],data['time'],data['nonce'])).decode('hex')
-    cur.execute("insert into blocks (id,hash,hdr) values (?,?,?);", (blk_id, db.Binary(data['hash'].decode('hex')), hdr))
-    txcount = 0
+    blk_id = data['height']*4
+    cur.execute("insert into blocks (id,hash,hdr) values (?,?,?);", (blk_id, db.Binary(data['hash']), db.Binary(data['hdr'])))
     qcnt = 1
-    for txhash in data['tx']:
-        try:
-            txdata = rpc.getrawtransaction(txhash, 1)
-        except JSONRPCException as e:
-            print "Err", e.args
-            continue
+    for txdata in data['tx']:
         inputs = ''
         for vin in txdata['vin']:
             if 'coinbase' in vin:
-                cur.execute("update blocks set coinbase=? where id=?", (db.Binary(vin['coinbase'].decode('hex')), blk_id))
+                cur.execute("update blocks set coinbase=? where id=?", (db.Binary(vin['coinbase']), blk_id))
                 qcnt += 1
             if 'txid' in vin:
-                tx_id = findTx(cur, db.Binary(vin['txid'].decode('hex')))
+                tx_id = findTx(cur, db.Binary(vin['txid']))
                 in_id = tx_id*4096 + vin['vout']
                 inputs += '%012x' % in_id
-                script_in = vin['scriptSig']['hex'] + '%08x' % vin['sequence']
-                cur.execute("update scripts set script_in=? where out_id=?", (db.Binary(script_in.decode('hex')), in_id))
+                sig = vin['scriptSig'] + ('%08x' % vin['sequence']).decode('hex')
+                cur.execute("update scripts set sig=? where out_id=?", (db.Binary(sig), in_id))
                 qcnt += 2
-        tx_id = insertTx(cur, blk_id, db.Binary(txhash.decode('hex')), db.Binary(inputs.decode('hex')))
-        txcount += 1
+        tx_id = insertTx(cur, blk_id, txdata['txid'], db.Binary(inputs.decode('hex')), pack('<BI', txdata['version'], txdata['locktime']))
         qcnt += 1
         outputs = ''
         for vout in txdata['vout']:
-            if 'addresses' in vout['scriptPubKey']:
-                out_id = tx_id*4096 + vout['n']
-                addr_id = insertAddress(cur, b58bin(vout['scriptPubKey']['addresses'][0])) #todo, handle addr list for P2SH
-                cur.execute("insert into outputs (id,addr_id,value) values(?,?,?)", (out_id, addr_id, int(vout['value']*Decimal(1e8))))
-                script_out = vout['scriptPubKey']['hex']
-                if vout['n']+1 == len(txdata['vout']):
-                    script_out += '%08x%08x' % (txdata['version'], txdata['locktime'])
-                cur.execute("insert into scripts (out_id,script_out) values (?,?)", (out_id, db.Binary(script_out.decode('hex'))))
-                outputs += '%012x' % out_id
-                qcnt += 3      
+            out_id = tx_id*4096 + vout['n']
+            addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
+            cur.execute("insert into outputs (id,addr_id,value) values(?,?,?)", (out_id, addr_id, vout['value']))
+            pk = vout['scriptPubKey']['data']
+            cur.execute("insert into scripts (out_id,pk) values (?,?)", (out_id, db.Binary(pk)))
+            outputs += '%012x' % out_id
+            qcnt += 3      
         if len(outputs) > 0:
             cur.execute("update trxs set outputs=? where id=?;", (db.Binary(outputs.decode('hex')), tx_id))
             qcnt += 1
     blktime = time.time() - blkstart
-    print "[ %3d txs - %s - %4d q/s ]" % (txcount, datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(qcnt/blktime))
+    print "[ %3d txs - %s - %4d q/s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(qcnt/blktime))
 
     
 if __name__ == '__main__':
