@@ -23,7 +23,6 @@ class btcEncoder(json.JSONEncoder):
 alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 def mkpkh(pk):
-    pad = ""
     rmd = hashlib.new('ripemd160')
     rmd.update(hashlib.sha256(pk).digest())
     return rmd.digest()
@@ -90,7 +89,7 @@ def IsKbdCmd(cur):
         time.sleep(0.5)
 
 def main():
-    rpc = AuthServiceProxy("http://bogustester:cZ9k7ca22UIwPobTGQUm@127.0.0.1:8332")
+    rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@sneezy:8332")
     sql = db.connect('bitcoin.db')
     cur = sql.cursor()
     cur.execute("PRAGMA synchronous = OFF")
@@ -123,8 +122,8 @@ def decodeBlock(data):
     off += 80
     block['tx'] = []
     while txcnt > 0:
-        txdata,toff = decodeTx(data[off:])
-        block['tx'].append(txdata)
+        tx,toff = decodeTx(data[off:])
+        block['tx'].append(tx)
         off += toff
         txcnt -= 1
     block['height'] = 0
@@ -152,25 +151,21 @@ def verifyBlock(cur, data):
     if mkt[0] != data['merkleroot']:
         print "merkle tree failure"
     
-    totalfees = 0
+    totalfees = ( int(50e8) >> ( data['height']/210000 ) )
     for tx in data['tx']:
-        valid,fee = verifyTx(cur, tx)
+        valid,fee = verifyTx(cur, data, tx)
         if not valid:
             return False
         totalfees += fee
-    
-    payout = ( int(50e8) >> ( data['height']/210000 ) ) + totalfees
-    for vout in data['tx'][0]['vout']:
-        payout -= vout['value']
-    if payout != 0:
-        #print "coinbase payout off by", payout
-        pass#return False
+    if totalfees != 0:
+        print "coinbase payout off by", totalfees
+        return False
     # todo,check time and bits
     return True
     
 def decodeTx(data):
     vers, = unpack_from('<I', data)
-    txdata = { 'version': vers, 'vin':[], 'vout':[] }
+    tx = { 'version': vers, 'vin':[], 'vout':[] }
     vicnt,off = decodeVarInt(data[4:13])
     off += 4
     while vicnt > 0:
@@ -179,9 +174,9 @@ def decodeTx(data):
         off += soff+36
         seq, = unpack_from('<I', data, off+sigsz)
         if txid == '\0'*32 and vout == 0xffffffff: 
-            txdata['vin'].append({'coinbase':data[off:off+sigsz], 'sequence':seq })
+            tx['vin'].append({'coinbase':data[off:off+sigsz], 'sequence':seq })
         else:
-            txdata['vin'].append({'txid':txid, 'vout':vout, 'scriptSig':data[off:off+sigsz], 'sequence':seq })
+            tx['vin'].append({'txid':txid, 'vout':vout, 'scriptSig':data[off:off+sigsz], 'sequence':seq })
         off += sigsz+4
         vicnt -= 1
     vocnt,voff = decodeVarInt(data[off:off+9])
@@ -191,25 +186,63 @@ def decodeTx(data):
         value, = unpack_from('<Q', data, off)
         pksz,soff = decodeVarInt(data[off+8:off+8+9])
         off += 8+soff
-        txdata['vout'].append({'value':value, 'n':n, 'scriptPubKey':decodeScriptPK( data[off:off+pksz] ) }) 
+        tx['vout'].append({'value':value, 'n':n, 'scriptPubKey':decodeScriptPK( data[off:off+pksz] ) }) 
         off += pksz
         n += 1
-    txdata['locktime'], = unpack_from('<I', data, off)
-    txdata['txid'] = hashlib.sha256(hashlib.sha256(data[:off+4]).digest()).digest()
-    return txdata,off+4
+    tx['locktime'], = unpack_from('<I', data, off)
+    tx['txid'] = hashlib.sha256(hashlib.sha256(data[:off+4]).digest()).digest()
+    return tx,off+4
     
-def verifyTx(cur, txdata):
-    # check inputs valid
-    # check input values >= output values, calc fee
-    return True,0
+def verifyTx(cur, block, tx):
+    fee = 0
+    for vin in tx['vin']:
+        if 'txid' in vin:
+            n = vin['vout']
+            vout = TxInBlock(block, tx['txid'], vin['txid']) # may be in same block
+            if vout and 'addr' in vout[n]['scriptPubKey']:
+                if not verifyInput(vin['scriptSig'], vout[n]['scriptPubKey']['data'], vout[n]['scriptPubKey']['addr']):
+                    print "bad input"
+                    return False
+                fee += vout[n]['value']
+            else:
+                tx_id = findTx(cur, vin['txid']) # otherwise has to be in prev block
+                if tx_id == None:
+                    print "tx invalid - no tx for this input", vin['txid'][::-1].encode('hex'), tx['txid'][::-1].encode('hex')
+                    return False,0
+                cur.execute("select value,addr,pk from outputs o,address a,scripts s where o.id=? and a.id=o.addr_id and s.out_id=o.id", (tx_id*4096 + n, ))
+                row = cur.fetchone()
+                if row == None:
+                    print "tx invalid - no output for this input", tx_id*4096 + n
+                    return False,0
+                value,pkh,pk = row
+                if not verifyInput(vin['scriptSig'], pk, pkh):
+                    print "bad input"
+                    return False
+                fee += value
+            
+    for vout in tx['vout']:
+        fee -= vout['value']
+        
+    return True,fee
+
+def TxInBlock(block, brkid, txid):
+    for tx in block['tx']:
+        if tx['txid'] == brkid:
+            return None
+        if tx['txid'] == txid:
+            return tx['vout']
+        
+def verifyInput(sig, pk, pkh):
+    #print 'verify s=%s, pk=%s, pkh=%s' % (str(sig).encode('hex'), str(pk).encode('hex'), str(pkh).encode('hex'))
+    return True
 
 def decodeScriptPK(data):
-    if data[:2] == '\x76\xa9\x14' and data[24:25] == '\x88\xac': # P2PKH
-        return { 'type':'p2pkh', 'data':'', 'addr':data[3:24] };
+    if data[:3] == '\x76\xa9\x14' and data[23:25] == '\x88\xac': # P2PKH
+        return { 'type':'p2pkh', 'data':'', 'addr':mkaddr(data[3:23]) };
     if data[0] == '\xa9' and data[21] == '\x87': # P2SH
         return { 'type':'p2sh', 'data':'', 'addr':data[1:21] };
     if data[0] == '\x41' and data[66] == '\xac': # P2PK
-        return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[0:64])) };
+        return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
     if len(data) <= 41 and data[0] == '\x6a': # NULL
         return { 'type':'null', 'data':data };
     return { 'type':'other', 'data':data } # other, non-std
@@ -253,14 +286,18 @@ def insertTx(cur, blk_id, txhash, inputs, extra): # extra is prunable: vers, loc
         else: break
     return tx_id
     
-def findTx(cur, txhash):
+def findTx(cur, txhash, limit=256):
     tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
     tx_id /= 16
+    limit_id = tx_id+limit
     while True:
         cur.execute("select hash from trxs where id=?", (tx_id,))
         row = cur.fetchone()
         if row and str(row[0][:32]) == str(txhash):
             return tx_id
+        if tx_id > limit_id:
+            #print "tx miss", str(txhash[::-1]).encode('hex')
+            return None
         tx_id += 1
 
 def insertBlock(cur, data):
@@ -269,9 +306,9 @@ def insertBlock(cur, data):
     blk_id = data['height']*4
     cur.execute("insert into blocks (id,hash,hdr) values (?,?,?);", (blk_id, db.Binary(data['hash']), db.Binary(data['hdr'])))
     qcnt = 1
-    for txdata in data['tx']:
+    for tx in data['tx']:
         inputs = ''
-        for vin in txdata['vin']:
+        for vin in tx['vin']:
             if 'coinbase' in vin:
                 cur.execute("update blocks set coinbase=? where id=?", (db.Binary(vin['coinbase']), blk_id))
                 qcnt += 1
@@ -282,10 +319,10 @@ def insertBlock(cur, data):
                 sig = vin['scriptSig'] + ('%08x' % vin['sequence']).decode('hex')
                 cur.execute("update scripts set sig=? where out_id=?", (db.Binary(sig), in_id))
                 qcnt += 2
-        tx_id = insertTx(cur, blk_id, txdata['txid'], db.Binary(inputs.decode('hex')), pack('<BI', txdata['version'], txdata['locktime']))
+        tx_id = insertTx(cur, blk_id, tx['txid'], db.Binary(inputs.decode('hex')), pack('<BI', tx['version'], tx['locktime']))
         qcnt += 1
         outputs = ''
-        for vout in txdata['vout']:
+        for vout in tx['vout']:
             out_id = tx_id*4096 + vout['n']
             addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
             cur.execute("insert into outputs (id,addr_id,value) values(?,?,?)", (out_id, addr_id, vout['value']))
