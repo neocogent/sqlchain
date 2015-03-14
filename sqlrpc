@@ -77,25 +77,25 @@ def IsKbdCmd(cur):
                 print "TxO: {:,}\nuTxO: {:,} - {:.0%}".format(outs, outs-spent, float(outs-spent)/outs)
                 cur.execute('select count() from address')
                 print "Addr: {:,}".format(cur.fetchone()[0])
-                print "Size: %4.1f MB" % (os.path.getsize('bitcoin.db')/1e6)
+                print "Size: %4.1f MB" % (os.path.getsize('btc.db')/1e6)
                 print
             elif key == 'b':
                 import shutil
                 print "\n--- backing up db ---"
-                shutil.copy2('bitcoin.db', 'bitcoin.db.bak')
+                shutil.copy2('btc.db', 'btc.db.bak')
             
         if not state['pause']:
             return True
         time.sleep(0.5)
 
-def main():
-    rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@sneezy:8332")
-    sql = db.connect('bitcoin.db')
+def processBlocks():
+    rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332")
+    sql = db.connect('btc.db')
     cur = sql.cursor()
     cur.execute("PRAGMA synchronous = OFF")
     cur.execute("PRAGMA journal_mode = OFF")
     cur.execute('select ifnull(max(id)/4, -1) from blocks')
-    blk = cur.fetchone()[0] + 1
+    startblk = blk = cur.fetchone()[0] + 1
     while IsKbdCmd(cur):
         blkhash = rpc.getblockhash(blk)
         if blkhash:
@@ -108,8 +108,9 @@ def main():
                     print err
                     sql.rollback()
                 blk += 1
-            else: 
-                return
+            else: break
+            
+    return blk - startblk
 
 def decodeBlock(data):
     hdr = ['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
@@ -157,7 +158,7 @@ def verifyBlock(cur, data):
         if not valid:
             return False
         totalfees += fee
-    if totalfees != 0:
+    if totalfees < 0:
         print "coinbase payout off by", totalfees
         return False
     # todo,check time and bits
@@ -262,17 +263,16 @@ def insertAddress(cur, addr):
     addr_id *= 2
     if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
         addr_id += 1
-    cur.execute("select addr from address where id=?", (addr_id,))
-    row = cur.fetchone()
-    if row == None or str(row[0]) != str(pkh):
-        while True:
-            try: 
-                cur.execute("insert into address (id,addr) values(?,?)", (addr_id, pkh))
-            except db.IntegrityError:
-                print '!',
-                addr_id += 2
-            else: break
-    return addr_id
+    while True:    
+        cur.execute("select addr from address where id=?", (addr_id,))
+        row = cur.fetchone()
+        if row == None:
+            cur.execute("insert into address (id,addr) values(?,?)", (addr_id, pkh))
+            return addr_id
+        elif str(row[0]) == str(pkh):
+            return addr_id
+        print '!', # collision
+        addr_id += 2
     
 def insertTx(cur, blk_id, txhash, inputs, extra): # extra is prunable: vers, locktime
     tx_id, = unpack('<q', txhash[:5]+'\0'*3)
@@ -281,10 +281,10 @@ def insertTx(cur, blk_id, txhash, inputs, extra): # extra is prunable: vers, loc
         try: 
             cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", (tx_id, db.Binary(txhash+extra), inputs, blk_id))
         except db.IntegrityError:
-            print '#',
+            print '#', # collision
             tx_id += 1
-        else: break
-    return tx_id
+        else: 
+            return tx_id
     
 def findTx(cur, txhash, limit=256):
     tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
@@ -349,8 +349,9 @@ if __name__ == '__main__':
     oldflags = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, oldflags | os.O_NONBLOCK)
 
+    workstart = time.time()
     try:
-        main()
+        blks = processBlocks()
     except socket.error:
         print "Cannot connect to rpc"
     except KeyboardInterrupt:
@@ -360,6 +361,7 @@ if __name__ == '__main__':
         termios.tcsetattr(fd, termios.TCSAFLUSH, oldterm)
         fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
     
+    print "Session %.1f blks/s" % float(blks / (time.time() - workstart))
 
 
     
