@@ -2,4 +2,4 @@ CREATE TABLE "address" ("id" INTEGER PRIMARY KEY  NOT NULL  DEFAULT (null) ,"add
 CREATE TABLE "blocks" ("id" INTEGER PRIMARY KEY  NOT NULL ,"hash" BLOB NOT NULL ,"hdr" BLOB NOT NULL , "coinbase" BLOB);
 CREATE TABLE "outputs" ("id" INTEGER PRIMARY KEY  NOT NULL ,"value" INTEGER,"addr_id" INTEGER NOT NULL ) WITHOUT ROWID;
 CREATE TABLE "scripts" ("out_id" INTEGER PRIMARY KEY  NOT NULL ,"sig" BLOB DEFAULT (null) ,"pk" BLOB DEFAULT (null) );
-CREATE TABLE "trxs" ("id" INTEGER PRIMARY KEY  NOT NULL , "hash" BLOB NOT NULL , "inputs" BLOB, "outputs" BLOB, "block_id" INTEGER) WITHOUT ROWID;
+CREATE TABLE "trxs" ("id" INTEGER PRIMARY KEY  NOT NULL ,"hash" BLOB NOT NULL ,"inputs" BLOB, "block_id" INTEGER);

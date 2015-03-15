@@ -20,6 +20,8 @@ class btcEncoder(json.JSONEncoder):
             return int(o*Decimal(1e8))
         return super(btcEncoder, self).default(o)
 
+b32 = 0x100000000
+b33 = 0x200000000
 alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 def mkpkh(pk):
@@ -42,7 +44,7 @@ def addr2pkh(v):
         if c == alphabet[0]: nPad += 1
         else: break
     result = chr(0)*nPad + result
-    return buffer(result[1:-4])
+    return result[1:-4]
 
 def mkaddr(pkh):
     pad = ''
@@ -105,8 +107,9 @@ def processBlocks():
                     insertBlock(cur, data)
                     sql.commit()
                 except db.Error as err:
-                    print err
+                    print err, sys.exc_info()[0]
                     sql.rollback()
+                    break
                 blk += 1
             else: break
             
@@ -200,7 +203,10 @@ def verifyTx(cur, block, tx):
         if 'txid' in vin:
             n = vin['vout']
             vout = TxInBlock(block, tx['txid'], vin['txid']) # may be in same block
-            if vout and 'addr' in vout[n]['scriptPubKey']:
+            if vout:
+                if 'addr' not in vout[n]['scriptPubKey']:
+                    print "non-std input - no addr, ignoring"
+                    continue
                 if not verifyInput(vin['scriptSig'], vout[n]['scriptPubKey']['data'], vout[n]['scriptPubKey']['addr']):
                     print "bad input"
                     return False
@@ -210,19 +216,22 @@ def verifyTx(cur, block, tx):
                 if tx_id == None:
                     print "tx invalid - no tx for this input", vin['txid'][::-1].encode('hex'), tx['txid'][::-1].encode('hex')
                     return False,0
-                cur.execute("select value,addr,pk from outputs o,address a,scripts s where o.id=? and a.id=o.addr_id and s.out_id=o.id", (tx_id*4096 + n, ))
+                cur.execute("select value,addr_id,pk from outs%02x o, spks%02x s where o.id=? and s.out_id=o.id" % (tx_id/b32,tx_id/b32), (tx_id%b32*4096 + n,))
                 row = cur.fetchone()
                 if row == None:
-                    print "tx invalid - no output for this input", tx_id*4096 + n
+                    print "tx invalid - no output for this input", tx_id%b32*4096 + n
                     return False,0
-                value,pkh,pk = row
+                value,addr_id,pk = row
+                cur.execute("select addr from addr%02x where id=?" % (addr_id/b33,), (addr_id%b33,))
+                pkh = cur.fetchone()[0]
                 if not verifyInput(vin['scriptSig'], pk, pkh):
                     print "bad input"
                     return False
                 fee += value
             
     for vout in tx['vout']:
-        fee -= vout['value']
+        if 'addr' in vout['scriptPubKey']:
+            fee -= vout['value']
         
     return True,fee
 
@@ -246,6 +255,7 @@ def decodeScriptPK(data):
         return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
     if len(data) <= 41 and data[0] == '\x6a': # NULL
         return { 'type':'null', 'data':data };
+    print "non-std output - no addr, ignored"
     return { 'type':'other', 'data':data } # other, non-std
 
 def decodeVarInt(v):
@@ -256,7 +266,7 @@ def decodeVarInt(v):
     if v[0] == '\xfe':
         return unpack('<I', v[1:5])[0],5
     return unpack('<Q', v[1:9])[0],9
-    
+
 def insertAddress(cur, addr):
     pkh = addr2pkh(addr)
     addr_id, = unpack('<q', pkh[:5]+'\0'*3) 
@@ -264,39 +274,37 @@ def insertAddress(cur, addr):
     if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
         addr_id += 1
     while True:    
-        cur.execute("select addr from address where id=?", (addr_id,))
+        cur.execute("select addr from addr%02x where id=?" % (addr_id/b33,), (addr_id%b33,))
         row = cur.fetchone()
         if row == None:
-            cur.execute("insert into address (id,addr) values(?,?)", (addr_id, pkh))
+            cur.execute("insert into addr%02x (id,addr) values(?,?)" % (addr_id/b33,), (addr_id%b33, db.Binary(pkh[5:])))
             return addr_id
-        elif str(row[0]) == str(pkh):
+        elif str(row[0]) == str(pkh[5:]):
             return addr_id
         print '!', # collision
         addr_id += 2
     
 def insertTx(cur, blk_id, txhash, inputs, extra): # extra is prunable: vers, locktime
     tx_id, = unpack('<q', txhash[:5]+'\0'*3)
-    tx_id /= 16
     while True:
         try: 
-            cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", (tx_id, db.Binary(txhash+extra), inputs, blk_id))
+            cur.execute("insert into trxs%02x (id,hash,inputs,block_id) values(?,?,?,?)" % (tx_id/b32,), (tx_id%b32, db.Binary(txhash[5:]+extra), inputs, blk_id))
         except db.IntegrityError:
             print '#', # collision
             tx_id += 1
         else: 
             return tx_id
     
-def findTx(cur, txhash, limit=256):
+def findTx(cur, txhash, limit=32):
     tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
-    tx_id /= 16
     limit_id = tx_id+limit
     while True:
-        cur.execute("select hash from trxs where id=?", (tx_id,))
+        cur.execute("select hash from trxs%02x where id=?" % (tx_id/b32,), (tx_id%b32,))
         row = cur.fetchone()
-        if row and str(row[0][:32]) == str(txhash):
+        if row and str(row[0][:27]) == str(txhash[5:]):
             return tx_id
         if tx_id > limit_id:
-            #print "tx miss", str(txhash[::-1]).encode('hex')
+            print "tx miss", str(txhash[::-1]).encode('hex')
             return None
         tx_id += 1
 
@@ -314,23 +322,20 @@ def insertBlock(cur, data):
                 qcnt += 1
             if 'txid' in vin:
                 tx_id = findTx(cur, db.Binary(vin['txid']))
-                in_id = tx_id*4096 + vin['vout']
+                in_id = (tx_id%b32)*4096 + vin['vout']
                 inputs += '%012x' % in_id
                 sig = vin['scriptSig'] + ('%08x' % vin['sequence']).decode('hex')
-                cur.execute("update scripts set sig=? where out_id=?", (db.Binary(sig), in_id))
+                cur.execute("update spks%02x set sig=? where out_id=?" % (tx_id/b32,), (db.Binary(sig), in_id))
                 qcnt += 2
         tx_id = insertTx(cur, blk_id, tx['txid'], db.Binary(inputs.decode('hex')), pack('<BI', tx['version'], tx['locktime']))
         qcnt += 1
-        outputs = ''
         for vout in tx['vout']:
-            out_id = tx_id*4096 + vout['n']
+            out_id = (tx_id%b32)*4096 + vout['n']
             addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
-            cur.execute("insert into outputs (id,addr_id,value) values(?,?,?)", (out_id, addr_id, vout['value']))
-            pk = vout['scriptPubKey']['data']
-            cur.execute("insert into scripts (out_id,pk) values (?,?)", (out_id, db.Binary(pk)))
-            outputs += '%012x' % out_id
-            qcnt += 3      
-     blktime = time.time() - blkstart
+            cur.execute("insert into outs%02x (id,addr_id,value) values(?,?,?)" % (tx_id/b32,), (out_id, addr_id, vout['value']))
+            cur.execute("insert into spks%02x (out_id,pk) values (?,?)" % (tx_id/b32,), (out_id, db.Binary(vout['scriptPubKey']['data'])))
+            qcnt += 3
+    blktime = time.time() - blkstart
     print "[ %3d txs - %s - %4d q/s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(qcnt/blktime))
 
     

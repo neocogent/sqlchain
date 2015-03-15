@@ -1,0 +1,44 @@
+#!/usr/bin/env python
+#
+# mksql - create table-shard blockchain db
+#
+
+import sys
+from struct import unpack
+import sqlite3 as db
+
+sql = db.connect(sys.argv[1])
+cur = sql.cursor()
+
+q_blks = 'CREATE TABLE "blocks" ("id" INTEGER PRIMARY KEY  NOT NULL ,"hash" BLOB NOT NULL ,"hdr" BLOB NOT NULL , "coinbase" BLOB);'
+q_addr = 'CREATE TABLE "addr%02x" ("id" INTEGER PRIMARY KEY  NOT NULL  DEFAULT (null) ,"addr" BLOB NOT NULL );'
+q_trxs = 'CREATE TABLE "trxs%02x" ("id" INTEGER PRIMARY KEY  NOT NULL ,"hash" BLOB NOT NULL ,"inputs" BLOB,"block_id" INTEGER);'
+q_outs = 'CREATE TABLE "outs%02x" ("id" INTEGER PRIMARY KEY  NOT NULL ,"value" INTEGER,"addr_id" INTEGER NOT NULL ) WITHOUT ROWID;'
+q_spks = 'CREATE TABLE "spks%02x" ("out_id" INTEGER PRIMARY KEY  NOT NULL ,"sig" BLOB DEFAULT (null) ,"pk" BLOB DEFAULT (null) );'
+
+cur.execute(q_blks)
+
+for n in range(0,256):
+    cur.execute(q_addr % n)
+    cur.execute(q_trxs % n)
+    cur.execute(q_outs % n)
+    cur.execute(q_spks % n)
+    
+    
+    '''
+    q1 = q_outs % n
+    cur.execute("select * from outputs where id/?=?", (b40,n))
+    for row in cur:
+        q1 += "INSERT INTO 'outs%02x' VALUES(%d,x'%s',x'%s',%d);" % (n, row[0] % b40, row[1], row[2] )
+    q1 += 'COMMIT;'
+    cur.executescript(q1)
+    '''
+    
+    '''
+    q1 = q_addr % n
+    cur.execute("select * from trxs where id/?=?", (b32,n))
+    for row in cur:
+        q1 += "INSERT INTO 'addr%02x' VALUES(%d,x'%s',x'%s',%d);" % (n, row[0] % b32, row[1][5:].encode('hex') )
+    q1 += 'COMMIT;'
+    cur.executescript(q1)
+    '''
