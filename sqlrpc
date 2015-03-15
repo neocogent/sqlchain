@@ -42,7 +42,7 @@ def addr2pkh(v):
         if c == alphabet[0]: nPad += 1
         else: break
     result = chr(0)*nPad + result
-    return buffer(result[1:-4])
+    return result[1:-4]
 
 def mkaddr(pkh):
     pad = ''
@@ -210,10 +210,10 @@ def verifyTx(cur, block, tx):
                 if tx_id == None:
                     print "tx invalid - no tx for this input", vin['txid'][::-1].encode('hex'), tx['txid'][::-1].encode('hex')
                     return False,0
-                cur.execute("select value,addr,pk from outputs o,address a,scripts s where o.id=? and a.id=o.addr_id and s.out_id=o.id", (tx_id*4096 + n, ))
+                cur.execute("select value,addr,pk from outputs o,address a,scripts s where o.id=? and a.id=o.addr_id and s.out_id=o.id", (tx_id + (n<<40), ))
                 row = cur.fetchone()
                 if row == None:
-                    print "tx invalid - no output for this input", tx_id*4096 + n
+                    print "tx invalid - no output for this input", tx_id + (n<<40)
                     return False,0
                 value,pkh,pk = row
                 if not verifyInput(vin['scriptSig'], pk, pkh):
@@ -267,19 +267,18 @@ def insertAddress(cur, addr):
         cur.execute("select addr from address where id=?", (addr_id,))
         row = cur.fetchone()
         if row == None:
-            cur.execute("insert into address (id,addr) values(?,?)", (addr_id, pkh))
+            cur.execute("insert into address (id,addr) values(?,?)", (addr_id, db.Binary(pkh[5:])))
             return addr_id
-        elif str(row[0]) == str(pkh):
+        elif str(row[0]) == str(pkh[5:]):
             return addr_id
         print '!', # collision
         addr_id += 2
     
 def insertTx(cur, blk_id, txhash, inputs, extra): # extra is prunable: vers, locktime
     tx_id, = unpack('<q', txhash[:5]+'\0'*3)
-    tx_id /= 16
     while True:
         try: 
-            cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", (tx_id, db.Binary(txhash+extra), inputs, blk_id))
+            cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", (tx_id, db.Binary(txhash[5:]+extra), inputs, blk_id))
         except db.IntegrityError:
             print '#', # collision
             tx_id += 1
@@ -288,12 +287,11 @@ def insertTx(cur, blk_id, txhash, inputs, extra): # extra is prunable: vers, loc
     
 def findTx(cur, txhash, limit=256):
     tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
-    tx_id /= 16
     limit_id = tx_id+limit
     while True:
         cur.execute("select hash from trxs where id=?", (tx_id,))
         row = cur.fetchone()
-        if row and str(row[0][:32]) == str(txhash):
+        if row and str(row[0][:27]) == str(txhash[5:]):
             return tx_id
         if tx_id > limit_id:
             #print "tx miss", str(txhash[::-1]).encode('hex')
@@ -314,7 +312,7 @@ def insertBlock(cur, data):
                 qcnt += 1
             if 'txid' in vin:
                 tx_id = findTx(cur, db.Binary(vin['txid']))
-                in_id = tx_id*4096 + vin['vout']
+                in_id = tx_id + (vin['vout']<<40)
                 inputs += '%012x' % in_id
                 sig = vin['scriptSig'] + ('%08x' % vin['sequence']).decode('hex')
                 cur.execute("update scripts set sig=? where out_id=?", (db.Binary(sig), in_id))
@@ -323,14 +321,14 @@ def insertBlock(cur, data):
         qcnt += 1
         outputs = ''
         for vout in tx['vout']:
-            out_id = tx_id*4096 + vout['n']
+            out_id = tx_id + (vout['n']<<40)
             addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
             cur.execute("insert into outputs (id,addr_id,value) values(?,?,?)", (out_id, addr_id, vout['value']))
             pk = vout['scriptPubKey']['data']
             cur.execute("insert into scripts (out_id,pk) values (?,?)", (out_id, db.Binary(pk)))
             outputs += '%012x' % out_id
             qcnt += 3      
-     blktime = time.time() - blkstart
+    blktime = time.time() - blkstart
     print "[ %3d txs - %s - %4d q/s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(qcnt/blktime))
 
     

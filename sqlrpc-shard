@@ -92,7 +92,7 @@ def IsKbdCmd(cur):
 
 def processBlocks():
     rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332")
-    sql = db.connect('btc.db')
+    sql = db.connect('btc-shard.db')
     cur = sql.cursor()
     cur.execute("PRAGMA synchronous = OFF")
     cur.execute("PRAGMA journal_mode = OFF")
