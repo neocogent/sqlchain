@@ -92,8 +92,13 @@ def processBlocks():
     rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332")
     sql = db.connect('btc.db')
     cur = sql.cursor()
-    cur.execute("PRAGMA synchronous = OFF")
-    cur.execute("PRAGMA journal_mode = OFF")
+    cur.execute("PRAGMA default_cache_size = 50000;")
+    cur.execute("PRAGMA synchronous = OFF;")
+    cur.execute("PRAGMA journal_mode = MEMORY;")
+    cur.execute("PRAGMA locking_mode = EXCLUSIVE;")
+    cur.execute("PRAGMA count_changes = OFF;")
+    cur.execute("PRAGMA temp_store = MEMORY;")
+    cur.execute("PRAGMA auto_vacuum = NONE;")
     cur.execute('select ifnull(max(id)/4, -1) from blocks')
     startblk = blk = cur.fetchone()[0] + 1
     while IsKbdCmd(cur):
@@ -105,11 +110,11 @@ def processBlocks():
                     insertBlock(cur, data)
                     sql.commit()
                 except db.Error as err:
-                    print err
+                    print err, sys.exc_info()[0]
                     sql.rollback()
                 blk += 1
             else: break
-            
+                  
     return blk - startblk
 
 def decodeBlock(data):
@@ -210,13 +215,14 @@ def verifyTx(cur, block, tx):
                 if tx_id == None:
                     print "tx invalid - no tx for this input", vin['txid'][::-1].encode('hex'), tx['txid'][::-1].encode('hex')
                     return False,0
-                cur.execute("select value,addr,pk from outputs o,address a,scripts s where o.id=? and a.id=o.addr_id and s.out_id=o.id", (tx_id + (n<<40), ))
+                #cur.execute("select value,addr,pk from outputs o,address a,scripts s where o.id=? and a.id=o.addr_id and s.out_id=o.id", (tx_id<<12 + n, ))
+                cur.execute("select value,addr from outputs o,address a where o.id=? and a.id=o.addr_id", (tx_id<<12 + n, ))
                 row = cur.fetchone()
                 if row == None:
-                    print "tx invalid - no output for this input", tx_id + (n<<40)
+                    print "tx invalid - no output for this input", "%d %d %s" % (tx_id, tx_id<<12 + n, vin['txid'].encode('hex'))
                     return False,0
-                value,pkh,pk = row
-                if not verifyInput(vin['scriptSig'], pk, pkh):
+                value,pkh = row#,pk = row
+                if not verifyInput(vin['scriptSig'], 0, pkh): #pk, pkh):
                     print "bad input"
                     return False
                 fee += value
@@ -267,34 +273,35 @@ def insertAddress(cur, addr):
         cur.execute("select addr from address where id=?", (addr_id,))
         row = cur.fetchone()
         if row == None:
-            cur.execute("insert into address (id,addr) values(?,?)", (addr_id, db.Binary(pkh[5:])))
+            cur.execute("insert into address (id,addr) values(?,?)", (addr_id, db.Binary(pkh)))
             return addr_id
-        elif str(row[0]) == str(pkh[5:]):
+        elif str(row[0]) == str(pkh):
             return addr_id
         print '!', # collision
         addr_id += 2
     
-def insertTx(cur, blk_id, txhash, inputs, extra): # extra is prunable: vers, locktime
+def insertTx(cur, txhash): 
     tx_id, = unpack('<q', txhash[:5]+'\0'*3)
+    tx_id >>= 4
     while True:
-        try: 
-            cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", (tx_id, db.Binary(txhash[5:]+extra), inputs, blk_id))
-        except db.IntegrityError:
-            print '#', # collision
-            tx_id += 1
-        else: 
+        cur.execute("select hash from trxs where id=?", (tx_id,))
+        if cur.fetchone() == None:
             return tx_id
+        print '#', # collision
+        tx_id += 1
     
-def findTx(cur, txhash, limit=256):
+def findTx(cur, txhash, limit=32):
     tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
+    tx_id >>= 4    
     limit_id = tx_id+limit
     while True:
         cur.execute("select hash from trxs where id=?", (tx_id,))
         row = cur.fetchone()
-        if row and str(row[0][:27]) == str(txhash[5:]):
+        if row == None:
+            return None
+        if str(row[0][:32]) == txhash:
             return tx_id
         if tx_id > limit_id:
-            #print "tx miss", str(txhash[::-1]).encode('hex')
             return None
         tx_id += 1
 
@@ -302,35 +309,47 @@ def insertBlock(cur, data):
     print "block", data['height'],
     blkstart = time.time()
     blk_id = data['height']*4
-    cur.execute("insert into blocks (id,hash,hdr) values (?,?,?);", (blk_id, db.Binary(data['hash']), db.Binary(data['hdr'])))
-    qcnt = 1
+    trxs = []
+    pks = []
+    outs = [] 
+    sigs = []   
     for tx in data['tx']:
         inputs = ''
         for vin in tx['vin']:
             if 'coinbase' in vin:
-                cur.execute("update blocks set coinbase=? where id=?", (db.Binary(vin['coinbase']), blk_id))
-                qcnt += 1
-            if 'txid' in vin:
-                tx_id = findTx(cur, db.Binary(vin['txid']))
-                in_id = tx_id + (vin['vout']<<40)
-                inputs += '%012x' % in_id
-                sig = vin['scriptSig'] + ('%08x' % vin['sequence']).decode('hex')
-                cur.execute("update scripts set sig=? where out_id=?", (db.Binary(sig), in_id))
-                qcnt += 2
-        tx_id = insertTx(cur, blk_id, tx['txid'], db.Binary(inputs.decode('hex')), pack('<BI', tx['version'], tx['locktime']))
-        qcnt += 1
-        outputs = ''
+                data['coinbase'] = vin['coinbase']
+            elif 'txid' in vin:
+                tx_id = findTx(cur, vin['txid'])
+                in_id = tx_id<<12 + vin['vout']
+                inputs += pack('<Q', in_id)
+                sigs.append( (insertBlob(vin['scriptSig'] + pack('<I', vin['sequence'])), in_id) )
+                
+        tx_id = insertTx(cur, tx['txid'])
+        cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", ( tx_id, db.Binary(tx['txid'] + pack('<BI', tx['version'], tx['locktime'])), db.Binary(inputs), blk_id ) )
+
         for vout in tx['vout']:
-            out_id = tx_id + (vout['n']<<40)
+            out_id = tx_id<<12 + vout['n']
             addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
-            cur.execute("insert into outputs (id,addr_id,value) values(?,?,?)", (out_id, addr_id, vout['value']))
-            pk = vout['scriptPubKey']['data']
-            cur.execute("insert into scripts (out_id,pk) values (?,?)", (out_id, db.Binary(pk)))
-            outputs += '%012x' % out_id
-            qcnt += 3      
+            outs.append( ( out_id, addr_id, vout['value'] ) )
+            pks.append( (out_id, insertBlob(vout['scriptPubKey']['data'])) )
+
+    cur.executemany("insert into outputs (id,addr_id,value) values(?,?,?)", outs)
+    cur.executemany("update scripts set sig=? where out_id=?", sigs)
+    cur.executemany("insert into scripts (out_id,pk) values(?,?)", pks)
+    cur.execute("insert into blocks (id,hash,hdr,coinbase) values (?,?,?,?);", (blk_id, db.Binary(data['hash']), db.Binary(data['hdr']), db.Binary(data['coinbase'])))
+    
     blktime = time.time() - blkstart
+    qcnt = 1+len(sigs)+len(pks)+len(trxs)+len(outs)
     print "[ %3d txs - %s - %4d q/s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(qcnt/blktime))
 
+def insertBlob(data):
+    if len(data) == 0:
+        return 0
+    with open('blobs.dat', 'r+b') as blob:
+        blob.seek(0,2)
+        pos = blob.tell()
+        blob.write(data)
+    return pos
     
 if __name__ == '__main__':
 
