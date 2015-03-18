@@ -69,17 +69,20 @@ def IsKbdCmd(db):
 def processBlocks():
     rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332")
     db = { 'address': { 'fd':None, 'page':3, 'size':6+16 },
-           'trxs': { 'fd':None, 'page':4, 'size':6+32+6+4 },
+           'trxs': { 'fd':None, 'page':4, 'size':6+6+6+4 },
            'outputs': { 'fd':None, 'page':8, 'size':6+8+6 },
            'scripts': { 'fd':None, 'page':6, 'size':6+6+6 },
            'blocks': { 'fd':None, 'size':4+32+6 } }
               
     for f in db:
-        db[f]['fd'] = open(f+'.dat', 'r+b')
-        
-    db['blocks']['fd'].seek(db['blocks']['size'], 2)
-    chk = db['blocks']['fd'].read(db['blocks']['size'])
-    blk = unpack('<I', chk[:4]) / 4 if chk != '' else 0
+        db[f]['fd'] = open('data/'+f+'.dat', 'r+b')
+    
+    blk = 0
+    db['blocks']['fd'].seek(0,2)
+    if db['blocks']['fd'].tell() > 0:
+        db['blocks']['fd'].seek(-(db['blocks']['size']), 2)
+        chk = db['blocks']['fd'].read(db['blocks']['size'])
+        blk = unpack('<I', chk[:4]) / 4
     
     while IsKbdCmd(db):
         blkhash = rpc.getblockhash(blk)
@@ -167,6 +170,7 @@ def decodeVarInt(v):
     return unpack('<Q', v[1:9])[0],9
     
 def insertAddress(db, addr):
+    print 'inserting address', addr
     pkh = addr2pkh(addr)
     addr_id, = unpack('<q', pkh[:5]+'\0'*3) 
     addr_id *= 2
@@ -178,6 +182,7 @@ def insertAddress(db, addr):
     return addr_id
     
 def insertTx(db, blk_id, txhash, inputs, extra): 
+    print 'inserting tx', blk_id/4, txhash.encode('hex')
     tx_id, = unpack('<q', txhash[:5]+'\0'*3)
     tx_id /= 16
     while not insertSpace(db, tx_id, 1, True):
@@ -187,6 +192,7 @@ def insertTx(db, blk_id, txhash, inputs, extra):
     return tx_id
     
 def findTx(db, txhash, limit=32):
+    print 'finding tx', txhash.encode('hex')
     tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
     tx_id /= 16
     limit_id = tx_id+limit
@@ -203,12 +209,14 @@ def findTx(db, txhash, limit=32):
         tx_id += 1
         
 def insertOutputs(db, outs):
+    print 'inserting outputs', outs[0][0]
     insertSpace(db, outs[0][0], len(outs))
     for out_id,addr_id,value in outs:
         ids = pack('<QQ', out_id, addr_id)
         db['fd'].write( ids[:6] + pack('<Q', value) + ids[8:14] )
             
 def insertScripts(db, pks, sigs):
+    print 'inserting scripts', pks[0][0]
     insertSpace(db, pks[0][0], len(pks))
     for out_id,blob in pks:
         ids = pack('<QQ', out_id, blob)
@@ -229,14 +237,14 @@ def insertScripts(db, pks, sigs):
 def insertBlob(data):
     if len(data) == 0:
         return 0
-    with open('blobs.dat', 'r+b') as blob:
+    with open('data/blobs.dat', 'r+b') as blob:
         blob.seek(0,2)
         pos = blob.tell()
         blob.write(data)
     return pos
     
 def getBlob(pos, size):
-    with open('blobs.dat', 'rb') as blob:
+    with open('data/blobs.dat', 'rb') as blob:
         blob.seek(pos)
         data = blob.read(size)
     return data
@@ -244,12 +252,14 @@ def getBlob(pos, size):
 def insertSpace(db, rid, rows, bUnique=False):
     n = 0
     buf = []
+    print 'scanning space', (rid>>24), (rid>>24) * db['size'] * db['page'], rows, bUnique
     db['fd'].seek( (rid>>24) * db['size'] * db['page'] )
+    sys.stdout.flush
     while True:
         inspos = db['fd'].tell()
         chk = db['fd'].read(db['size'])
         if chk == '':
-            return
+            return True
         cid, = unpack('<Q', chk[:6]+'\0\0')
         if cid == 0:
             n = 1
@@ -257,7 +267,8 @@ def insertSpace(db, rid, rows, bUnique=False):
         elif cid > rid:
             buf.append(chk)
             break
-        elif bUnique: return False
+        elif cid == rid and bUnique: 
+            return False
         
     while n < rows:
         chk = db['fd'].read(db['size'])
@@ -285,7 +296,7 @@ def insertBlock(db, data):
             if 'coinbase' in vin:
                 data['coinbase'] = vin['coinbase']
             if 'txid' in vin:
-                tx_id = findTx(cur, vin['txid'])
+                tx_id = findTx(db, vin['txid'])
                 in_id = (tx_id << 12) + vin['vout']
                 inputs += pack('<Q', in_id)
                 sig = vin['scriptSig'] + pack('<I', vin['sequence'])
@@ -298,11 +309,11 @@ def insertBlock(db, data):
         outs = []
         for vout in tx['vout']:
             out_id = (tx_id << 12) + vout['n']
-            addr_id = insertAddress(db, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
+            addr_id = insertAddress(db['address'], vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
             pks.append( (out_id, insertBlob(vout['scriptPubKey']['data'])) )
             outs.append( ( out_id, addr_id, vout['value'] ) )
             rcnt += 2
-        insertOutputs(db['outputs'], tx_id<<12, outs)
+        insertOutputs(db['outputs'], outs)
         insertScripts(db['scripts'], pks, sigs)
         rcnt += 1
             
