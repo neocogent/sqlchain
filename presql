@@ -68,10 +68,10 @@ def IsKbdCmd(db):
 
 def processBlocks():
     rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332")
-    db = { 'address': { 'fd':None, 'page':3, 'size':6+16 },
-           'trxs': { 'fd':None, 'page':4, 'size':6+6+6+4 },
-           'outputs': { 'fd':None, 'page':8, 'size':6+8+6 },
-           'scripts': { 'fd':None, 'page':6, 'size':6+6+6 },
+    db = { 'address': { 'fd':None, 'page':3, 'size':6+16, 'pgbits':15 },
+           'trxs': { 'fd':None, 'page':4, 'size':6+6+6+4, 'pgbits':12 },
+           'outputs': { 'fd':None, 'page':8, 'size':6+8+6, 'pgbits':24 },
+           'scripts': { 'fd':None, 'page':6, 'size':6+6+6, 'pgbits':24 },
            'blocks': { 'fd':None, 'size':4+32+6 } }
               
     for f in db:
@@ -80,9 +80,11 @@ def processBlocks():
     blk = 0
     db['blocks']['fd'].seek(0,2)
     if db['blocks']['fd'].tell() > 0:
-        db['blocks']['fd'].seek(-(db['blocks']['size']), 2)
+        db['blocks']['fd'].seek( -(db['blocks']['size']), 2)
         chk = db['blocks']['fd'].read(db['blocks']['size'])
-        blk = unpack('<I', chk[:4]) / 4
+        blk, = unpack('<I', chk[:4])
+        blk = blk/4 + 1
+    startblk = blk
     
     while IsKbdCmd(db):
         blkhash = rpc.getblockhash(blk)
@@ -95,6 +97,8 @@ def processBlocks():
             else: break
             
     for f in db:
+        db[f]['fd'].flush()
+        os.fsync(db[f]['fd'].fileno())
         db[f]['fd'].close()
         
     return blk - startblk
@@ -170,7 +174,7 @@ def decodeVarInt(v):
     return unpack('<Q', v[1:9])[0],9
     
 def insertAddress(db, addr):
-    print 'inserting address', addr
+    #print 'inserting addr', addr
     pkh = addr2pkh(addr)
     addr_id, = unpack('<q', pkh[:5]+'\0'*3) 
     addr_id *= 2
@@ -182,7 +186,7 @@ def insertAddress(db, addr):
     return addr_id
     
 def insertTx(db, blk_id, txhash, inputs, extra): 
-    print 'inserting tx', blk_id/4, txhash.encode('hex')
+    #print 'inserting tx', txhash.encode('hex')
     tx_id, = unpack('<q', txhash[:5]+'\0'*3)
     tx_id /= 16
     while not insertSpace(db, tx_id, 1, True):
@@ -191,32 +195,30 @@ def insertTx(db, blk_id, txhash, inputs, extra):
     db['fd'].write( ids[:6] + ids[8:14] + ids[16:22] + pack('<I', blk_id) )
     return tx_id
     
-def findTx(db, txhash, limit=32):
-    print 'finding tx', txhash.encode('hex')
+def findTx(db, txhash, limit=32):  
     tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
     tx_id /= 16
     limit_id = tx_id+limit
-    db['fd'].seek( (tx_id>>24) * db['size'] * db['page'] )
+    db['fd'].seek( (tx_id>>db['pgbits']) * db['size'] * db['page'] )
     while True:
         chk = db['fd'].read(db['size'])
         cid,blob = unpack('<QQ', chk[:6]+'\0\0'+chk[6:12]+'\0\0')
         if cid == 0:
             return None
-        if cid == tx_id and txhash == getBlob(blob, 32):
-            return tx_id
+        if cid == tx_id:
+            if txhash == getBlob(blob, 32):
+                return tx_id
+            tx_id += 1
         if tx_id > limit_id:
             return None
-        tx_id += 1
         
 def insertOutputs(db, outs):
-    print 'inserting outputs', outs[0][0]
     insertSpace(db, outs[0][0], len(outs))
     for out_id,addr_id,value in outs:
         ids = pack('<QQ', out_id, addr_id)
         db['fd'].write( ids[:6] + pack('<Q', value) + ids[8:14] )
             
 def insertScripts(db, pks, sigs):
-    print 'inserting scripts', pks[0][0]
     insertSpace(db, pks[0][0], len(pks))
     for out_id,blob in pks:
         ids = pack('<QQ', out_id, blob)
@@ -228,11 +230,11 @@ def insertScripts(db, pks, sigs):
             cid, = unpack('<Q', chk[:6]+'\0\0')
             if cid == 0:
                 print 'sig insert error - no out_id', out_id
-                return
+                break
             if cid == out_id:
                 db['fd'].seek(-6,1)
                 db['fd'].write( pack('<Q', sig)[:6] )
-                return
+                break
    
 def insertBlob(data):
     if len(data) == 0:
@@ -252,15 +254,14 @@ def getBlob(pos, size):
 def insertSpace(db, rid, rows, bUnique=False):
     n = 0
     buf = []
-    print 'scanning space', (rid>>24), (rid>>24) * db['size'] * db['page'], rows, bUnique
-    db['fd'].seek( (rid>>24) * db['size'] * db['page'] )
-    sys.stdout.flush
+    db['fd'].seek( (rid>>db['pgbits']) * db['size'] * db['page'] )
     while True:
         inspos = db['fd'].tell()
         chk = db['fd'].read(db['size'])
         if chk == '':
             return True
         cid, = unpack('<Q', chk[:6]+'\0\0')
+        #print 'locating', cid, rid
         if cid == 0:
             n = 1
             break
@@ -272,12 +273,15 @@ def insertSpace(db, rid, rows, bUnique=False):
         
     while n < rows:
         chk = db['fd'].read(db['size'])
+        if chk == '':
+            db['fd'].seek((rows-n)*db['size'], 1)
+            break
         cid, = unpack('<Q', chk[:6]+'\0\0')
         if cid == 0:
             n += 1
         else:
             buf.append(chk)
-            
+    
     db['fd'].seek( -len(buf) * db['size'], 1)
     for row in buf:
         db['fd'].write(row)
@@ -296,7 +300,7 @@ def insertBlock(db, data):
             if 'coinbase' in vin:
                 data['coinbase'] = vin['coinbase']
             if 'txid' in vin:
-                tx_id = findTx(db, vin['txid'])
+                tx_id = findTx(db['trxs'], vin['txid'])
                 in_id = (tx_id << 12) + vin['vout']
                 inputs += pack('<Q', in_id)
                 sig = vin['scriptSig'] + pack('<I', vin['sequence'])
@@ -317,8 +321,7 @@ def insertBlock(db, data):
         insertScripts(db['scripts'], pks, sigs)
         rcnt += 1
             
-    db['blocks']['fd'].seek( 0, 2 )
-    db['blocks']['fd'].write( pack('<I32sQ', blk_id, data['hash'], insertBlob(data['hdr']+data['coinbase']))[:42] )
+    db['blocks']['fd'].write( pack('<I32sQ', blk_id, data['hash'], insertBlob(data['hdr']+data['coinbase']))[:db['blocks']['size']] )
     rcnt += 1
     blktime = time.time() - blkstart
     print "[ %3d txs - %s - %4d r/s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(rcnt/blktime))

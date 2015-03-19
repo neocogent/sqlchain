@@ -133,8 +133,9 @@ def decodeBlock(data):
         off += toff
         txcnt -= 1
     block['height'] = 0
-    if block['version'] > 1:
+    if block['version'] > 1 and block['height'] >= 227836 and block['tx'][0]['vin'][0]['coinbase'][0] == '\x03':
         block['height'] = unpack('<I', block['tx'][0]['vin'][0]['coinbase'][1:4]+'\0')[0]
+        #print 'coinbase height', block['height'], block['tx'][0]['vin'][0]['coinbase'][1:4].encode('hex')
     return block
 
 def verifyBlock(cur, data):
@@ -205,7 +206,10 @@ def verifyTx(cur, block, tx):
         if 'txid' in vin:
             n = vin['vout']
             vout = TxInBlock(block, tx['txid'], vin['txid']) # may be in same block
-            if vout and 'addr' in vout[n]['scriptPubKey']:
+            if vout:
+                if 'addr' not in vout[n]['scriptPubKey']:
+                    print "non-std input - no addr, ignoring"
+                    continue
                 if not verifyInput(vin['scriptSig'], vout[n]['scriptPubKey']['data'], vout[n]['scriptPubKey']['addr']):
                     print "bad input"
                     return False
@@ -215,11 +219,11 @@ def verifyTx(cur, block, tx):
                 if tx_id == None:
                     print "tx invalid - no tx for this input", vin['txid'][::-1].encode('hex'), tx['txid'][::-1].encode('hex')
                     return False,0
-                #cur.execute("select value,addr,pk from outputs o,address a,scripts s where o.id=? and a.id=o.addr_id and s.out_id=o.id", (tx_id<<12 + n, ))
-                cur.execute("select value,addr from outputs o,address a where o.id=? and a.id=o.addr_id", (tx_id<<12 + n, ))
+                #cur.execute("select value,addr,pk from outputs o,address a,scripts s where o.id=? and a.id=o.addr_id and s.out_id=o.id", ((tx_id<<12) + n, ))
+                cur.execute("select value,addr from outputs o,address a where o.id=? and a.id=o.addr_id", ((tx_id<<12) + n, ))
                 row = cur.fetchone()
                 if row == None:
-                    print "tx invalid - no output for this input", "%d %d %s" % (tx_id, tx_id<<12 + n, vin['txid'].encode('hex'))
+                    print "tx invalid - no output for this input", "%d %d %s" % (tx_id, (tx_id<<12) + n, vin['txid'].encode('hex'))
                     return False,0
                 value,pkh = row#,pk = row
                 if not verifyInput(vin['scriptSig'], 0, pkh): #pk, pkh):
@@ -228,7 +232,8 @@ def verifyTx(cur, block, tx):
                 fee += value
             
     for vout in tx['vout']:
-        fee -= vout['value']
+        if 'addr' in vout['scriptPubKey']:
+            fee -= vout['value']
         
     return True,fee
 
@@ -269,15 +274,17 @@ def insertAddress(cur, addr):
     addr_id *= 2
     if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
         addr_id += 1
+    start_id = addr_id
     while True:    
         cur.execute("select addr from address where id=?", (addr_id,))
         row = cur.fetchone()
         if row == None:
             cur.execute("insert into address (id,addr) values(?,?)", (addr_id, db.Binary(pkh)))
+            if addr_id != start_id:
+                print '!',
             return addr_id
         elif str(row[0]) == str(pkh):
             return addr_id
-        print '!', # collision
         addr_id += 2
     
 def insertTx(cur, txhash): 
@@ -309,7 +316,6 @@ def insertBlock(cur, data):
     print "block", data['height'],
     blkstart = time.time()
     blk_id = data['height']*4
-    trxs = []
     pks = []
     outs = [] 
     sigs = []   
@@ -320,7 +326,7 @@ def insertBlock(cur, data):
                 data['coinbase'] = vin['coinbase']
             elif 'txid' in vin:
                 tx_id = findTx(cur, vin['txid'])
-                in_id = tx_id<<12 + vin['vout']
+                in_id = (tx_id<<12) + vin['vout']
                 inputs += pack('<Q', in_id)
                 sigs.append( (insertBlob(vin['scriptSig'] + pack('<I', vin['sequence'])), in_id) )
                 
@@ -328,7 +334,7 @@ def insertBlock(cur, data):
         cur.execute("insert into trxs (id,hash,inputs,block_id) values(?,?,?,?)", ( tx_id, db.Binary(tx['txid'] + pack('<BI', tx['version'], tx['locktime'])), db.Binary(inputs), blk_id ) )
 
         for vout in tx['vout']:
-            out_id = tx_id<<12 + vout['n']
+            out_id = (tx_id<<12) + vout['n']
             addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
             outs.append( ( out_id, addr_id, vout['value'] ) )
             pks.append( (out_id, insertBlob(vout['scriptPubKey']['data'])) )
@@ -339,13 +345,12 @@ def insertBlock(cur, data):
     cur.execute("insert into blocks (id,hash,hdr,coinbase) values (?,?,?,?);", (blk_id, db.Binary(data['hash']), db.Binary(data['hdr']), db.Binary(data['coinbase'])))
     
     blktime = time.time() - blkstart
-    qcnt = 1+len(sigs)+len(pks)+len(trxs)+len(outs)
-    print "[ %3d txs - %s - %4d q/s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(qcnt/blktime))
+    print "[ %3d txs - %s - %4d tx/s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(len(data['tx'])/blktime))
 
 def insertBlob(data):
     if len(data) == 0:
         return 0
-    with open('blobs.dat', 'r+b') as blob:
+    with open('/var/data/blobs.dat', 'r+b') as blob:
         blob.seek(0,2)
         pos = blob.tell()
         blob.write(data)
