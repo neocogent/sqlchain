@@ -42,7 +42,7 @@ def addr2pkh(v):
         if c == alphabet[0]: nPad += 1
         else: break
     result = chr(0)*nPad + result
-    return buffer(result[1:-4])
+    return result[1:-4]
 
 def mkaddr(pkh):
     pad = ''
@@ -68,16 +68,16 @@ def IsKbdCmd(cur):
                 if state['pause']:
                     print "\n--- press space to resume ---"
             elif key == 's':
-                cur.execute('select count() from trxs')
+                cur.execute('select count(*) from trxs')
                 print "\nTx: {:,}".format(cur.fetchone()[0])
-                cur.execute('select count() from outputs')
+                cur.execute('select count(*) from outputs')
                 outs = cur.fetchone()[0]
-                cur.execute('select count() from scripts where length(sig) > 0')
+                cur.execute('select count(*) from outputs where sig != 0')
                 spent = cur.fetchone()[0]
-                print "TxO: {:,}\nuTxO: {:,} - {:.0%}".format(outs, outs-spent, float(outs-spent)/outs)
-                cur.execute('select count() from address')
+                print "TxO: {:,}\nUTxO: {:,} - {:.0%}".format(outs, outs-spent, float(outs-spent)/outs)
+                cur.execute('select count(*) from address')
                 print "Addr: {:,}".format(cur.fetchone()[0])
-                print "Size: %4.1f MB" % (os.path.getsize('btc.db')/1e6)
+                #print "Size: %4.1f MB" % (os.path.getsize('btc.db')/1e6)
                 print
             elif key == 'b':
                 import shutil
@@ -93,23 +93,22 @@ def processBlocks():
     sql = db.connect('localhost','btc','test623btc','bitcoin')
     cur = sql.cursor()
     cur.execute('select ifnull(max(id)/4, -1) from blocks')
-    startblk = blk = cur.fetchone()[0] + 1
+    startblk = blk = int(cur.fetchone()[0] + 1)
     while IsKbdCmd(cur):
-        blkhash = rpc.getblockhash(int(blk))
+        blkhash = rpc.getblockhash(blk)
         if blkhash:
             data = decodeBlock(rpc.getblock(blkhash, False).decode('hex'))
             if data and verifyBlock(cur, data):
                 try:
                     insertBlock(cur, data)
-                    sql.commit()
+                    #sql.commit()
                 except db.Error as err:
                     print err, sys.exc_info()[0]
-                    sql.rollback()
-                    break
+                    #sql.rollback()
                 blk += 1
             else: break
-            
-    return int(blk - startblk)
+                  
+    return blk - startblk
 
 def decodeBlock(data):
     hdr = ['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
@@ -127,8 +126,9 @@ def decodeBlock(data):
         off += toff
         txcnt -= 1
     block['height'] = 0
-    if block['version'] > 1:
+    if block['version'] > 1 and block['height'] >= 227836 and block['tx'][0]['vin'][0]['coinbase'][0] == '\x03':
         block['height'] = unpack('<I', block['tx'][0]['vin'][0]['coinbase'][1:4]+'\0')[0]
+        #print 'coinbase height', block['height'], block['tx'][0]['vin'][0]['coinbase'][1:4].encode('hex')
     return block
 
 def verifyBlock(cur, data):
@@ -199,7 +199,10 @@ def verifyTx(cur, block, tx):
         if 'txid' in vin:
             n = vin['vout']
             vout = TxInBlock(block, tx['txid'], vin['txid']) # may be in same block
-            if vout and 'addr' in vout[n]['scriptPubKey']:
+            if vout:
+                if 'addr' not in vout[n]['scriptPubKey']:
+                    print "non-std input - no addr, ignoring"
+                    continue
                 if not verifyInput(vin['scriptSig'], vout[n]['scriptPubKey']['data'], vout[n]['scriptPubKey']['addr']):
                     print "bad input"
                     return False
@@ -209,10 +212,11 @@ def verifyTx(cur, block, tx):
                 if tx_id == None:
                     print "tx invalid - no tx for this input", vin['txid'][::-1].encode('hex'), tx['txid'][::-1].encode('hex')
                     return False,0
-                cur.execute("select value,addr,pk from outputs o,address a,scripts s where o.id=%s and a.id=o.addr_id and s.out_id=o.id", (tx_id*4096 + n, ))
+                cur.execute("select value,addr,pk from outputs o,address a where o.id=%s and a.id=o.addr_id", ((tx_id<<12) + n, ))
+                
                 row = cur.fetchone()
                 if row == None:
-                    print "tx invalid - no output for this input", tx_id*4096 + n
+                    print "tx invalid - no output for this input", "%d %d %s" % (tx_id, (tx_id<<12) + n, vin['txid'].encode('hex'))
                     return False,0
                 value,pkh,pk = row
                 if not verifyInput(vin['scriptSig'], pk, pkh):
@@ -221,7 +225,8 @@ def verifyTx(cur, block, tx):
                 fee += value
             
     for vout in tx['vout']:
-        fee -= vout['value']
+        if 'addr' in vout['scriptPubKey']:
+            fee -= vout['value']
         
     return True,fee
 
@@ -262,40 +267,41 @@ def insertAddress(cur, addr):
     addr_id *= 2
     if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
         addr_id += 1
+    start_id = addr_id
     while True:    
         cur.execute("select addr from address where id=%s", (addr_id,))
         row = cur.fetchone()
         if row == None:
             cur.execute("insert into address (id,addr) values(%s,%s)", (addr_id, pkh))
+            if addr_id != start_id:
+                print '!',
             return addr_id
         elif str(row[0]) == str(pkh):
             return addr_id
-        print '!', # collision
         addr_id += 2
     
-def insertTx(cur, blk_id, txhash, inputs, extra): # extra is prunable: vers, locktime
+def insertTx(cur, txhash): 
     tx_id, = unpack('<q', txhash[:5]+'\0'*3)
-    tx_id /= 16
+    tx_id >>= 4
     while True:
-        try: 
-            cur.execute("insert into trxs (id,hash,inputs,block_id) values(%s,%s,%s,%s)", (tx_id, txhash+extra, inputs, blk_id))
-        except db.IntegrityError:
-            print '#', # collision
-            tx_id += 1
-        else: 
+        cur.execute("select hash from trxs where id=%s", (tx_id,))
+        if cur.fetchone() == None:
             return tx_id
+        print '#', # collision
+        tx_id += 1
     
-def findTx(cur, txhash, limit=256):
+def findTx(cur, txhash, limit=32):
     tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
-    tx_id /= 16
+    tx_id >>= 4    
     limit_id = tx_id+limit
     while True:
         cur.execute("select hash from trxs where id=%s", (tx_id,))
         row = cur.fetchone()
-        if row and str(row[0][:32]) == str(txhash):
+        if row == None:
+            return None
+        if str(row[0][:32]) == txhash:
             return tx_id
         if tx_id > limit_id:
-            #print "tx miss", str(txhash[::-1]).encode('hex')
             return None
         tx_id += 1
 
@@ -303,35 +309,42 @@ def insertBlock(cur, data):
     print "block", data['height'],
     blkstart = time.time()
     blk_id = data['height']*4
-    cur.execute("insert into blocks (id,hash,hdr) values (%s,%s,%s);", (blk_id, data['hash'], data['hdr']))
-    qcnt = 1
+    outs = [] 
+    sigs = []   
     for tx in data['tx']:
         inputs = ''
         for vin in tx['vin']:
             if 'coinbase' in vin:
-                cur.execute("update blocks set coinbase=%s where id=%s", (vin['coinbase'], blk_id))
-                qcnt += 1
-            if 'txid' in vin:
+                data['coinbase'] = vin['coinbase']
+            elif 'txid' in vin:
                 tx_id = findTx(cur, vin['txid'])
-                in_id = tx_id*4096 + vin['vout']
-                inputs += '%012x' % in_id
-                sig = vin['scriptSig'] + ('%08x' % vin['sequence']).decode('hex')
-                cur.execute("update scripts set sig=%s where out_id=%s", (sig, in_id))
-                qcnt += 2
-        tx_id = insertTx(cur, blk_id, tx['txid'], inputs.decode('hex'), pack('<BI', tx['version'], tx['locktime']))
-        qcnt += 1
-        outputs = ''
-        for vout in tx['vout']:
-            out_id = tx_id*4096 + vout['n']
-            addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
-            cur.execute("insert into outputs (id,addr_id,value) values(%s,%s,%s)", (out_id, addr_id, vout['value']))
-            pk = vout['scriptPubKey']['data']
-            cur.execute("insert into scripts (out_id,pk) values (%s,%s)", (out_id, pk))
-            outputs += '%012x' % out_id
-            qcnt += 3
-    blktime = time.time() - blkstart
-    print "[ %3d txs - %s - %4d q/s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(qcnt/blktime))
+                in_id = (tx_id<<12) + vin['vout']
+                inputs += pack('<Q', in_id)
+                sigs.append( (insertBlob(vin['scriptSig'] + pack('<I', vin['sequence'])), in_id) )
+                
+        tx_id = insertTx(cur, tx['txid'])
+        cur.execute("insert into trxs (id,hash,inputs,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version'], tx['locktime']), inputs, blk_id ) )
 
+        for vout in tx['vout']:
+            out_id = (tx_id<<12) + vout['n']
+            addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
+            outs.append( ( out_id, addr_id, vout['value'], insertBlob(vout['scriptPubKey']['data']) ) )
+
+    cur.executemany("insert into outputs (id,addr_id,value,pk) values(%s,%s,%s,%s)", outs)
+    cur.executemany("update outputs set sig=%s where id=%s", sigs)
+    cur.execute("insert into blocks (id,hash,hdr,coinbase) values (%s,%s,%s,%s);", (blk_id, data['hash'], data['hdr'], data['coinbase']))
+    
+    blktime = time.time() - blkstart
+    print "[ %3d txs - %s - %4d tx/s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(len(data['tx'])/blktime))
+
+def insertBlob(data):
+    if len(data) == 0:
+        return 0
+    with open('/var/data/blobs.dat', 'r+b') as blob:
+        blob.seek(0,2)
+        pos = blob.tell()
+        blob.write(data)
+    return pos
     
 if __name__ == '__main__':
 
