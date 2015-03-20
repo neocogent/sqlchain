@@ -250,7 +250,7 @@ def decodeScriptPK(data):
     if data[:3] == '\x76\xa9\x14' and data[23:25] == '\x88\xac': # P2PKH
         return { 'type':'p2pkh', 'data':'', 'addr':mkaddr(data[3:23]) };
     if data[0] == '\xa9' and data[21] == '\x87': # P2SH
-        return { 'type':'p2sh', 'data':'', 'addr':data[1:21] };
+        return { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[1:21],5) };
     if data[0] == '\x41' and data[66] == '\xac': # P2PK
         return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
     if len(data) <= 41 and data[0] == '\x6a': # NULL
