@@ -44,9 +44,9 @@ def addr2pkh(v):
     result = chr(0)*nPad + result
     return result[1:-4]
 
-def mkaddr(pkh):
+def mkaddr(pkh, ver=0):
     pad = ''
-    an = chr(0) + str(pkh)
+    an = chr(ver) + str(pkh)
     for c in an:
         if c == '\0': pad += '1'
         else: break

@@ -9,10 +9,9 @@ from bitcoinrpc.authproxy import AuthServiceProxy
 from decimal import *
 from struct import pack, unpack, unpack_from
 import json, hashlib
+import threading
 
 state = { 'pause':False }
-
-addr_id = 0
 
 alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -38,9 +37,9 @@ def addr2pkh(v):
     result = chr(0)*nPad + result
     return result[1:-4]
 
-def mkaddr(pkh):
+def mkaddr(pkh, ver=0):
     pad = ''
-    an = chr(0) + str(pkh)
+    an = chr(ver) + str(pkh)
     for c in an:
         if c == '\0': pad += '1'
         else: break
@@ -71,23 +70,27 @@ def IsKbdCmd(db):
 def processBlocks(blk):
     rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@localhost:8332")
     db = { 'address': None, 'trxs': None, 'outputs': None, 'inputs': None, 'blocks': None }
-              
+    startblk = blk
     for f in db:
         db[f] = open(f+'.sql', 'a+')
-    startblk = blk
     
+    wrkr = None
     while IsKbdCmd(db):
         netstart = time.time()
         blkhash = rpc.getblockhash(blk)
         if blkhash:
             data = decodeBlock(rpc.getblock(blkhash, False).decode('hex'))
-            print 'rpc %.03f' % ((time.time()-netstart),),
             if data: 
                 data['height'] = int(blk)
-                insertBlock(db, data)
+                if wrkr:
+                    wrkr.join()
+                print 'rpc %.03f' % ((time.time()-netstart),),
+                wrkr = threading.Thread(target = insertBlock, args=(db, data))
+                wrkr.start()
                 blk += 1
             else: break
-            
+    
+    wrkr.join()
     for f in db:
         db[f].close()
         
@@ -164,15 +167,13 @@ def decodeVarInt(v):
         return unpack('<I', v[1:5])[0],5
     return unpack('<Q', v[1:9])[0],9
     
-def insertAddress(db, addr):
-    global addr_id
+def insertAddress(db, addr_id, addr):
     pkh = addr2pkh(addr)
-    aid = addr_id
-    if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
-        aid += 1
-    db['address'].write("insert into address (id,addr) values(%d,x'%s');\n" % (aid, pkh.encode('hex')))
-    addr_id += 2
-    return aid  
+    addr_id *= 2
+    if addr[0] == '1': # encode P2SH as even id, P2PKH as odd id
+        addr_id += 1
+    db['address'].write("insert into address (id,addr) values(%d,x'%s');\n" % (addr_id, pkh.encode('hex')))
+    return addr_id 
    
 def insertBlob(data):
     if len(data) == 0:
@@ -196,8 +197,7 @@ def insertBlock(db, data):
 
         db['trxs'].write("insert into trxs (id,hash,block_id) values(%d,x'%s',%d);\n" % (blk_id*1000+ntx, (tx['txid'] + pack('<BI', tx['version'], tx['locktime'])).encode('hex'), blk_id))
         for vout in tx['vout']:
-            if 'addr' in vout['scriptPubKey']:
-                addr_id = insertAddress(db, vout['scriptPubKey']['addr'])
+            addr_id = insertAddress(db, (blk_id*1000+ntx)*4096+vout['n'], vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
             db['outputs'].write("insert into outputs (id,value,addr_id,pk) values(%d,%ld,%d,%ld);\n" % ((blk_id*1000+ntx)*4096+vout['n'], vout['value'], addr_id, insertBlob(vout['scriptPubKey']['data']) ))
             
     db['blocks'].write("insert into blocks (id,hash,hdr) values(%d,x'%s',x'%s');\n" % ( blk_id, data['hash'].encode('hex'), (data['hdr']+data['coinbase']).encode('hex') ) )
