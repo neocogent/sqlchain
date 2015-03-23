@@ -1,6 +1,18 @@
 #!/usr/bin/env python
 #
-# sqlcoin - build sql blockchain db
+#   presql - build sql blockchain db
+#
+#   initial step is to write a sql dump
+#   that can be loaded into mysql quickly
+#   without indexing
+#
+#   to do this the sql nneds to be "flat"
+#   this is, not have references between tables
+#   relying on indexing 
+#
+#   after tables are full of data we index 
+#   much quicker in one final step using fixsql
+#   script
 #
 
 import os, sys, socket, datetime, time
@@ -193,16 +205,17 @@ def insertBlock(db, data):
             if 'coinbase' in vin:
                 data['coinbase'] = vin['coinbase']
             if 'txid' in vin:
-                db['inputs'].write("insert into inputs (id,sig) values(x'%s',%ld);\n" % (vin['txid'].encode('hex'), insertBlob(vin['scriptSig'] + pack('<I', vin['sequence'])) ) )
-
+                db['inputs'].write("insert into inputs (id,hash,out,sig) values(%d,x'%s',%ld);\n" % (blk_id*1000+ntx, vin['txid'].encode('hex'), vin['vout'], insertBlob(vin['scriptSig'] + pack('<I', vin['sequence'])) ) )
+        
         db['trxs'].write("insert into trxs (id,hash,block_id) values(%d,x'%s',%d);\n" % (blk_id*1000+ntx, (tx['txid'] + pack('<BI', tx['version'], tx['locktime'])).encode('hex'), blk_id))
         for vout in tx['vout']:
             addr_id = insertAddress(db, (blk_id*1000+ntx)*4096+vout['n'], vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
             db['outputs'].write("insert into outputs (id,value,addr_id,pk) values(%d,%ld,%d,%ld);\n" % ((blk_id*1000+ntx)*4096+vout['n'], vout['value'], addr_id, insertBlob(vout['scriptPubKey']['data']) ))
             
     db['blocks'].write("insert into blocks (id,hash,hdr) values(%d,x'%s',x'%s');\n" % ( blk_id, data['hash'].encode('hex'), (data['hdr']+data['coinbase']).encode('hex') ) )
+    
     blktime = time.time() - blkstart
-    print "[ %3d txs - %s - %4d tx/s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), int(len(data['tx'])/blktime))
+    print "[ %3d txs - %s ]" % (len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y')), blktime)
 
     
 if __name__ == '__main__':
