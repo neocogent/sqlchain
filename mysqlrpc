@@ -341,8 +341,9 @@ def insertBlock(cur, data):
                         if (passmask & 0x8) != 0:
                             sigs.append( (insertBlob(vin['scriptSig'] + pack('<I', vin['sequence'])), in_id) )
         
-        if (passmask & 0x4) != 0:
-            tx_id = findTx(cur, tx['txid'], mknew=True)
+        if (passmask & 0xC) != 0:
+            tx_id = findTx(cur, tx['txid'], mkNew=True)
+        if (passmask & 0x4) != 0:            
             cur.execute("insert ignore into trxs (id,hash,inputs,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version'], tx['locktime']), inputs, blk_id ) )
         
         if (passmask & 0xA) != 0:
