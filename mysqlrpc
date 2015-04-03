@@ -2,9 +2,8 @@
 #
 #   mysqlrpc - update sql blockchain db
 #
-#   after initializing a mysql blockchain db
-#   with presql and fixsql this script can be 
-#   used to keep it current
+#   can be used in multipass mode in attempt to speed up conversion
+#   
 #
 
 import os, sys, socket, datetime, time

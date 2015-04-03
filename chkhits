@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 #
+#  Check how many collisions occur in table using id based on truncated hash.
+#
 import os, sys
 import MySQLdb as db
 
