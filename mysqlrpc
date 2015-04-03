@@ -88,7 +88,7 @@ def IsKbdCmd(cur):
 
 def getBlocks(blk):
     global passmask
-    rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@localhost:8332")
+    rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332")
     blkChkPoint = rpc.getblockcount() # prevent wasteful rpc calls when known redundant
     sql = db.connect('localhost','btc','test623btc','bitcoin')
     cur = sql.cursor()
@@ -364,7 +364,7 @@ def insertBlock(cur, data):
 def insertBlob(data):
     if len(data) == 0:
         return 0
-    with open('/var/data/blobs.dat', 'r+b') as blob:
+    with open('/media/Data/blobs.dat', 'r+b') as blob:
         blob.seek(0,2)
         pos = blob.tell()
         blob.write(data)
@@ -413,7 +413,7 @@ if __name__ == '__main__':
     finally:
         done.set()
         blkwrk.join()
-        print "Session %.1f blks/s" % float(blks / (time.time() - workstart))
+        print "Session %.2f blks/s" % float(blks / (time.time() - workstart))
                 
         # restore console
         termios.tcsetattr(fd, termios.TCSAFLUSH, oldterm)
