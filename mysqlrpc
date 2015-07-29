@@ -87,6 +87,7 @@ def IsKbdCmd(cur):
 
 def getBlocks(blk):
     global passmask
+    #rpc = AuthServiceProxy("http://coinview:2XNrGCs8KQ7AodsgzBRJzroBRDYNt7rfCtqDAQNh4Ggr@localhost:8332")
     rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332")
     blkChkPoint = rpc.getblockcount() # prevent wasteful rpc calls when known redundant
     sql = db.connect('localhost','btc','test623btc','bitcoin')
@@ -280,6 +281,15 @@ def decodeVarInt(v):
         return unpack('<I', v[1:5])[0],5
     return unpack('<Q', v[1:9])[0],9
     
+def encodeVarInt(v):
+    if v <= 252:
+        return pack('<B', v)
+    if v < 2**16:
+        return '\xfd' + pack('<H', v)
+    if v < 2**32:
+        return '\xfe' + pack('<I', v)
+    return '\xff' + pack('<Q', v)
+    
 def insertAddress(cur, addr):
     pkh = addr2pkh(addr)
     addr_id, = unpack('<q', pkh[:5]+'\0'*3) 
@@ -325,35 +335,41 @@ def insertBlock(cur, data):
     blkstart = time.time()
     blk_id = data['height']*4
     outs = [] 
-    sigs = []
+    ins = []
     for tx in data['tx']:
         inputs = ''
+        txdata = ''
+        if (passmask & 0xC) != 0:
+            tx_id = findTx(cur, tx['txid'], mkNew=True)        
         if (passmask & 0xD) != 0:
             for vin in tx['vin']:
                 if 'coinbase' in vin:
                     data['coinbase'] = vin['coinbase']
                 elif (passmask & 0xC) != 0 and ( 'txid' in vin ):
-                    tx_id = findTx(cur, vin['txid'])
-                    if tx_id:
-                        in_id = (tx_id<<12) + vin['vout']
-                        inputs += pack('<Q', in_id)
+                    in_id = findTx(cur, vin['txid'])
+                    if in_id:
+                        in_id = (in_id<<12) + vin['vout']
                         if (passmask & 0x8) != 0:
-                            sigs.append( (insertBlob(vin['scriptSig'] + pack('<I', vin['sequence'])), in_id) )
-        
-        if (passmask & 0xC) != 0:
-            tx_id = findTx(cur, tx['txid'], mkNew=True)
-        if (passmask & 0x4) != 0:            
-            cur.execute("insert ignore into trxs (id,hash,inputs,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version'], tx['locktime']), inputs, blk_id ) )
-        
-        if (passmask & 0xA) != 0:
+                            ins.append((tx_id, in_id))
+                        if (passmask & 0x4) != 0:
+                            inputs += pack('<Q', in_id)
+                            txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig'] + pack('<I', vin['sequence'])
+                            
+        if (passmask & 0xE) != 0:
             for vout in tx['vout']:
                 addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
                 if (passmask & 0x8) != 0:
-                    outs.append( ( (tx_id<<12) + vout['n'], addr_id, vout['value'], insertBlob(vout['scriptPubKey']['data']) ) )
+                    outs.append( ( (tx_id<<12) + vout['n'], addr_id, vout['value'] ) )
+                if (passmask & 0x4) != 0:
+                    txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
+                    
+        if (passmask & 0x4) != 0:  
+            txdata = pack('<HH', len(inputs)/8, len(tx['vout'])) + inputs + txdata
+            cur.execute("insert ignore into trxs (id,hash,txdata,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version'], tx['locktime']), insertBlob(txdata), blk_id ) )
     
     if (passmask & 0x8) != 0:
-        cur.executemany("insert ignore into outputs (id,addr_id,value,pk) values(%s,%s,%s,%s)", outs)
-        cur.executemany("update outputs set sig=%s where id=%s", sigs)
+        cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
+        cur.executemany("update outputs set tx_id=%s where id=%s", ins)
     if (passmask & 0x1) != 0:
         cur.execute("insert ignore into blocks (id,hash,hdr) values (%s,%s,%s);", (blk_id, data['hash'], data['hdr']+data['coinbase']))
     
@@ -363,7 +379,7 @@ def insertBlock(cur, data):
 def insertBlob(data):
     if len(data) == 0:
         return 0
-    with open('/media/Data/blobs.dat', 'r+b') as blob:
+    with open('/var/data/blobs.dat', 'r+b') as blob:
         blob.seek(0,2)
         pos = blob.tell()
         blob.write(data)
@@ -372,6 +388,8 @@ def insertBlob(data):
 if __name__ == '__main__':
 
     # set up the pass mask for selecting which tables to process
+    # processing tables sequentially is useful for low memory ram based tables
+    # to improve speed when an SSD is not available
     if len(sys.argv) > 1:
         for c in sys.argv[1]:
             p = "bato".find(c)
@@ -403,20 +421,31 @@ if __name__ == '__main__':
     blkwrk = threading.Thread(target = processBlocks)
     blkwrk.start()
     
-    try:
-        blks = getBlocks(blk)
-    except socket.error:
-        print "Cannot connect to rpc"
-    except KeyboardInterrupt:
-        pass
-    finally:
-        done.set()
-        blkwrk.join()
+    blks = None
+    while True:
+        try:
+            blks = getBlocks(blk)
+            break
+        except socket.error:
+            print "Cannot connect to rpc"
+            time.sleep(10)
+            pass
+        except KeyboardInterrupt:
+            pass
+        except:
+            print "Unknown error"
+            time.sleep(5)
+            pass
+    
+    # let block processing finish
+    done.set()
+    blkwrk.join()
+    if blks:
         print "Session %.2f blks/s" % float(blks / (time.time() - workstart))
-                
-        # restore console
-        termios.tcsetattr(fd, termios.TCSAFLUSH, oldterm)
-        fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
+    
+    # restore console
+    termios.tcsetattr(fd, termios.TCSAFLUSH, oldterm)
+    fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
 
     
 
