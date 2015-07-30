@@ -366,7 +366,7 @@ def insertBlock(cur, data):
                     
         if (passmask & 0x4) != 0:  
             txdata = pack('<HH', len(inputs)/8, len(tx['vout'])) + inputs + txdata
-            cur.execute("insert ignore into trxs (id,hash,txdata,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version'], tx['locktime']), insertBlob(txdata), blk_id ) )
+            cur.execute("insert ignore into trxs (id,hash,txdata,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version']&0xFF, tx['locktime']), insertBlob(txdata), blk_id ) )
     
     if (passmask & 0x8) != 0:
         cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)

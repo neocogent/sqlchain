@@ -6,7 +6,7 @@ import MySQLdb as db
 import json
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from SocketServer import ThreadingMixIn
-import threading, mimetypes, ssl
+import threading, mimetypes, ssl, hashlib
 from struct import pack, unpack, unpack_from
 
 #add bitcoin.conf: blocknotify="curl -s --connect-timeout 1 http://localhost:8085/notify -d %s -d pwd=testing"
@@ -65,7 +65,7 @@ class WebHandler(BaseHTTPRequestHandler):
         if path.startswith("/block-index/"):
             blk = path[13:]
             if blk.isdigit():
-                cur.execute("select hash from blocks where id=%s*4;", (blk,))
+                cur.execute("select hash from blocks where id=%s*4 limit 1;", (blk,))
                 row = cur.fetchone()
                 if row:
                     return { 'blockHash': row[0][::-1].encode('hex') }
@@ -73,12 +73,12 @@ class WebHandler(BaseHTTPRequestHandler):
             blkhash = path[7:]
             if len(blkhash) == 64 and all(c in string.hexdigits for c in blkhash):
                 data = { 'hash':blkhash, 'tx':[] }
-                cur.execute("select * from blocks where hash=%s;", (blkhash.decode('hex')[::-1],))
+                cur.execute("select id,hash,hdr from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
                 row = cur.fetchone()
                 if row:
                     data['height'] = int(int(row[0])/4)
                     data['confirmations'] = cfg['block'] - data['height']
-                    data.update(dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', row[2]))))
+                    data.update(gethdr(row[2]))
                     data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
                     data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
                     data['difficulty'] = bits2diff(data['bits'])
@@ -88,11 +88,31 @@ class WebHandler(BaseHTTPRequestHandler):
                     cur.execute("select hash from trxs where block_id=%s;", (row[0],))
                     for tx in cur:
                         data['tx'].append(tx[0][:32][::-1].encode('hex'))
-                    cur.execute("select hash from blocks where id=%s*4;", (data['height']+1,))
+                    cur.execute("select hash from blocks where id=%s*4 limit 1;", (data['height']+1,))
                     row = cur.fetchone()
                     if row:
                         data['nextblockhash'] = row[0][::-1].encode('hex')
                 return data
+        if path.startswith("/tx/"):
+            txhash = path[4:]
+            if len(txhash) == 64 and all(c in string.hexdigits for c in txhash):
+                data = { 'txid':txhash }
+                th = txhash.decode('hex')[::-1]
+                tid = unpack('<q', th[:5]+'\0'*3)[0] >> 4
+                cur.execute("select id,hash,txdata,block_id from trxs where id>=%s and left(hash,32)=%s limit 1;", (tid,th))
+                row = cur.fetchone()
+                if row:
+                    data['confirmations'] = cfg['block'] - row[3]/4
+                    data['version'],data['locktime'] = unpack_from('<BI', row[1], 32)
+                    data['valueIn'],data['vin'] = mkInputs(cur, int(row[2]))
+                    data['valueOut'],data['vout'] = mkOutputs(cur, int(row[0]))
+                    data['fees'] = data['valueIn'] - data['valueOut']
+                    cur.execute("select hash,hdr from blocks where id=%s limit 1;", (row[3],))
+                    row = cur.fetchone()
+                    if row:
+                        data['blockhash'] = row[0][::-1].encode('hex')
+                        data['time'] = data['blocktime'] = gethdr(row[1])['time']
+                    return data
             
         return { 'error': 'no result' }
         
@@ -171,10 +191,71 @@ def is_address(addr):
         return btc[-4:] == sha256(sha256(btc[:-4]).digest()).digest()[:4]
     except Exception:
         return False
+        
+def mkaddr(pkh, ver=0):
+    pad = ''
+    an = chr(ver) + str(pkh)
+    for c in an:
+        if c == '\0': pad += '1'
+        else: break
+    num = long((an + hashlib.sha256(hashlib.sha256(an).digest()).digest()[0:4]).encode('hex'), 16)
+    out = ''
+    while num >= 58:
+        num,m = divmod(num, 58)
+        out = b58[m] + out
+    return pad + b58[num] + out            
             
 def bits2diff(bits):
     return (0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))))
+def gethdr(data):
+    return dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
     
+    
+def mkInputs(cur, blob):
+    total = 0
+    data = []
+    ins,outs = unpack('<HH', readBlob(blob, 4))
+    inputs = unpack('<'+'Q'*ins, readBlob(blob+4, ins*8))
+    for n,in_id in enumerate(inputs):
+        cur.execute("select value,addr,left(hash,32) from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id,in_id/4096))
+        row = cur.fetchone()
+        if row:
+            btc = float(row[0])/1e8
+            data.append({ 'n':n, 'vout':in_id%4096, 'value':btc, 'valueSat':int(row[0]), 'txid':row[2][::-1].encode('hex'), 'addr':mkaddr(row[1]) })
+            total += btc
+    return total,data
+    
+def mkOutputs(cur, txid):
+    total = 0
+    data = []
+    cur.execute("select o.id%%4096,value,addr,o.tx_id,o.id from outputs o, address a where o.id>=%s*4096 and o.id<%s*4096 and a.id=o.addr_id;", (txid,txid+1))
+    outs = cur.fetchall()
+    for out in outs:
+        btc = float(out[1])/1e8
+        vo = { 'n':int(out[0]), 'value':"%1.8f" % btc }
+        vo['scriptPubKey'] = { 'addresses':[ mkaddr(out[2]) ] }
+        if out[3]:
+            vo.update(mkSpent(cur, int(out[3]), int(out[4])))
+        total += btc
+        data.append(vo)
+    return total,data
+    
+def mkSpent(cur, txid, outid):
+    cur.execute("select txdata,left(t.hash,32),hdr from trxs t, blocks b where t.id=%s and b.id=t.block_id;", (txid,))
+    row = cur.fetchone()
+    if row:
+        ins,outs = unpack('<HH', readBlob(int(row[0]), 4))
+        inputs = unpack('<'+'Q'*ins, readBlob(int(row[0])+4, ins*8))
+        return { 'spentTxId':row[1][::-1].encode('hex'), 'spentIndex':inputs.index(outid), 'spentTs':gethdr(row[2])['time'] }
+    return {}
+
+def readBlob(pos, sz):
+    if sz != 0:
+        with open('/var/data/blobs.dat', 'rb') as blob:
+            blob.seek(pos)
+            return blob.read(sz)
+    return None
+        
 def sigterm_handler(_signo, _stack_frame):
     logts("Shutting down.")
     sys.exit(0)
