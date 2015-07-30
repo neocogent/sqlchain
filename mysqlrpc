@@ -92,9 +92,10 @@ def getBlocks(blk):
     blkChkPoint = rpc.getblockcount() # prevent wasteful rpc calls when known redundant
     sql = db.connect('localhost','btc','test623btc','bitcoin')
     cur = sql.cursor()
-    cur.execute('select ifnull(max(id)/4, -1) from blocks')
-    if (passmask & 1) != 0:
-        blk = int(cur.fetchone()[0] + 1)
+    if blk == 0:
+        cur.execute('select ifnull(max(id)/4, -1) from blocks')
+        if (passmask & 1) != 0:
+            blk = int(cur.fetchone()[0] + 1)
     startblk = blk
     while IsKbdCmd(cur):
         if len(blockQ) >= 8:
@@ -390,23 +391,26 @@ if __name__ == '__main__':
     # set up the pass mask for selecting which tables to process
     # processing tables sequentially is useful for low memory ram based tables
     # to improve speed when an SSD is not available
-    if len(sys.argv) > 1:
-        for c in sys.argv[1]:
-            p = "bato".find(c)
-            if p != -1:
-                passmask += 2**p
-        if passmask == 0:
-            print 'invalid pass selectors, use b=blocks,a=address,t=trxs,o=outputs'
-            sys.exit(1)
-    else: passmask = 0xF
+    argPM = 1
     blk = 0
-    if (passmask & 1) == 0:
-        if len(sys.argv) < 3:
-            print 'Must provide start blk# when not inserting blocks'
-            sys.exit(1)
-        else: 
-            blk = int(sys.argv[2])
-
+    passmask = 0xF
+    if len(sys.argv) > 1:
+        if sys.argv[1].isdigit():
+            blk = int(sys.argv[1])
+            argPM = 2
+        if len(sys.argv) > argPM:  
+            passmask = 0    
+            for c in sys.argv[argPM]:
+                p = "bato".find(c)
+                if p != -1:
+                    passmask += 2**p
+            if passmask == 0:
+                print 'invalid pass selectors, use b=blocks,a=address,t=trxs,o=outputs'
+                sys.exit(1)
+    if (passmask & 1) == 0 and blk == 0:
+        print 'Must provide start blk# when not inserting blocks'
+        sys.exit(1)
+ 
     # set console for non-blocking key input
     fd = sys.stdin.fileno()
     oldterm = termios.tcgetattr(fd)
