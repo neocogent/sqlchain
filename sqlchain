@@ -6,7 +6,8 @@ import MySQLdb as db
 import json
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from SocketServer import ThreadingMixIn
-import threading, mimetypes, ssl, hashlib
+import threading, mimetypes, ssl
+from hashlib import sha256
 from struct import pack, unpack, unpack_from
 
 #add bitcoin.conf: blocknotify="curl -s --connect-timeout 1 http://localhost:8085/notify -d %s -d pwd=testing"
@@ -43,7 +44,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 sql = db.connect(*cfg['db'].split(':'))
-                data = self.do_API(path[4:], sql.cursor())
+                data = self.do_API(path[4:], sql.cursor(), g)
                 self.wfile.write(json.dumps(data))
                 return
                                 
@@ -61,7 +62,7 @@ class WebHandler(BaseHTTPRequestHandler):
             savecfg()
         return
                 
-    def do_API(self, path, cur):
+    def do_API(self, path, cur, get):
         if path.startswith("/block-index/"):
             blk = path[13:]
             if blk.isdigit():
@@ -113,6 +114,49 @@ class WebHandler(BaseHTTPRequestHandler):
                         data['blockhash'] = row[0][::-1].encode('hex')
                         data['time'] = data['blocktime'] = gethdr(row[1])['time']
                     return data
+        if path.startswith("/addr/"):
+            doTxs = 'noTxList' not in get or get['noTxList'][0] == '0'
+            args = path[6:].split('/')
+            addr = args[0]
+            txs = []
+            ins = []
+            if is_address(addr):
+                cur.execute("select id from address where id>=%s and addr=%s limit 1;", addr2id(addr))
+                row = cur.fetchone()
+                if row:
+                    if 'utxo' in args:
+                        data = []
+                        cur.execute("select value,o.id,left(t.hash,32),block_id/4,hdr from outputs o, trxs t, blocks b where addr_id=%s and t.id=floor(o.id/4096) and b.id=t.block_id;", (row[0],))
+                        for tx in cur:
+                            data.append({ 'address':addr, 'txid':tx[2][::-1].encode('hex'), 'vout':int(tx[1])%4096, 'amount':float(tx[0])/1e8, 
+                                          'confirmations':cfg['block']-int(tx[3]), 'ts':gethdr(tx[4])['time'] })
+                        return data
+                    else:
+                        recd = sent = 0
+                        cur.execute("select value,o.id,tx_id,left(hash,32) from outputs o, trxs t where addr_id=%s and t.id=floor(o.id/4096);", (row[0],))
+                        for tx in cur:
+                            recd += tx[0]
+                            if tx[2]:
+                                sent += tx[0]
+                                ins.append(tx[2])
+                            if doTxs and tx[3] not in txs:
+                                txs.append(tx[3][::-1].encode('hex'))
+                        if 'balance' in args:
+                            return int(recd-sent)
+                        if 'totalreceived' in args:
+                            return int(recd)
+                        if 'totalsent' in args:
+                            return int(sent)
+                        if doTxs:
+                            for tx_id in ins:
+                                cur.execute("select left(hash,32) from trxs where id=%s limit 1;", (tx_id,))
+                                row = cur.fetchone()
+                                if row and row[0] not in txs:
+                                    txs.append(row[0][::-1].encode('hex'))
+                        return { 'addStr':addr, 'balanceSat':int(recd-sent), 'balance':float(recd-sent)/1e8, 
+                                 'totalReceivedSat':int(recd), 'totalReceived': float(recd)/1e8,
+                                 'totalSentSat':int(sent), 'totalSent':float(sent)/1e8, 
+                                 'txApperances':len(txs), 'transactions':txs }                
             
         return { 'error': 'no result' }
         
@@ -191,14 +235,39 @@ def is_address(addr):
         return btc[-4:] == sha256(sha256(btc[:-4]).digest()).digest()[:4]
     except Exception:
         return False
-        
+
+def addr2pkh(v):
+    long_value = 0L
+    for (i, c) in enumerate(v[::-1]):
+        long_value += b58.find(c) * (58**i)
+    result = ''
+    while long_value >= 256:
+        div, mod = divmod(long_value, 256)
+        result = chr(mod) + result
+        long_value = div
+    result = chr(long_value) + result
+    nPad = 0
+    for c in v:
+        if c == b58[0]: nPad += 1
+        else: break
+    result = chr(0)*nPad + result
+    return result[1:-4]
+
+def addr2id(addr):
+    pkh = addr2pkh(addr)
+    addr_id, = unpack('<q', pkh[:5]+'\0'*3) 
+    addr_id *= 2
+    if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
+        addr_id += 1
+    return addr_id,pkh
+    
 def mkaddr(pkh, ver=0):
     pad = ''
     an = chr(ver) + str(pkh)
     for c in an:
         if c == '\0': pad += '1'
         else: break
-    num = long((an + hashlib.sha256(hashlib.sha256(an).digest()).digest()[0:4]).encode('hex'), 16)
+    num = long((an + sha256(sha256(an).digest()).digest()[0:4]).encode('hex'), 16)
     out = ''
     while num >= 58:
         num,m = divmod(num, 58)
