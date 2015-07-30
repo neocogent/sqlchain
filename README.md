@@ -10,12 +10,9 @@ In case anyone watching is confused I've changed the name to "sqlchain". I think
 
 I've reworked some of the code and have pushed the update (sql db build still in progress). I've altered where script blob data is stored and created a tx_id "back link" in outputs so that it's easy to build tx data sets. This reduces data size while also easing the queries needed to support an api.
 
-The initial beginnings of initially Insight compatible but eventually perhaps will also support blockchain.info.
+- July 29, I'm now working on an api server layer initially Insight compatible but eventually perhaps will also support blockchain.info.
+- July 30, added sqlchain api server, initial code added, has /block-index and /block (with some missing values)
 
 Warning: work in progress so treat as ALPHA software.
-
-- sqlchain api server, bitpay compatible, initial code added, currently has /block-index and /block (with some missing values)
-
-
 
 
