@@ -81,10 +81,17 @@ class WebHandler(BaseHTTPRequestHandler):
                     data.update(dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', row[2]))))
                     data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
                     data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
+                    data['difficulty'] = bits2diff(data['bits'])
                     data['bits'] = '%08x' % data['bits']
+                    data['reward'] = float((50 * 100000000) >> (data['height'] / 210000))/1e8
+                    data['isMainChain'] = True
                     cur.execute("select hash from trxs where block_id=%s;", (row[0],))
                     for tx in cur:
                         data['tx'].append(tx[0][:32][::-1].encode('hex'))
+                    cur.execute("select hash from blocks where id=%s*4;", (data['height']+1,))
+                    row = cur.fetchone()
+                    if row:
+                        data['nextblockhash'] = row[0][::-1].encode('hex')
                 return data
             
         return { 'error': 'no result' }
@@ -165,6 +172,9 @@ def is_address(addr):
     except Exception:
         return False
             
+def bits2diff(bits):
+    return (0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))))
+    
 def sigterm_handler(_signo, _stack_frame):
     logts("Shutting down.")
     sys.exit(0)
