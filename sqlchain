@@ -73,90 +73,21 @@ class WebHandler(BaseHTTPRequestHandler):
         if path.startswith("/block/"):
             blkhash = path[7:]
             if len(blkhash) == 64 and all(c in string.hexdigits for c in blkhash):
-                data = { 'hash':blkhash, 'tx':[] }
-                cur.execute("select id,hash,hdr from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
-                row = cur.fetchone()
-                if row:
-                    data['height'] = int(int(row[0])/4)
-                    data['confirmations'] = cfg['block'] - data['height']
-                    data.update(gethdr(row[2]))
-                    data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
-                    data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
-                    data['difficulty'] = bits2diff(data['bits'])
-                    data['bits'] = '%08x' % data['bits']
-                    data['reward'] = float((50 * 100000000) >> (data['height'] / 210000))/1e8
-                    data['isMainChain'] = True
-                    cur.execute("select hash from trxs where block_id=%s;", (row[0],))
-                    for tx in cur:
-                        data['tx'].append(tx[0][:32][::-1].encode('hex'))
-                    cur.execute("select hash from blocks where id=%s*4 limit 1;", (data['height']+1,))
-                    row = cur.fetchone()
-                    if row:
-                        data['nextblockhash'] = row[0][::-1].encode('hex')
-                return data
+                return mkBlock(cur, blkhash)
         if path.startswith("/tx/"):
             txhash = path[4:]
             if len(txhash) == 64 and all(c in string.hexdigits for c in txhash):
-                data = { 'txid':txhash }
-                th = txhash.decode('hex')[::-1]
-                tid = unpack('<q', th[:5]+'\0'*3)[0] >> 4
-                cur.execute("select id,hash,txdata,block_id from trxs where id>=%s and left(hash,32)=%s limit 1;", (tid,th))
-                row = cur.fetchone()
-                if row:
-                    data['confirmations'] = cfg['block'] - row[3]/4
-                    data['version'],data['locktime'] = unpack_from('<BI', row[1], 32)
-                    data['valueIn'],data['vin'] = mkInputs(cur, int(row[2]))
-                    data['valueOut'],data['vout'] = mkOutputs(cur, int(row[0]))
-                    data['fees'] = data['valueIn'] - data['valueOut']
-                    cur.execute("select hash,hdr from blocks where id=%s limit 1;", (row[3],))
-                    row = cur.fetchone()
-                    if row:
-                        data['blockhash'] = row[0][::-1].encode('hex')
-                        data['time'] = data['blocktime'] = gethdr(row[1])['time']
-                    return data
+                return mkTx(cur, txhash)
         if path.startswith("/addr/"):
-            doTxs = 'noTxList' not in get or get['noTxList'][0] == '0'
             args = path[6:].split('/')
             addr = args[0]
-            txs = []
-            ins = []
             if is_address(addr):
-                cur.execute("select id from address where id>=%s and addr=%s limit 1;", addr2id(addr))
-                row = cur.fetchone()
-                if row:
+                addr_id = addr2id(cur, addr)
+                if addr_id:
                     if 'utxo' in args:
-                        data = []
-                        cur.execute("select value,o.id,left(t.hash,32),block_id/4,hdr from outputs o, trxs t, blocks b where addr_id=%s and t.id=floor(o.id/4096) and b.id=t.block_id;", (row[0],))
-                        for tx in cur:
-                            data.append({ 'address':addr, 'txid':tx[2][::-1].encode('hex'), 'vout':int(tx[1])%4096, 'amount':float(tx[0])/1e8, 
-                                          'confirmations':cfg['block']-int(tx[3]), 'ts':gethdr(tx[4])['time'] })
-                        return data
+                        return addrUTXOs(cur, addr_id, addr)
                     else:
-                        recd = sent = 0
-                        cur.execute("select value,o.id,tx_id,left(hash,32) from outputs o, trxs t where addr_id=%s and t.id=floor(o.id/4096);", (row[0],))
-                        for tx in cur:
-                            recd += tx[0]
-                            if tx[2]:
-                                sent += tx[0]
-                                ins.append(tx[2])
-                            if doTxs and tx[3] not in txs:
-                                txs.append(tx[3][::-1].encode('hex'))
-                        if 'balance' in args:
-                            return int(recd-sent)
-                        if 'totalreceived' in args:
-                            return int(recd)
-                        if 'totalsent' in args:
-                            return int(sent)
-                        if doTxs:
-                            for tx_id in ins:
-                                cur.execute("select left(hash,32) from trxs where id=%s limit 1;", (tx_id,))
-                                row = cur.fetchone()
-                                if row and row[0] not in txs:
-                                    txs.append(row[0][::-1].encode('hex'))
-                        return { 'addStr':addr, 'balanceSat':int(recd-sent), 'balance':float(recd-sent)/1e8, 
-                                 'totalReceivedSat':int(recd), 'totalReceived': float(recd)/1e8,
-                                 'totalSentSat':int(sent), 'totalSent':float(sent)/1e8, 
-                                 'txApperances':len(txs), 'transactions':txs }                
+                        return addrTxs(cur, addr_id, addr, args, 'noTxList' not in get or get['noTxList'][0] == '0')     
             
         return { 'error': 'no result' }
         
@@ -253,13 +184,15 @@ def addr2pkh(v):
     result = chr(0)*nPad + result
     return result[1:-4]
 
-def addr2id(addr):
+def addr2id(cur, addr):
     pkh = addr2pkh(addr)
     addr_id, = unpack('<q', pkh[:5]+'\0'*3) 
     addr_id *= 2
     if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
         addr_id += 1
-    return addr_id,pkh
+    cur.execute("select id from address where id>=%s and addr=%s limit 1;", (addr_id,pkh))
+    row = cur.fetchone()
+    return row[0] if row else None
     
 def mkaddr(pkh, ver=0):
     pad = ''
@@ -278,8 +211,87 @@ def bits2diff(bits):
     return (0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))))
 def gethdr(data):
     return dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
-    
-    
+
+def mkBlock(cur, blkhash):
+    data = { 'hash':blkhash, 'tx':[] }
+    cur.execute("select id,hash,hdr from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
+    row = cur.fetchone()
+    if row:
+        data['height'] = int(int(row[0])/4)
+        data['confirmations'] = cfg['block'] - data['height']
+        data.update(gethdr(row[2]))
+        data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
+        data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
+        data['difficulty'] = bits2diff(data['bits'])
+        data['bits'] = '%08x' % data['bits']
+        data['reward'] = float((50 * 100000000) >> (data['height'] / 210000))/1e8
+        data['isMainChain'] = True
+        cur.execute("select hash from trxs where block_id=%s;", (row[0],))
+        for tx in cur:
+            data['tx'].append(tx[0][:32][::-1].encode('hex'))
+        cur.execute("select hash from blocks where id=%s*4 limit 1;", (data['height']+1,))
+        row = cur.fetchone()
+        if row:
+            data['nextblockhash'] = row[0][::-1].encode('hex')
+        return data
+    return None
+                
+def addrTxs(cur, addr_id, addr, args, doTxs):
+    txs = []
+    ins = []
+    recd = sent = 0
+    cur.execute("select value,o.id,tx_id,left(hash,32) from outputs o, trxs t where addr_id=%s and t.id=floor(o.id/4096);", (addr_id,))
+    for tx in cur:
+        recd += tx[0]
+        if tx[2]:
+            sent += tx[0]
+            ins.append(tx[2])
+        if doTxs and tx[3] not in txs:
+            txs.append(tx[3][::-1].encode('hex'))
+    if 'balance' in args:
+        return int(recd-sent)
+    if 'totalreceived' in args:
+        return int(recd)
+    if 'totalsent' in args:
+        return int(sent)
+    if doTxs:
+        for tx_id in ins:
+            cur.execute("select left(hash,32) from trxs where id=%s limit 1;", (tx_id,))
+            row = cur.fetchone()
+            if row and row[0] not in txs:
+                txs.append(row[0][::-1].encode('hex'))
+    return { 'addStr':addr, 'balanceSat':int(recd-sent), 'balance':float(recd-sent)/1e8, 
+             'totalReceivedSat':int(recd), 'totalReceived': float(recd)/1e8,
+             'totalSentSat':int(sent), 'totalSent':float(sent)/1e8, 
+             'txApperances':len(txs), 'transactions':txs }   
+
+def addrUTXOs(cur, addr_id, addr):
+    data = []
+    cur.execute("select value,o.id,left(t.hash,32),block_id/4,hdr from outputs o, trxs t, blocks b where addr_id=%s and t.id=floor(o.id/4096) and b.id=t.block_id;", (addr_id,))
+    for tx in cur:
+        data.append({ 'address':addr, 'txid':tx[2][::-1].encode('hex'), 'vout':int(tx[1])%4096, 'amount':float(tx[0])/1e8, 
+                      'confirmations':cfg['block']-int(tx[3]), 'ts':gethdr(tx[4])['time'] })
+    return data
+
+def mkTx(cur, txhash):
+    data = { 'txid':txhash }
+    txh = txhash.decode('hex')[::-1]
+    cur.execute("select id,hash,txdata,block_id from trxs where id>=%s and left(hash,32)=%s limit 1;", (unpack('<q', txh[:5]+'\0'*3)[0] >> 4, txh))
+    row = cur.fetchone()
+    if row:
+        data['confirmations'] = cfg['block'] - row[3]/4
+        data['version'],data['locktime'] = unpack_from('<BI', row[1], 32)
+        data['valueIn'],data['vin'] = mkInputs(cur, int(row[2]))
+        data['valueOut'],data['vout'] = mkOutputs(cur, int(row[0]))
+        data['fees'] = data['valueIn'] - data['valueOut']
+        cur.execute("select hash,hdr from blocks where id=%s limit 1;", (row[3],))
+        row = cur.fetchone()
+        if row:
+            data['blockhash'] = row[0][::-1].encode('hex')
+            data['time'] = data['blocktime'] = gethdr(row[1])['time']
+        return data
+    return None
+        
 def mkInputs(cur, blob):
     total = 0
     data = []
