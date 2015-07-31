@@ -83,12 +83,25 @@ class WebHandler(BaseHTTPRequestHandler):
             txhash = path[4:]
             if len(txhash) == 64 and all(c in string.hexdigits for c in txhash):
                 return mkTx(cur, txhash)
+        if path.startswith("/txs"):
+            txs = []
+            if 'block' in get:
+                blkhash = get['block'][0]
+                if len(blkhash) == 64 and all(c in string.hexdigits for c in blkhash):
+                    txhashes = mkBlock(cur, blkhash)
+                    txhashes = txhashes['tx'] if 'tx' in txhashes else []
+            elif 'address' in get:
+                txhashes = addrData(cur, [ get['address'][0] ], {}, {})
+                txhashes = txhashes['transactions'] if 'transactions' in txhashes else []
+            for txhash in txhashes:
+                txs.append(mkTx(cur, txhash))
+            return { 'pagesTotal':1, 'txs': txs }
         if path.startswith("/addr/") or path.startswith("/addrs/"):
             args = path.split('/')[2:]
             addrs = args[0].split(',')
             return addrData(cur, addrs, args, get)
             
-        return { 'error': 'no result' }
+        return 'Not Found'
         
     def log_message(self, format, *args):
         if cfg['debug']:
@@ -245,7 +258,8 @@ def addrData(cur, addrs, args, get={}):
                     data.append(addrUTXOs(cur, addr_id, addr))
                 else:
                     data.append(addrTXs(cur, addr_id, addr, args, 'noTxList' not in get or get['noTxList'][0] == '0'))
-    return data if len(addrs) > 1 else data[0]
+    return data if len(addrs) > 1 or len(data) == 0 else data[0]
+    
                             
 def addrTXs(cur, addr_id, addr, args, doTxs):
     txs = []
@@ -292,30 +306,38 @@ def mkTx(cur, txhash):
     if row:
         data['confirmations'] = cfg['block'] - row[3]/4
         data['version'],data['locktime'] = unpack_from('<BI', row[1], 32)
-        data['valueIn'],data['vin'] = mkInputs(cur, int(row[2]))
+        data['valueIn'],data['vin'] = mkInputs(cur, row[3]/4, int(row[2]))
         data['valueOut'],data['vout'] = mkOutputs(cur, int(row[0]))
-        data['fees'] = data['valueIn'] - data['valueOut']
+        data['fees'] = round(data['valueIn'] - data['valueOut'],8)
         cur.execute("select hash,hdr from blocks where id=%s limit 1;", (row[3],))
         row = cur.fetchone()
         if row:
             data['blockhash'] = row[0][::-1].encode('hex')
             data['time'] = data['blocktime'] = gethdr(row[1])['time']
+        if 'coinbase' in data['vin'][0]:
+            del data['valueIn']
+            del data['fees']
+            data['isCoinBase'] = True
         return data
     return None
         
-def mkInputs(cur, blob):
+def mkInputs(cur, height, blob):
     total = 0
     data = []
-    ins,outs = unpack('<HH', readBlob(blob, 4))
-    inputs = unpack('<'+'Q'*ins, readBlob(blob+4, ins*8))
-    for n,in_id in enumerate(inputs):
-        cur.execute("select value,addr,left(hash,32) from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id,in_id/4096))
-        row = cur.fetchone()
-        if row:
-            btc = float(row[0])/1e8
-            data.append({ 'n':n, 'vout':in_id%4096, 'value':btc, 'valueSat':int(row[0]), 'txid':row[2][::-1].encode('hex'), 'addr':mkaddr(row[1]) })
-            total += btc
-    return total,data
+    ins,_ = unpack('<HH', readBlob(blob, 4))
+    if ins == 0:
+        cur.execute("select hdr from blocks where id=%s*4;", (height,))
+        data.append({ 'n':0, 'coinbase':cur.fetchone()[0][80:].encode('hex') })
+    else:
+        inputs = unpack('<'+'Q'*ins, readBlob(blob+4, ins*8))
+        for n,in_id in enumerate(inputs):
+            cur.execute("select value,addr,left(hash,32) from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id,in_id/4096))
+            row = cur.fetchone()
+            if row:
+                btc = float(row[0])/1e8
+                data.append({ 'n':n, 'vout':in_id%4096, 'value':round(btc,8), 'valueSat':int(row[0]), 'txid':row[2][::-1].encode('hex'), 'addr':mkaddr(row[1]) })
+                total += btc
+    return round(total,8),data
     
 def mkOutputs(cur, txid):
     total = 0
@@ -330,7 +352,7 @@ def mkOutputs(cur, txid):
             vo.update(mkSpent(cur, int(out[3]), int(out[4])))
         total += btc
         data.append(vo)
-    return total,data
+    return round(total,8),data
     
 def mkSpent(cur, txid, outid):
     cur.execute("select txdata,left(t.hash,32),hdr from trxs t, blocks b where t.id=%s and b.id=t.block_id;", (txid,))
