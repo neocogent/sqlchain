@@ -60,6 +60,11 @@ class WebHandler(BaseHTTPRequestHandler):
         if self.path.endswith("/notify") and form['pwd'].value == cfg['pwd']:
             cfg['block'] = int(form['block'].value)
             savecfg()
+        if self.path.startswith("/api/addrs/"):
+            sql = db.connect(*cfg['db'].split(':'))
+            args = self.path.split('/')[3:]
+            addrs = form['addrs'].value.split(',')
+            self.wfile.write(json.dumps(addrData(sql.cursor(), addrs, args)))
         return
                 
     def do_API(self, path, cur, get):
@@ -78,16 +83,10 @@ class WebHandler(BaseHTTPRequestHandler):
             txhash = path[4:]
             if len(txhash) == 64 and all(c in string.hexdigits for c in txhash):
                 return mkTx(cur, txhash)
-        if path.startswith("/addr/"):
-            args = path[6:].split('/')
-            addr = args[0]
-            if is_address(addr):
-                addr_id = addr2id(cur, addr)
-                if addr_id:
-                    if 'utxo' in args:
-                        return addrUTXOs(cur, addr_id, addr)
-                    else:
-                        return addrTxs(cur, addr_id, addr, args, 'noTxList' not in get or get['noTxList'][0] == '0')     
+        if path.startswith("/addr/") or path.startswith("/addrs/"):
+            args = path.split('/')[2:]
+            addrs = args[0].split(',')
+            return addrData(cur, addrs, args, get)
             
         return { 'error': 'no result' }
         
@@ -236,7 +235,19 @@ def mkBlock(cur, blkhash):
         return data
     return None
                 
-def addrTxs(cur, addr_id, addr, args, doTxs):
+def addrData(cur, addrs, args, get={}):
+    data = []
+    for addr in addrs:
+        if is_address(addr):
+            addr_id = addr2id(cur, addr)
+            if addr_id:
+                if 'utxo' in args:
+                    data.append(addrUTXOs(cur, addr_id, addr))
+                else:
+                    data.append(addrTXs(cur, addr_id, addr, args, 'noTxList' not in get or get['noTxList'][0] == '0'))
+    return data if len(addrs) > 1 else data[0]
+                            
+def addrTXs(cur, addr_id, addr, args, doTxs):
     txs = []
     ins = []
     recd = sent = 0
