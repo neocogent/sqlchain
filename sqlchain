@@ -10,8 +10,6 @@ import threading, mimetypes, ssl
 from hashlib import sha256
 from struct import pack, unpack, unpack_from
 
-#add bitcoin.conf: blocknotify="curl -s --connect-timeout 1 http://localhost:8085/notify -d %s -d pwd=testing"
-
 version = "0.1.0"
 cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0, 'pwd':'testing' }
 
@@ -22,7 +20,6 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 class WebHandler(BaseHTTPRequestHandler):
     server_version = 'sqlChain/1.0'
     def do_GET(self):
-        global wsts
         try:
             q = urlparse.urlparse(self.path)
             g =  urlparse.parse_qs(q.query)
@@ -39,12 +36,12 @@ class WebHandler(BaseHTTPRequestHandler):
                 self.wfile.write(f.read())
                 f.close()
                 return
-            if path.startswith("/api"):
+            if path[:4] in ["/api","/rpc"]:
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 sql = db.connect(*cfg['db'].split(':'))
-                data = self.do_API(path[4:], sql.cursor(), g)
+                data = [self.do_API, self.do_RPC][["/api","/rpc"].index(path[:4])](path[4:], sql.cursor(), g)
                 self.wfile.write(json.dumps(data))
                 return
                                 
@@ -57,16 +54,14 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type','text/html')
         self.end_headers()
-        if self.path.endswith("/notify") and form['pwd'].value == cfg['pwd']:
-            cfg['block'] = int(form['block'].value)
-            logts("New Block: %d" % cfg['block'])
-            savecfg()
+        sql = db.connect(*cfg['db'].split(':'))
         if self.path.startswith("/api/addrs/"):
-            sql = db.connect(*cfg['db'].split(':'))
             args = self.path.split('/')[3:]
             addrs = form['addrs'].value.split(',')
             self.wfile.write(json.dumps(addrData(sql.cursor(), addrs, args)))
-        return
+        if self.path == '/':
+            data = self.do_RPC("/%s/%s" % (form['method'].value, "/".join(form.getlist('params'))), sql.cursor(), {})
+            self.wfile.write(json.dumps(data))
                 
     def do_API(self, path, cur, get):
         if path.startswith("/block-index/"):
@@ -74,8 +69,7 @@ class WebHandler(BaseHTTPRequestHandler):
             if blk.isdigit():
                 cur.execute("select hash from blocks where id=%s*4 limit 1;", (blk,))
                 row = cur.fetchone()
-                if row:
-                    return { 'blockHash': row[0][::-1].encode('hex') }
+                return { 'blockHash': row[0][::-1].encode('hex') } if row else None
         if path.startswith("/block/"):
             blkhash = path[7:]
             if len(blkhash) == 64 and all(c in string.hexdigits for c in blkhash):
@@ -101,12 +95,31 @@ class WebHandler(BaseHTTPRequestHandler):
             args = path.split('/')[2:]
             addrs = args[0].split(',')
             return addrData(cur, addrs, args, get)
-            
-        return 'Not Found'
+        return None
+        
+    def do_RPC(self, path, cur, get):
+        if path.startswith("/getblockcount"):
+            return cfg['block']
+        if path.startswith("/getinfo"):
+            cur.execute("select hdr from blocks where id=%s*4 limit 1;", (cfg['block'],))
+            hdr = gethdr(cur.fetchone()[0])
+            return { 'blocks':cfg['block'], 'difficulty':bits2diff(hdr['bits']) }
+        if path.startswith("/getdifficulty"):
+            cur.execute("select hdr from blocks where id=%s*4 limit 1;", (cfg['block'],))
+            hdr = gethdr(cur.fetchone()[0])
+            return bits2diff(hdr['bits'])
+        if path.startswith("/getblock/"):
+            return self.do_API("/block/"+path[10:], cur, get)
+        if path.startswith("/getblockhash/"):
+            rtn = self.do_API("/block-index/"+path[14:], cur, get)
+            return rtn['blockHash'] if 'blockHash' in rtn else rtn
+        if path.startswith("/getrawtransaction/"):
+            return self.do_API("/tx/"+path[19:], cur, get)
+        return None
         
     def log_message(self, format, *args):
         if cfg['debug']:
-            pass#logts( format % args )
+            logts( format % args )
         pass
         
 # cfg file and option handling stuff
