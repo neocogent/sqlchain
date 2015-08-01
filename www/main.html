@@ -1,0 +1,75 @@
+<!DOCTYPE html> 
+<html lang="en"> 
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <title>sqlChain - Bitcoin SQL Blockchain Explorer</title>
+    <meta content="bitcoin blockchain insight api using sqlchain" name="description">
+    <meta content="neocogent" name="author"> 
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+    <link href="css/main.css" rel="stylesheet">
+    
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+    <link href="img/favicon.png" rel="shortcut icon">    
+</head>
+<body>
+<nav class="navbar navbar-default  navbar-fixed-top navbar-inverse">
+  <div class="container-fluid">
+    <!-- Brand and toggle get grouped for better mobile display -->
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/">sqlChain</a> 
+    </div>
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="active"><a data-toggle="tab" href="#overview">Overview <span class="sr-only">(current)</span></a></li>
+        <li><a data-toggle="tab" href="#api">API</a></li>
+      </ul>
+    </div><!-- /.navbar-collapse -->
+  </div><!-- /.container-fluid -->
+</nav>
+
+<div class="container"> 
+    <div class="tab-content"> 
+
+<!-- Overview -->
+        <div class="tab-pane fade in active" id="overview">
+        <legend>Overview</legend>
+            sqlChain is a compact SQL layer that runs on top of bitcoind. It enhances the ability to query the 
+            blockchain with a priority placed on low storage and processing overhead.
+            This demonstration server provides an Insight (mostly) compatible API. The API page above documents the 
+            queries supported and observed differences to the standard API, as well as other technical details. <br><br>
+            Using sqlChain over a pruning node, as a compact alternative to a full node, and more server applications based on sqlChain 
+            are currently being explored and under development. Below is status and blockchain analysis 
+            information queried and updated periodically from this server. The open source code is available in the 
+            <a href="https://github.com/neocogent/sqlchain">neoCogent github repository</a> and please check out 
+             the <a href="http://neocogent.com">neoCogent blog</a>.
+        <legend>Status</legend>
+            More to come
+        </div>
+<!-- API docs -->
+        <div class="tab-pane fade" id="api">
+        <legend>Insight API</legend>
+        
+        
+        </div>            
+    <FOOTER> 
+    <p></p> 
+    </FOOTER> 
+</div>
+<script src="js/jquery.min.js"></script>
+<script src="js/bootstrap.min.js"></script> 
+<script src="js/main.js"></script>
+</body>
+</html>

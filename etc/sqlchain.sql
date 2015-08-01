@@ -20,7 +20,8 @@ CREATE TABLE `trxs` (
   `hash` binary(37) NOT NULL,
   `txdata` decimal(13,0) DEFAULT NULL,
   `block_id` int(11) DEFAULT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `block` (`block_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 
 CREATE TABLE `outputs` (

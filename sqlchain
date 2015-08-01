@@ -59,6 +59,7 @@ class WebHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.path.endswith("/notify") and form['pwd'].value == cfg['pwd']:
             cfg['block'] = int(form['block'].value)
+            logts("New Block: %d" % cfg['block'])
             savecfg()
         if self.path.startswith("/api/addrs/"):
             sql = db.connect(*cfg['db'].split(':'))
@@ -105,7 +106,7 @@ class WebHandler(BaseHTTPRequestHandler):
         
     def log_message(self, format, *args):
         if cfg['debug']:
-            logts( format % args )
+            pass#logts( format % args )
         pass
         
 # cfg file and option handling stuff
@@ -113,7 +114,7 @@ class WebHandler(BaseHTTPRequestHandler):
 def loadcfg():
     global cfg
     try:
-        with open(sys.argv[0]+'.cfg') as json_file:
+        with open(sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else sys.argv[0]+'.cfg') as json_file:
             cfg = json.load(json_file)
     except IOError:
         logts('No cfg file.')
@@ -123,7 +124,7 @@ def loadcfg():
 
 def savecfg():
     try:
-        with open(sys.argv[-1] if sys.argv[-1][0] != '-' else sys.argv[0]+'.cfg', 'w') as json_file:
+        with open(sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else sys.argv[0]+'.cfg', 'w') as json_file:
             json.dump(cfg, json_file, indent=2)
     except IOError:
         logts('Cannot save cfg file')
@@ -139,7 +140,7 @@ def options():
         if opt in ("-h", "--help"):
             usage()
         elif opt in ("-v", "--version"):
-            sys.exit('Version: '+version)
+            sys.exit('sqlchain server: '+version)
         elif opt in ("-d", "--db"):
             cfg['db'] = arg
         elif opt in ("-l", "--log"):
@@ -150,17 +151,16 @@ def options():
             cfg['listen'] = arg
         elif opt in ("--defaults"):
             savecfg()
-            print "%s updated" % (sys.argv[0]+'.cfg')
-            sys.exit()
+            sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
         elif opt in ("--debug"):
             cfg['debug'] = True
             
 def usage():
-    print """Usage: %s [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version
-\tShow version info\n--defaults\tUpdate cfg and exit\nDefault files are %s.cfg .log .db
+    print """Usage: %s [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
+--defaults\tUpdate cfg and exit\nDefault files are %s.cfg .log .db
 \nThese options get saved in cfg file as default.
--l,--listen\tSet host:port for web server\n-w,--www\t\tWeb server root directory\n-u,--user\tSet user to run as
--d,--db  \tSet mysql db and login\n-l,--log\tSet log file path""" % (sys.argv[0], sys.argv[0])
+-l,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
+-d,--db  \tSet mysql db connection, "host:user:pwd:dbname"\n-l,--log\tSet log file path""" % (sys.argv[0], sys.argv[0])
     sys.exit(2) 
                         
 def logts(msg):
@@ -377,7 +377,7 @@ def sigterm_handler(_signo, _stack_frame):
 def drop2user():
     global drop
     if ('user' in cfg) and (cfg['user'] != '') and (os.getuid() == 0):
-        drop.wait()
+        #drop.wait()
         uid = pwd.getpwnam(cfg['user']).pw_uid
         os.setgroups([])
         os.setgid(uid)
@@ -404,10 +404,14 @@ if __name__ == '__main__':
     drop2user()
     
     logts("Starting on %s" % cfg['listen'])
-    try:
-        server.serve_forever()
-        
-    except KeyboardInterrupt:
-        sys.exit(0)
+    while True:
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            sys.exit(0)
+        except:
+            logts("Uknown exception")
+            pass
+
 
         

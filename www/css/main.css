@@ -1,0 +1,53 @@
+body { 
+    padding-top: 60px;
+    padding-bottom: 40px;
+}
+
+input[disabled],select[disabled],textarea[disabled],input[readonly],select[readonly],textarea[readonly]{background-color:#eeeeee;border-color:#ddd;cursor:text;}
+
+legend {
+    margin-bottom: 0px;
+}
+
+.navbar-brand {
+	font-weight:bold;
+	color: #9ED8F7;
+}
+
+.navbar .beta {
+	position: relative;
+	float: left;
+	left: -40px;
+	top: 22px;
+	font-size:9px;
+	color: red;
+}
+
+.checkbox.inline {
+	vertical-align: top;
+}
+
+.tab-pane em {
+	color: darkblue;
+}
+
+.tab-pane h3 {
+	line-height: 50px;
+}
+
+h3 {
+	color: darkblue;
+}
+
+.subsection {
+	margin-top: 50px;
+}
+
+.container {
+    width: 750px;
+}
+
+#overview { text-align:justify; }
+#overview legend { margin-top:20px; }
+
+
