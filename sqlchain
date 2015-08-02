@@ -11,7 +11,7 @@ from hashlib import sha256
 from struct import pack, unpack, unpack_from
 
 version = "0.1.0"
-cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0, 'pwd':'testing' }
+cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0 }
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """ This class allows to handle requests in separated threads.
@@ -36,12 +36,13 @@ class WebHandler(BaseHTTPRequestHandler):
                 self.wfile.write(f.read())
                 f.close()
                 return
-            if path[:4] in ["/api","/rpc"]:
+            apis = { "/api":self.do_API, "/rpc":self.do_RPC, "/bci":self.do_BCI }
+            if path[:4] in apis:
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 sql = db.connect(*cfg['db'].split(':'))
-                data = [self.do_API, self.do_RPC][["/api","/rpc"].index(path[:4])](path[4:], sql.cursor(), g)
+                data = apis[ path[:4] ](path[4:], sql.cursor(), g)
                 self.wfile.write(json.dumps(data))
                 return
                                 
@@ -116,7 +117,9 @@ class WebHandler(BaseHTTPRequestHandler):
         if path.startswith("/getrawtransaction/"):
             return self.do_API("/tx/"+path[19:], cur, get)
         return None
-        
+    
+    def do_BCI(self, path, cur, get):
+        return None
     def log_message(self, format, *args):
         if cfg['debug']:
             logts( format % args )
@@ -243,7 +246,7 @@ def mkBlock(cur, blkhash):
     row = cur.fetchone()
     if row:
         data['height'] = int(int(row[0])/4)
-        data['confirmations'] = cfg['block'] - data['height']
+        data['confirmations'] = cfg['block'] - data['height'] + 1
         data.update(gethdr(row[2]))
         data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
         data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
@@ -308,7 +311,7 @@ def addrUTXOs(cur, addr_id, addr):
     cur.execute("select value,o.id,left(t.hash,32),block_id/4,hdr from outputs o, trxs t, blocks b where addr_id=%s and t.id=floor(o.id/4096) and b.id=t.block_id;", (addr_id,))
     for tx in cur:
         data.append({ 'address':addr, 'txid':tx[2][::-1].encode('hex'), 'vout':int(tx[1])%4096, 'amount':float(tx[0])/1e8, 
-                      'confirmations':cfg['block']-int(tx[3]), 'ts':gethdr(tx[4])['time'] })
+                      'confirmations':cfg['block']-int(tx[3])+1, 'ts':gethdr(tx[4])['time'] })
     return data
 
 def mkTx(cur, txhash):
@@ -317,7 +320,7 @@ def mkTx(cur, txhash):
     cur.execute("select id,hash,txdata,block_id from trxs where id>=%s and left(hash,32)=%s limit 1;", (unpack('<q', txh[:5]+'\0'*3)[0] >> 4, txh))
     row = cur.fetchone()
     if row:
-        data['confirmations'] = cfg['block'] - row[3]/4
+        data['confirmations'] = cfg['block'] - row[3]/4 + 1
         data['version'],data['locktime'] = unpack_from('<BI', row[1], 32)
         data['valueIn'],data['vin'] = mkInputs(cur, row[3]/4, int(row[2]))
         data['valueOut'],data['vout'] = mkOutputs(cur, int(row[0]))

@@ -2,9 +2,7 @@
 #
 #   sqlchaind - daemon to update sql blockchain db
 #
-#   can be used in multipass mode in attempt to speed up conversion
-#   on ram disk in low memory situations
-#
+
 
 import os, sys, socket, datetime, time
 import select, termios, fcntl
@@ -13,11 +11,13 @@ from struct import pack, unpack, unpack_from
 import threading, hashlib
 import MySQLdb as db
 
+cfg = { 'log':sys.argv[0]+'.log', 'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
+
 state = { 'pause':False }
 b58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 blockQ = []
+memPool = set()
 done = threading.Event()
-passmask = 0
 
 def mkpkh(pk):
     rmd = hashlib.new('ripemd160')
@@ -86,29 +86,28 @@ def IsKbdCmd(cur):
         time.sleep(0.5)
 
 def getBlocks(blk):
-    global passmask
-    #rpc = AuthServiceProxy("http://coinview:2XNrGCs8KQ7AodsgzBRJzroBRDYNt7rfCtqDAQNh4Ggr@localhost:8332")
-    rpc = AuthServiceProxy("http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332")
+    rpc = AuthServiceProxy(cfg['rpc'])
     blkChkPoint = rpc.getblockcount() # prevent wasteful rpc calls when known redundant
-    sql = db.connect('localhost','btc','test623btc','bitcoin')
+    sql = db.connect(cfg['db'])
     cur = sql.cursor()
     if blk == 0:
         cur.execute('select ifnull(max(id)/4, -1) from blocks')
-        if (passmask & 1) != 0:
-            blk = int(cur.fetchone()[0] + 1)
+        blk = int(cur.fetchone()[0] + 1)
     startblk = blk
     while IsKbdCmd(cur):
         if len(blockQ) >= 8:
             time.sleep(0.01)
             continue
         if blk > blkChkPoint and blk > rpc.getblockcount():
-            time.sleep(10)
+            waitfrom = time.time()
+            checkMemPool(cur, rpc)
+            time.sleep(10 - (time.time() - waitfrom))
             continue
         netstart = time.time()
         blkhash = rpc.getblockhash(blk)
         if blkhash:
             data = decodeBlock(rpc.getblock(blkhash, False).decode('hex'))
-            if data: #and verifyBlock(cur, data):
+            if data: 
                 data['height'] = blk
                 data['rpc'] = time.time()-netstart
                 blockQ.append(data)
@@ -117,18 +116,27 @@ def getBlocks(blk):
     return blk - startblk
         
 def processBlocks():
-    sql = db.connect('localhost','btc','test623btc','bitcoin')
+    sql = db.connect(cfg['db'])
     cur = sql.cursor()
-    #cur.execute('alter table blocks disable keys;')
-    #cur.execute('alter table outputs disable keys;')
     while not done.isSet():
         if len(blockQ) > 0:
             print len(blockQ),
             insertBlock(cur, blockQ.pop(0))
         else:
             time.sleep(0.01)
-    #cur.execute('alter table blocks enable keys;')
-    #cur.execute('alter table outputs enable keys;')
+
+def checkMemPool(cur, rpc):
+    if len(memPool) == 0:
+        sync_id = 0
+        cur.execute("delete from mempool;")
+    else:
+        cur.execute("select max(sync_id) from mempool;")
+        sync_id = cur.fetchone()[0]
+    trxs = rpc.getrawmempool()
+    for tx in trxs:
+        if tx not in memPool:
+            memPool.add(tx)
+            insertTxMemPool(rpc.getrawtransaction(tx,1), sync_id+1)           
 
 def decodeBlock(data):
     hdr = ['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
@@ -151,38 +159,6 @@ def decodeBlock(data):
         #print 'coinbase height', block['height'], block['tx'][0]['vin'][0]['coinbase'][1:4].encode('hex')
     return block
 
-def verifyBlock(cur, data):
-    cur.execute("select id from blocks where hash=%s", (data['previousblockhash'],))
-    row = cur.fetchone()
-    if row:
-        height = row[0] / 4 + 1
-        if data['height'] != 0 and data['height'] != height:
-            print "block height mismatch - coinbase height bad"
-            return False
-        data['height'] = height
-    elif data['height'] != 0:
-        print "orphan block - previous hash not found"
-    
-    mkt = [ tx['txid'] for tx in data['tx'] ]
-    while len(mkt) > 1:
-        if len(mkt) % 2 == 1:
-            mkt.append(mkt[-1])
-        mkt = [ hashlib.sha256(hashlib.sha256(mkt[i]+mkt[i+1]).digest()).digest() for i in range(0,len(mkt),2) ]
-    if mkt[0] != data['merkleroot']:
-        print "merkle tree failure"
-    
-    totalfees = ( int(50e8) >> ( data['height']/210000 ) )
-    for tx in data['tx']:
-        valid,fee = verifyTx(cur, data, tx)
-        if not valid:
-            return False
-        totalfees += fee
-    if totalfees < 0:
-        print "coinbase payout off by", totalfees
-        return False
-    # todo,check time and bits
-    return True
-    
 def decodeTx(data):
     vers, = unpack_from('<I', data)
     tx = { 'version': vers, 'vin':[], 'vout':[] }
@@ -212,54 +188,6 @@ def decodeTx(data):
     tx['locktime'], = unpack_from('<I', data, off)
     tx['txid'] = hashlib.sha256(hashlib.sha256(data[:off+4]).digest()).digest()
     return tx,off+4
-    
-def verifyTx(cur, block, tx):
-    fee = 0
-    for vin in tx['vin']:
-        if 'txid' in vin:
-            n = vin['vout']
-            vout = TxInBlock(block, tx['txid'], vin['txid']) # may be in same block
-            if vout:
-                if 'addr' not in vout[n]['scriptPubKey']:
-                    print "non-std input - no addr, ignoring"
-                    continue
-                if not verifyInput(vin['scriptSig'], vout[n]['scriptPubKey']['data'], vout[n]['scriptPubKey']['addr']):
-                    print "bad input"
-                    return False
-                fee += vout[n]['value']
-            else:
-                tx_id = findTx(cur, vin['txid']) # otherwise has to be in prev block
-                if tx_id == None:
-                    print "tx invalid - no tx for this input", vin['txid'][::-1].encode('hex'), tx['txid'][::-1].encode('hex')
-                    return False,0
-                cur.execute("select value,addr,pk from outputs o,address a where o.id=%s and a.id=o.addr_id", ((tx_id<<12) + n, ))
-                
-                row = cur.fetchone()
-                if row == None:
-                    print "tx invalid - no output for this input", "%d %d %s" % (tx_id, (tx_id<<12) + n, vin['txid'].encode('hex'))
-                    return False,0
-                value,pkh,pk = row
-                if not verifyInput(vin['scriptSig'], pk, pkh):
-                    print "bad input"
-                    return False
-                fee += value
-            
-    for vout in tx['vout']:
-        if 'addr' in vout['scriptPubKey']:
-            fee -= vout['value']
-        
-    return True,fee
-
-def TxInBlock(block, brkid, txid):
-    for tx in block['tx']:
-        if tx['txid'] == brkid:
-            return None
-        if tx['txid'] == txid:
-            return tx['vout']
-        
-def verifyInput(sig, pk, pkh):
-    #print 'verify s=%s, pk=%s, pkh=%s' % (str(sig).encode('hex'), str(pk).encode('hex'), str(pkh).encode('hex'))
-    return True
 
 def decodeScriptPK(data):
     if len(data) > 1:
@@ -329,51 +257,69 @@ def findTx(cur, txhash, mkNew=False, limit=32):
         if tx_id > limit_id:
             return None
         tx_id += 1
-
+        
+def insertTxMemPool(tx, sync_id):
+    tx_id = findTx(cur, tx['txid'])
+    if tx_id == None:
+        outs,ins = [],[]
+        inputs,txdata = '',''
+        tx_id = findTx(cur, tx['txid'], mkNew=True)
+        for vin in tx['vin']:
+            if 'txid' in vin:
+                in_id = findTx(cur, vin['txid'])
+                if in_id and vin['vout'] < 4096:
+                    in_id = (in_id<<12) + vin['vout']
+                    ins.append((tx_id, in_id))
+                    inputs += pack('<Q', in_id)
+                    txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig'] + pack('<I', vin['sequence'])
+        for vout in tx['vout']:
+            addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
+            outs.append( ( (tx_id<<12) + vout['n'], addr_id, vout['value'] ) )
+            txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']  
+            
+        txdata = pack('<HH', len(inputs)/8, len(tx['vout'])) + inputs + txdata
+        cur.execute("insert ignore into trxs (id,hash,txdata) values(%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version']&0xFF, tx['locktime']), insertBlob(txdata) ))
+        cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
+        cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
+    cur.execute("insert ignore into mempool (id,sync_id) values(%s,%s);", (tx_id, sync_id))
+    
 def insertBlock(cur, data):
-    global passmask
     print "block", data['height'], 
     blkstart = time.time()
     blk_id = data['height']*4
-    outs = [] 
-    ins = []
+    outs,ins = [],[]
     for tx in data['tx']:
-        inputs = ''
-        txdata = ''
-        if (passmask & 0xC) != 0:
+        tx_id = findTx(cur, tx['txid'])
+        if tx_id:
+            if tx['txid'] in memPool:
+                memPool.remove(tx['txid'])
+                cur.execute("delete from mempool where id=%s limit 1;", (tx_id,))
+            cur.execute("update trxs set block_id=%s where id=%s limit 1;", (blk_id,tx_id))
+        else:
+            inputs,txdata = '',''
             tx_id = findTx(cur, tx['txid'], mkNew=True)        
-        if (passmask & 0xD) != 0:
             for vin in tx['vin']:
                 if 'coinbase' in vin:
                     data['coinbase'] = vin['coinbase']
-                elif (passmask & 0xC) != 0 and ( 'txid' in vin ):
+                elif 'txid' in vin:
                     in_id = findTx(cur, vin['txid'])
-                    if in_id:
+                    if in_id and vin['vout'] < 4096:
                         in_id = (in_id<<12) + vin['vout']
-                        if (passmask & 0x8) != 0:
-                            ins.append((tx_id, in_id))
-                        if (passmask & 0x4) != 0:
-                            inputs += pack('<Q', in_id)
-                            txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig'] + pack('<I', vin['sequence'])
-                            
-        if (passmask & 0xE) != 0:
+                        ins.append((tx_id, in_id))
+                        inputs += pack('<Q', in_id)
+                        txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig'] + pack('<I', vin['sequence'])
+                                
             for vout in tx['vout']:
                 addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
-                if (passmask & 0x8) != 0:
+                if vout['n'] < 4096:
                     outs.append( ( (tx_id<<12) + vout['n'], addr_id, vout['value'] ) )
-                if (passmask & 0x4) != 0:
                     txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
-                    
-        if (passmask & 0x4) != 0:  
+                        
             txdata = pack('<HH', len(inputs)/8, len(tx['vout'])) + inputs + txdata
-            cur.execute("insert ignore into trxs (id,hash,txdata,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version']&0xFF, tx['locktime']), insertBlob(txdata), blk_id ) )
-    
-    if (passmask & 0x8) != 0:
-        cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
-        cur.executemany("update outputs set tx_id=%s where id=%s", ins)
-    if (passmask & 0x1) != 0:
-        cur.execute("insert ignore into blocks (id,hash,hdr) values (%s,%s,%s);", (blk_id, data['hash'], data['hdr']+data['coinbase']))
-    
+            cur.execute("insert ignore into trxs (id,hash,txdata,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version']&0xFF, tx['locktime']), insertBlob(txdata), blk_id ))
+    cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
+    cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
+    cur.execute("insert ignore into blocks (id,hash,hdr) values (%s,%s,%s);", (blk_id, data['hash'], data['hdr']+data['coinbase']))
     blktime = time.time() - blkstart
     print "[ %4d txs - %s - %03.0f/%03.0f ]" % ( len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime*1000)
 
@@ -388,29 +334,10 @@ def insertBlob(data):
     
 if __name__ == '__main__':
 
-    # set up the pass mask for selecting which tables to process
-    # processing tables sequentially is useful for low memory ram based tables
-    # to improve speed when an SSD is not available
-    argPM = 1
     blk = 0
-    passmask = 0xF
     if len(sys.argv) > 1:
-        if sys.argv[1].isdigit():
-            blk = int(sys.argv[1])
-            argPM = 2
-        if len(sys.argv) > argPM:  
-            passmask = 0    
-            for c in sys.argv[argPM]:
-                p = "bato".find(c)
-                if p != -1:
-                    passmask += 2**p
-            if passmask == 0:
-                print 'invalid pass selectors, use b=blocks,a=address,t=trxs,o=outputs'
-                sys.exit(1)
-    if (passmask & 1) == 0 and blk == 0:
-        print 'Must provide start blk# when not inserting blocks'
-        sys.exit(1)
- 
+        blk = int(sys.argv[1])
+
     # set console for non-blocking key input
     fd = sys.stdin.fileno()
     oldterm = termios.tcgetattr(fd)

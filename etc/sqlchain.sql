@@ -25,10 +25,18 @@ CREATE TABLE `trxs` (
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
 
 CREATE TABLE `outputs` (
-  `id` decimal(15,0) NOT NULL,
+  `id` decimal(16,0) NOT NULL,
   `value` decimal(16,0) DEFAULT NULL,
   `addr_id` decimal(13,0) DEFAULT NULL,
   `tx_id` decimal(13,0) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `addr` (`addr_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1
+
+CREATE TABLE `mempool` (
+  `id` decimal(13,0) NOT NULL,
+  `sync_id` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `sync` (`sync_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+
