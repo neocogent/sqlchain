@@ -88,7 +88,7 @@ def IsKbdCmd(cur):
 def getBlocks(blk):
     rpc = AuthServiceProxy(cfg['rpc'])
     blkChkPoint = rpc.getblockcount() # prevent wasteful rpc calls when known redundant
-    sql = db.connect(cfg['db'])
+    sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
     if blk == 0:
         cur.execute('select ifnull(max(id)/4, -1) from blocks')
@@ -116,7 +116,7 @@ def getBlocks(blk):
     return blk - startblk
         
 def processBlocks():
-    sql = db.connect(cfg['db'])
+    sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
     while not done.isSet():
         if len(blockQ) > 0:
@@ -359,7 +359,7 @@ if __name__ == '__main__':
             break
         except socket.error:
             print "Cannot connect to rpc"
-            time.sleep(10)
+            time.sleep(5)
             pass
         except KeyboardInterrupt:
             pass

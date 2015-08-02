@@ -74,28 +74,28 @@ class WebHandler(BaseHTTPRequestHandler):
         if path.startswith("/block/"):
             blkhash = path[7:]
             if len(blkhash) == 64 and all(c in string.hexdigits for c in blkhash):
-                return mkBlock(cur, blkhash)
+                return apiBlock(cur, blkhash)
         if path.startswith("/tx/"):
             txhash = path[4:]
             if len(txhash) == 64 and all(c in string.hexdigits for c in txhash):
-                return mkTx(cur, txhash)
+                return apiTx(cur, txhash)
         if path.startswith("/txs"):
             txs = []
             if 'block' in get:
                 blkhash = get['block'][0]
                 if len(blkhash) == 64 and all(c in string.hexdigits for c in blkhash):
-                    txhashes = mkBlock(cur, blkhash)
+                    txhashes = apiBlock(cur, blkhash)
                     txhashes = txhashes['tx'] if 'tx' in txhashes else []
             elif 'address' in get:
-                txhashes = addrData(cur, [ get['address'][0] ], {}, {})
+                txhashes = apiAddr(cur, [ get['address'][0] ], {}, {})
                 txhashes = txhashes['transactions'] if 'transactions' in txhashes else []
             for txhash in txhashes:
-                txs.append(mkTx(cur, txhash))
+                txs.append(apiTx(cur, txhash))
             return { 'pagesTotal':1, 'txs': txs }
         if path.startswith("/addr/") or path.startswith("/addrs/"):
             args = path.split('/')[2:]
             addrs = args[0].split(',')
-            return addrData(cur, addrs, args, get)
+            return apiAddr(cur, addrs, args, get)
         return None
         
     def do_RPC(self, path, cur, get):
@@ -119,6 +119,20 @@ class WebHandler(BaseHTTPRequestHandler):
         return None
     
     def do_BCI(self, path, cur, get):
+        if path.startswith("/block-height/"):
+            blk = path[14:]
+            if blk.isdigit():
+                cur.execute("select hash from blocks where id=%s*4 limit 1;", (blk,))
+                row = cur.fetchone()
+                return { 'blocks': [ bciBlock(cur, row[0][::-1].encode('hex')) ] } if row else None
+        if path.startswith("/rawblock/"):
+            blkhash = path[10:]
+            if len(blkhash) == 64 and all(c in string.hexdigits for c in blkhash):
+                return bciBlock(cur, blkhash)
+        if path.startswith("/rawtx/"):
+            txhash = path[7:]
+            if len(txhash) == 64 and all(c in string.hexdigits for c in txhash):
+                return bciTx(cur, txhash)
         return None
     def log_message(self, format, *args):
         if cfg['debug']:
@@ -240,12 +254,12 @@ def bits2diff(bits):
 def gethdr(data):
     return dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
 
-def mkBlock(cur, blkhash):
+def apiBlock(cur, blkhash):
     data = { 'hash':blkhash, 'tx':[] }
     cur.execute("select id,hash,hdr from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
     row = cur.fetchone()
     if row:
-        data['height'] = int(int(row[0])/4)
+        data['height'] = int(row[0])/4
         data['confirmations'] = cfg['block'] - data['height'] + 1
         data.update(gethdr(row[2]))
         data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
@@ -264,7 +278,7 @@ def mkBlock(cur, blkhash):
         return data
     return None
                 
-def addrData(cur, addrs, args, get={}):
+def apiAddr(cur, addrs, args, get={}):
     data = []
     for addr in addrs:
         if is_address(addr):
@@ -277,9 +291,8 @@ def addrData(cur, addrs, args, get={}):
     return data if len(addrs) > 1 or len(data) == 0 else data[0]
     
                             
-def addrTXs(cur, addr_id, addr, args, doTxs):
-    txs = []
-    ins = []
+def addrTXs(cur, addr_id, addr, args, incTxs):
+    txs,ins = [],[]
     recd = sent = 0
     cur.execute("select value,o.id,tx_id,left(hash,32) from outputs o, trxs t where addr_id=%s and t.id=floor(o.id/4096);", (addr_id,))
     for tx in cur:
@@ -287,7 +300,7 @@ def addrTXs(cur, addr_id, addr, args, doTxs):
         if tx[2]:
             sent += tx[0]
             ins.append(tx[2])
-        if doTxs and tx[3] not in txs:
+        if incTxs and tx[3] not in txs:
             txs.append(tx[3][::-1].encode('hex'))
     if 'balance' in args:
         return int(recd-sent)
@@ -295,15 +308,15 @@ def addrTXs(cur, addr_id, addr, args, doTxs):
         return int(recd)
     if 'totalsent' in args:
         return int(sent)
-    if doTxs:
+    if incTxs:
         for tx_id in ins:
             cur.execute("select left(hash,32) from trxs where id=%s limit 1;", (tx_id,))
             row = cur.fetchone()
             if row and row[0] not in txs:
                 txs.append(row[0][::-1].encode('hex'))
-    return { 'addStr':addr, 'balanceSat':int(recd-sent), 'balance':float(recd-sent)/1e8, 
-             'totalReceivedSat':int(recd), 'totalReceived': float(recd)/1e8,
-             'totalSentSat':int(sent), 'totalSent':float(sent)/1e8, 
+                
+    return { 'addStr':addr, 'balanceSat':int(recd-sent), 'balance':float(recd-sent)/1e8, 'totalReceivedSat':int(recd), 
+             'totalReceived': float(recd)/1e8, 'totalSentSat':int(sent), 'totalSent':float(sent)/1e8, 
              'txApperances':len(txs), 'transactions':txs }   
 
 def addrUTXOs(cur, addr_id, addr):
@@ -314,7 +327,7 @@ def addrUTXOs(cur, addr_id, addr):
                       'confirmations':cfg['block']-int(tx[3])+1, 'ts':gethdr(tx[4])['time'] })
     return data
 
-def mkTx(cur, txhash):
+def apiTx(cur, txhash):
     data = { 'txid':txhash }
     txh = txhash.decode('hex')[::-1]
     cur.execute("select id,hash,txdata,block_id from trxs where id>=%s and left(hash,32)=%s limit 1;", (unpack('<q', txh[:5]+'\0'*3)[0] >> 4, txh))
@@ -322,8 +335,8 @@ def mkTx(cur, txhash):
     if row:
         data['confirmations'] = cfg['block'] - row[3]/4 + 1
         data['version'],data['locktime'] = unpack_from('<BI', row[1], 32)
-        data['valueIn'],data['vin'] = mkInputs(cur, row[3]/4, int(row[2]))
-        data['valueOut'],data['vout'] = mkOutputs(cur, int(row[0]))
+        data['valueIn'],data['vin'] = apiInputs(cur, row[3]/4, int(row[2]))
+        data['valueOut'],data['vout'] = apiOutputs(cur, int(row[0]))
         data['fees'] = round(data['valueIn'] - data['valueOut'],8)
         cur.execute("select hash,hdr from blocks where id=%s limit 1;", (row[3],))
         row = cur.fetchone()
@@ -337,7 +350,7 @@ def mkTx(cur, txhash):
         return data
     return None
         
-def mkInputs(cur, height, blob):
+def apiInputs(cur, height, blob):
     total = 0
     data = []
     ins,_ = unpack('<HH', readBlob(blob, 4))
@@ -355,7 +368,7 @@ def mkInputs(cur, height, blob):
                 total += btc
     return round(total,8),data
     
-def mkOutputs(cur, txid):
+def apiOutputs(cur, txid):
     total = 0
     data = []
     cur.execute("select o.id%%4096,value,addr,o.tx_id,o.id from outputs o, address a where o.id>=%s*4096 and o.id<%s*4096 and a.id=o.addr_id;", (txid,txid+1))
@@ -365,12 +378,12 @@ def mkOutputs(cur, txid):
         vo = { 'n':int(out[0]), 'value':"%1.8f" % btc }
         vo['scriptPubKey'] = { 'addresses':[ mkaddr(out[2]) ] }
         if out[3]:
-            vo.update(mkSpent(cur, int(out[3]), int(out[4])))
+            vo.update(apiSpent(cur, int(out[3]), int(out[4])))
         total += btc
         data.append(vo)
     return round(total,8),data
     
-def mkSpent(cur, txid, outid):
+def apiSpent(cur, txid, outid):
     cur.execute("select txdata,left(t.hash,32),hdr from trxs t, blocks b where t.id=%s and b.id=t.block_id;", (txid,))
     row = cur.fetchone()
     if row:
@@ -379,6 +392,76 @@ def mkSpent(cur, txid, outid):
         return { 'spentTxId':row[1][::-1].encode('hex'), 'spentIndex':inputs.index(outid), 'spentTs':gethdr(row[2])['time'] }
     return {}
 
+def bciBlock(cur, blkhash):
+    data = { 'hash':blkhash, 'tx':[] }
+    cur.execute("select id,hash,hdr from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
+    row = cur.fetchone()
+    if row:
+        data['height'] = int(row[0])/4
+        data['block_index'] = int(row[0])
+        hdr = gethdr(row[2])
+        data['ver'] = hdr['version']
+        data['time'] = hdr['time']
+        data['prev_block'] = hdr['previousblockhash'][::-1].encode('hex')
+        data['mrkl_root'] = hdr['merkleroot'][::-1].encode('hex')
+        data['nonce'] = hdr['nonce']
+        data['bits'] = hdr['bits']
+        data['main_chain'] = True
+        cur.execute("select left(hash,32) from trxs where block_id=%s;", (row[0],))
+        txs = cur.fetchall()
+        for tx in txs:
+            data['tx'].append(bciTx(cur, tx[0][::-1].encode('hex')))
+        data['n_tx'] = len(data['tx'])
+        data['fee'] = -(5000000000 >> (data['height'] / 210000))
+        for out in data['tx'][0]['out']:
+            data['fee'] += out['value']
+        return data
+    return None
+    
+def bciTx(cur, txhash):
+    data = { 'hash':txhash }
+    txh = txhash.decode('hex')[::-1]
+    cur.execute("select id,hash,txdata,block_id from trxs where id>=%s and left(hash,32)=%s limit 1;", (unpack('<q', txh[:5]+'\0'*3)[0] >> 4, txh))
+    row = cur.fetchone()
+    if row:
+        data['tx_index'] = int(row[0])
+        data['block_height'] = row[3]/4
+        data['ver'],data['lock_time'] = unpack_from('<BI', row[1], 32)
+        data['inputs'] = bciInputs(cur, row[3]/4, int(row[2]))
+        data['vin_sz'] = len(data['inputs'])
+        data['out'] = bciOutputs(cur, int(row[0]))
+        data['vout_sz'] = len(data['out'])
+        cur.execute("select hdr from blocks where id=%s limit 1;", (row[3],))
+        data['time'] = gethdr(cur.fetchone()[0])['time']
+        return data
+    return None
+
+def bciInputs(cur, height, blob):
+    data = []
+    ins, = unpack('<H', readBlob(blob, 2))
+    if ins == 0:
+        data.append({ })
+    else:
+        inputs = unpack('<'+'Q'*ins, readBlob(blob+4, ins*8))
+        for n,in_id in enumerate(inputs):
+            cur.execute("select value,addr,left(hash,32) from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id,in_id/4096))
+            row = cur.fetchone()
+            if row:
+                data.append({ 'prev_out':{ 'spent':True, 'type':0, 'n':in_id%4096, 'value':int(row[0]), 
+                              'tx_index':in_id/4096, 'addr':mkaddr(row[1]) }})
+    return data
+    
+def bciOutputs(cur, txid):
+    data = []
+    cur.execute("select o.id%%4096,value,addr,o.tx_id,o.id from outputs o, address a where o.id>=%s*4096 and o.id<%s*4096 and a.id=o.addr_id;", (txid,txid+1))
+    outs = cur.fetchall()
+    for out in outs:
+        vo = { 'n':int(out[0]), 'value':int(out[1]), 'addr':mkaddr(out[2]), 'type':0, 'tx_index':txid }
+        if out[3]:
+            vo['spent'] = True
+        data.append(vo)
+    return data
+        
 def readBlob(pos, sz):
     if sz != 0:
         with open('/var/data/blobs.dat', 'rb') as blob:
