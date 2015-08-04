@@ -34,7 +34,8 @@
     <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
       <ul class="nav navbar-nav">
         <li class="active"><a data-toggle="tab" href="#overview">Overview <span class="sr-only">(current)</span></a></li>
-        <li><a data-toggle="tab" href="#api">API</a></li>
+        <li><a data-toggle="tab" href="#api">Demo API</a></li>
+        <li><a data-toggle="tab" href="#extend">Roll Your Own</a></li>
       </ul>
     </div><!-- /.navbar-collapse -->
   </div><!-- /.container-fluid -->
@@ -46,24 +47,75 @@
 <!-- Overview -->
         <div class="tab-pane fade in active" id="overview">
         <legend>Overview</legend>
-            sqlChain is a compact SQL layer that runs on top of bitcoind. It enhances the ability to query the 
-            blockchain with a priority placed on low storage and processing overhead.
-            This demonstration server provides an Insight (mostly) compatible API. The API page above documents the 
-            queries supported and observed differences to the standard API, as well as other technical details. <br><br>
-            Using sqlChain over a pruning node, as a compact alternative to a full node, and more server applications based on sqlChain 
-            are currently being explored and under development. Below is status and blockchain analysis 
-            information queried and updated periodically from this server. The open source Python code is available in the 
-            <a href="https://github.com/neocogent/sqlchain">neocogent Github</a> and please check out 
+            sqlChain is a compact SQL layer that runs on top of bitcoind. It extends the query options on the 
+            blockchain with a priority placed on low storage demands. 
+            This demonstration server provides multiple API (mostly compatible) interfaces:<br>
+            <ul>
+                <li>Insight API</li> 
+                <li>Blockchain.info API</li> 
+                <li>RPC via POST, and simplified GET urls</li> 
+            </ul>
+            The API page above documents the queries supported and differences to the original sites, as well as other technical details.<br><br>
+            Two daemon programs are provided. <strong>sqlchaind</strong> updates the mysql backend from bitcoind, and <strong>sqlchain-api</strong> 
+            provides the web interface for querying the database (including this page, which is easy to extend as a blockchain web app). 
+            Using sqlChain over a pruning node, as a compact alternative to a full node, 
+            a web socket interface, and an Electrum server based on sqlChain, are currently under development.<br><br>
+            Status and blockchain analysis information below is updated periodically from this server. The open source Python code is 
+            available in the <a href="https://github.com/neocogent/sqlchain">neocogent Github</a> and please check out 
              the <a href="http://neocogent.com">neocogent blog</a>.
-        <legend>Status</legend>
+        <legend>Server Status</legend>
             More to come
         </div>
 <!-- API docs -->
         <div class="tab-pane fade" id="api">
         <legend>Insight API</legend>
+        <ul>
+            <li>/api/block</li>
+            <li>/api/tx</li>
+            <li>/api/addr</li>
+            <li>/api/addrs</li>
+            <li>/api/txs</li>
+        </ul>
+        <legend>Blockchain.info API</legend>
+        <ul>
+            <li>/bci/block-height</li>
+            <li>/bci/rawblock</li>
+            <li>/bci/rawtx</li>
+            <li>/bci/address</li>
+            <li>/bci/unspent</li>
+            <li>/bci/latestblock</li>
+            <li>/bci/q/getblockcount</li>
+        </ul>
+        <legend>RPC API</legend>
+        This api also available via POST on / with method,params args.
+        <ul>
+            <li>/rpc/getinfo</li>
+            <li>/rpc/getdifficulty</li>
+            <li>/rpc/getblock</li>
+            <li>/rpc/getblockhash</li>
+            <li>/rpc/getblockcount</li>
+            <li>/rpc/rawtransaction</li>
+            <li>/rpc/gettxout</li>
+            <li>/rpc/getmempoolinfo</li>
+            <li>/rpc/getrawmempool</li>
+        </ul>
         
-        
-        </div>            
+        </div>   
+<!-- Extend docs -->
+        <div class="tab-pane fade" id="extend">
+        <legend>Roll Your Own Blockchain Web App</legend>
+        It's easy to create a web app based on sqlChain. 
+        <ol>
+            <li>Clone the sqlchain repo from <a href="https://github.com/neocogent/sqlchain">github</a>.</li>
+            <li>Copy <strong>sqlchain-api</strong> to your own name, eg. fluffy.</li>
+            <li>Edit the www directory html/js/css files to provide your web interface.</li>
+            <li>Add to / remove the http handler code as needed. It shows how to query sqlchain data.</li>
+            <li>Edit the cfg defaults, and/or create eg. fluffy.cfg</li>
+            <li>Run ./fluffy --debug and test the site (by default on localhost:8085).</li>
+            <li>Edit sqlchain.init.conf file and place in /etc/init to start both daemons at boot time.</li>
+            <li>Better serve the world: run nginx as a front end and use mysql replication to scale.</li>
+        </ol>
+        </div>                    
     <FOOTER> 
     <p></p> 
     </FOOTER> 

@@ -18,7 +18,8 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
         No further content needed, don't touch this. """
         
 class WebHandler(BaseHTTPRequestHandler):
-    server_version = 'sqlChain/1.0'
+    def version_string(self):
+        return'sqlChain/1.0'
     def do_GET(self):
         try:
             q = urlparse.urlparse(self.path)
@@ -59,7 +60,7 @@ class WebHandler(BaseHTTPRequestHandler):
         if self.path.startswith("/api/addrs/"):
             args = self.path.split('/')[3:]
             addrs = form['addrs'].value.split(',')
-            self.wfile.write(json.dumps(addrData(sql.cursor(), addrs, args)))
+            self.wfile.write(json.dumps(apiAddr(sql.cursor(), addrs, args)))
         if self.path == '/':
             data = self.do_RPC("/%s/%s" % (form['method'].value, "/".join(form.getlist('params'))), sql.cursor(), {})
             self.wfile.write(json.dumps(data))
@@ -133,7 +134,11 @@ class WebHandler(BaseHTTPRequestHandler):
             txhash = path[7:]
             if len(txhash) == 64 and all(c in string.hexdigits for c in txhash):
                 return bciTx(cur, txhash)
+        if path.startswith("/address/") or path.startswith("/unspent"):
+            addrs = get['active'].split('|') if 'active' in get else path.split('/')[2].split(',')
+            return bciAddr(cur, addrs, path.startswith("/unspent"), get)
         return None
+        
     def log_message(self, format, *args):
         if cfg['debug']:
             logts( format % args )
@@ -417,6 +422,26 @@ def bciBlock(cur, blkhash):
             data['fee'] += out['value']
         return data
     return None
+
+def bciAddr(cur, addrs, utxo, get={}):
+    data,tops = [],[]
+    single = (len(addrs) == 1)
+    for addr in addrs:
+        if is_address(addr):
+            addr_id = addr2id(cur, addr)
+            if addr_id:
+                if utxo:
+                    data.extend(addrUTXOs(cur, addr_id, addr))
+                else:
+                    hdr,txs = bciAddrTXs(cur, addr_id, addr, get)
+                    data.extend(txs)
+                    tops.append(hdr)
+    if not utxo and single:
+        tops[0].update({'txs':data})
+    return { 'unspent_outputs':data } if utxo else tops[0] if single else { 'addresses':tops, 'txs':data }
+
+def bciAddrTXs(cur, addr_id, addr, args):
+    return {'recd':0},['asasas']
     
 def bciTx(cur, txhash):
     data = { 'hash':txhash }
