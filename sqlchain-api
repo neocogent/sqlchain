@@ -194,7 +194,7 @@ def usage():
     print """Usage: %s [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
 --defaults\tUpdate cfg and exit\nDefault files are %s.cfg .log .db
 \nThese options get saved in cfg file as default.
--l,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
+-a,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
 -d,--db  \tSet mysql db connection, "host:user:pwd:dbname"\n-l,--log\tSet log file path""" % (sys.argv[0], sys.argv[0])
     sys.exit(2) 
                         
@@ -241,9 +241,9 @@ def addr2id(cur, addr):
     row = cur.fetchone()
     return row[0] if row else None
     
-def mkaddr(pkh, ver=0):
+def mkaddr(pkh, aid):
     pad = ''
-    an = chr(ver) + str(pkh)
+    an = chr(0 if aid%2==0 else 5) + str(pkh)
     for c in an:
         if c == '\0': pad += '1'
         else: break
@@ -297,29 +297,24 @@ def apiAddr(cur, addrs, args, get={}):
     
                             
 def addrTXs(cur, addr_id, addr, args, incTxs):
-    txs,ins = [],[]
+    txs = []
     recd = sent = 0
-    cur.execute("select value,o.id,tx_id,left(hash,32) from outputs o, trxs t where addr_id=%s and t.id=floor(o.id/4096);", (addr_id,))
+    cur.execute("select value,t.id,tx_id,left(hash,32) from outputs o, trxs t where addr_id=%s and (t.id=floor(o.id/4096) or t.id=o.tx_id);", (addr_id,))
     for tx in cur:
-        recd += tx[0]
-        if tx[2]:
+        if tx[1] != tx[2]:
+            recd += tx[0]
+        else:
             sent += tx[0]
-            ins.append(tx[2])
-        if incTxs and tx[3] not in txs:
-            txs.append(tx[3][::-1].encode('hex'))
+        txhash = tx[3][::-1].encode('hex')
+        if incTxs and txhash not in txs:
+            txs.append(txhash)
     if 'balance' in args:
         return int(recd-sent)
     if 'totalreceived' in args:
         return int(recd)
     if 'totalsent' in args:
         return int(sent)
-    if incTxs:
-        for tx_id in ins:
-            cur.execute("select left(hash,32) from trxs where id=%s limit 1;", (tx_id,))
-            row = cur.fetchone()
-            if row and row[0] not in txs:
-                txs.append(row[0][::-1].encode('hex'))
-                
+                        
     return { 'addStr':addr, 'balanceSat':int(recd-sent), 'balance':float(recd-sent)/1e8, 'totalReceivedSat':int(recd), 
              'totalReceived': float(recd)/1e8, 'totalSentSat':int(sent), 'totalSent':float(sent)/1e8, 
              'txApperances':len(txs), 'transactions':txs }   
@@ -365,25 +360,25 @@ def apiInputs(cur, height, blob):
     else:
         inputs = unpack('<'+'Q'*ins, readBlob(blob+4, ins*8))
         for n,in_id in enumerate(inputs):
-            cur.execute("select value,addr,left(hash,32) from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id,in_id/4096))
+            cur.execute("select value,addr,addr_id,left(hash,32) from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id,in_id/4096))
             row = cur.fetchone()
             if row:
                 btc = float(row[0])/1e8
-                data.append({ 'n':n, 'vout':in_id%4096, 'value':round(btc,8), 'valueSat':int(row[0]), 'txid':row[2][::-1].encode('hex'), 'addr':mkaddr(row[1]) })
+                data.append({ 'n':n, 'vout':in_id%4096, 'value':round(btc,8), 'valueSat':int(row[0]), 'txid':row[3][::-1].encode('hex'), 'addr':mkaddr(row[1],row[2]) })
                 total += btc
     return round(total,8),data
     
 def apiOutputs(cur, txid):
     total = 0
     data = []
-    cur.execute("select o.id%%4096,value,addr,o.tx_id,o.id from outputs o, address a where o.id>=%s*4096 and o.id<%s*4096 and a.id=o.addr_id;", (txid,txid+1))
+    cur.execute("select o.id%%4096,value,addr,addr_id,o.tx_id,o.id from outputs o, address a where o.id>=%s*4096 and o.id<%s*4096 and a.id=o.addr_id;", (txid,txid+1))
     outs = cur.fetchall()
     for out in outs:
         btc = float(out[1])/1e8
         vo = { 'n':int(out[0]), 'value':"%1.8f" % btc }
-        vo['scriptPubKey'] = { 'addresses':[ mkaddr(out[2]) ] }
-        if out[3]:
-            vo.update(apiSpent(cur, int(out[3]), int(out[4])))
+        vo['scriptPubKey'] = { 'addresses':[ mkaddr(out[2],out[3]) ] }
+        if out[4]:
+            vo.update(apiSpent(cur, int(out[4]), int(out[5])))
         total += btc
         data.append(vo)
     return round(total,8),data
@@ -469,20 +464,20 @@ def bciInputs(cur, height, blob):
     else:
         inputs = unpack('<'+'Q'*ins, readBlob(blob+4, ins*8))
         for n,in_id in enumerate(inputs):
-            cur.execute("select value,addr,left(hash,32) from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id,in_id/4096))
+            cur.execute("select value,addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (in_id,))
             row = cur.fetchone()
             if row:
                 data.append({ 'prev_out':{ 'spent':True, 'type':0, 'n':in_id%4096, 'value':int(row[0]), 
-                              'tx_index':in_id/4096, 'addr':mkaddr(row[1]) }})
+                              'tx_index':in_id/4096, 'addr':mkaddr(row[1],row[2]) }})
     return data
     
 def bciOutputs(cur, txid):
     data = []
-    cur.execute("select o.id%%4096,value,addr,o.tx_id,o.id from outputs o, address a where o.id>=%s*4096 and o.id<%s*4096 and a.id=o.addr_id;", (txid,txid+1))
+    cur.execute("select o.id%%4096,value,addr,addr_id,o.tx_id from outputs o, address a where o.id>=%s*4096 and o.id<%s*4096 and a.id=o.addr_id;", (txid,txid+1))
     outs = cur.fetchall()
     for out in outs:
-        vo = { 'n':int(out[0]), 'value':int(out[1]), 'addr':mkaddr(out[2]), 'type':0, 'tx_index':txid }
-        if out[3]:
+        vo = { 'n':int(out[0]), 'value':int(out[1]), 'addr':mkaddr(out[2],out[3]), 'type':0, 'tx_index':txid }
+        if out[4]:
             vo['spent'] = True
         data.append(vo)
     return data

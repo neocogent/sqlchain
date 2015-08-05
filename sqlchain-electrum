@@ -1,0 +1,354 @@
+#!/usr/bin/env python
+
+import os, sys, pwd, getopt, datetime, time, cgi, urlparse, signal, string
+from time import sleep
+import MySQLdb as db
+import threading, ssl, json, gevent
+from bitcoinrpc.authproxy import AuthServiceProxy
+from hashlib import sha256
+from struct import pack, unpack, unpack_from
+from gevent import socket
+from gevent.server import StreamServer
+from gevent.queue import Queue
+from gevent.threadpool import ThreadPool
+
+srvinfo = { 'version':"1.0", 'banner':'', 'block':0, 'header':{} }
+cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin',
+        'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' }
+subs = { 'numblocks':{}, 'headers':{}, 'address':{}, '_ip':{} }
+reqQ,respQ = Queue(),Queue()
+
+def ReqHandler():
+    while True:
+        resp = None
+        fp,req = reqQ.get()
+        print 'REQ', req
+        args = req['method'].split('.')
+        val = req['params'][0] if len(req['params']) > 0 else 1
+        if args[0] == 'server':
+            respQ.put((fp, req['id'], srvinfo[args[1]] if args[1] in srvinfo else None))
+        elif args[-1] == 'subscribe':
+            if args[1] in subs and not getSubs(args[1], val, fp):
+                addSub(args[1], val, fp)
+                respSub(args[1], fp, req)
+        elif req['method'] in reqFuncs:
+            pool.spawn(reqFuncs[req['method']], fp, req)
+        else:
+            logts("Bad Req %s:%d - %s" % (subs['_ip'][fp][0]+(req['method'],)))
+
+def RespHandler():
+    while True:
+        fp,reqid,resp = respQ.get()
+        print "RESP", reqid, resp
+        if resp:
+            resp = json.dumps({ 'id':reqid, 'result':resp } if not 'error' in resp else { 'id':reqid,'error':resp['error'] })
+            fp.write(resp)
+            fp.flush()
+            
+def TcpHandler(sock, address):
+    fp = sock.makefile()
+    addSub('_ip', address, fp)
+    while True:
+        line = fp.readline()
+        if line:
+            reqQ.put((fp, json.loads(line)))
+        else:
+            break
+    delSubs(fp)
+    sock.shutdown(socket.SHUT_WR)
+    sock.close()
+
+def getSubs(sub, val, key=None):
+    if key:
+        return key in subs[sub] and val in subs[sub][key]
+    keys = []
+    for k in subs[sub]:
+        if val in subs[sub][k]:
+            fps.append(k)
+    return fps
+
+def addSub(sub, val, key):
+    if key in subs[sub]:
+        subs[sub][key].append(val)
+    else:
+        subs[sub][key] = [val]
+        
+def delSubs(key):
+    for sub in subs:
+        if key in subs[sub]:
+            del subs[sub][key]
+            
+def respSub(to, fp, req):
+    if to == 'address':
+        pool.spawn(addrHistory, fp, req, True)
+    elif to == 'numblocks':
+        respQ.put((fp, req['id'], srvinfo['block']))
+    elif to == 'headers':
+        respQ.put((fp, req['id'], srvinfo['header']))
+        
+def addrTxs(addr, utxo=False):
+    data = { 'txs':[], 'unspent':[], 'cfmd':0, 'uncfmd':0 }
+    sql = db.connect(*cfg['db'].split(':'))
+    cur = sql.cursor()
+    addr_id = addr2id(cur, addr)
+    if addr_id:
+        cur.execute("select value,t.id,o.tx_id,left(hash,32),block_id/4,o.id%%4096 from outputs o, trxs t where addr_id=%s and (t.id=floor(o.id/4096) or t.id=o.tx_id) order by block_id;", (addr_id,))
+        for tx in cur:
+            value = int(tx[0])
+            if utxo and not tx[2]:
+                tmp = { 'tx_hash':tx[3][::-1].encode('hex'), 'height':int(tx[4]), 'value':value, 'n':int(tx[5]) }
+            else:
+                tmp = { 'tx_hash':tx[3][::-1].encode('hex'), 'height':int(tx[4]) }
+                if tx[4] == 0:
+                    data['uncfmd'] += value if tx[1] == tx[2] else -value
+                else:
+                    data['cfmd'] += value if tx[1] == tx[2] else -value
+            data['txs'].append(tmp)
+    return data
+            
+def addrHistory(fp, req, status=False):
+    txt = ''
+    data = addrTxs(req['params'][0])
+    if status:
+        for tx in data['txs']:       
+            txt += tx['tx_hash'] + ":%d:" % tx['height']
+    respQ.put((fp, req['id'], sha256(txt).digest().encode('hex') if status else data['txs'] ))
+        
+def addrBalance(fp, req):
+    data = addrTxs(req['params'][0])
+    respQ.put((fp, req['id'], { 'confirmed':data['cfmd'], 'unconfirmed':data['uncfmd'] }))
+    
+def addrMemPool(fp, req):
+    txs = []
+    data = addrTxs(req['params'][0])
+    for tx in data['txs']:
+        if tx['height'] == 0:
+            txs.append(tx)
+    respQ.put((fp, req['id'], txs))
+    
+def addrUnspent(fp, req):
+    respQ.put((fp, req['id'], addrTxs(req['params'][0], True)))
+    
+def addrProof(fp, req):
+    pass
+    
+def blkHeader(fp, req):
+    sql = db.connect(*cfg['db'].split(':'))
+    cur = sql.cursor()
+    cur.execute("select hdr from blocks where id=%s*4", (int(req['params'][0]),))
+    row = cur.fetchone()
+    if row:
+        hdr = gethdr(row[0])
+        hdr.update({ 'block_height':int(row[0]/4), 'merkle_root':hdr['merkle_root'][::-1].encode('hex'), 'prev_block_hash':hdr['prev_block_hash'][::-1].encode('hex') })
+        respQ.put((fp, req['id'], hdr ))
+    
+def blkChunk(fp, req):
+    pass
+    
+def utxoAddress(fp, req):
+    sql = db.connect(*cfg['db'].split(':'))
+    cur = sql.cursor()
+    cur.execute("select addr,addr_id from address a, outputs o where o.id=%s and a.id=o.addr_id;", (req['params'][0]*4096 + req['params'][1],))
+    row = cur.fetchone()
+    if row:
+        respQ.put((fp, req['id'], mkaddr(row[0], row[1]) ))
+    
+def txGet(fp, req):
+    pass
+    
+def txSend(fp, req):
+    rpc = AuthServiceProxy(cfg['rpc'])
+    txid = rpc.sendrawtransaction(*req['params'])
+    logts("Tx Sent: %s" % txid)
+    respQ.put((fp, req['id'], txid ))
+    
+def txMerkle(fp, req):
+    pass
+    
+def feeEstimate(fp, req):
+    rpc = AuthServiceProxy(cfg['rpc'])
+    fee = rpc.estimatefee(int(req['params'][0]))
+    respQ.put((fp, req['id'], fee ))
+
+reqFuncs = { 'blockchain.address.get_history':addrHistory, 'blockchain.address.get_balance':addrBalance, 
+             'blockchain.address.get_mempool':addrMemPool, 'blockchain.address.get_proof':addrProof,
+             'blockchain.address.listunspent':addrUnspent, 'blockchain.utxo.get_address':utxoAddress,
+             'blockchain.block.get_header':blkHeader,      'blockchain.block.get_chunk':blkChunk, 
+             'blockchain.transaction.broadcast':txSend,    'blockchain.transaction.get_merkle':txMerkle,
+             'blockchain.transaction.get':txGet,           'blockchain.estimatefee':feeEstimate }
+        
+# cfg file and option handling stuff
+
+def loadcfg():
+    global cfg
+    try:
+        with open(sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else sys.argv[0]+'.cfg') as json_file:
+            cfg = json.load(json_file)
+    except IOError:
+        logts('No cfg file.')
+    finally:
+        cfg['debug'] = False
+        options()
+
+def savecfg():
+    try:
+        with open(sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else sys.argv[0]+'.cfg', 'w') as json_file:
+            json.dump(cfg, json_file, indent=2)
+    except IOError:
+        logts('Cannot save cfg file')
+
+def options():
+    global cfgfile
+    try:                                
+        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:s:a:w:r:u:", 
+            ["help", "version", "debug", "db=", "log=", "listen=", "www=", "user=", "defaults" ])
+    except getopt.GetoptError:
+        usage()
+    for opt,arg in opts:
+        if opt in ("-h", "--help"):
+            usage()
+        elif opt in ("-v", "--version"):
+            sys.exit('sqlchain server: '+version)
+        elif opt in ("-d", "--db"):
+            cfg['db'] = arg
+        elif opt in ("-l", "--log"):
+            cfg['log'] = arg
+        elif opt in ("-w", "--www"):
+            cfg['www'] = arg            
+        elif opt in ("-a", "--listen"):
+            cfg['listen'] = arg
+        elif opt in ("--defaults"):
+            savecfg()
+            sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
+        elif opt in ("--debug"):
+            cfg['debug'] = True
+            
+def usage():
+    print """Usage: %s [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
+--defaults\tUpdate cfg and exit\nDefault files are %s.cfg .log .db
+\nThese options get saved in cfg file as default.
+-a,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
+-d,--db  \tSet mysql db connection, "host:user:pwd:dbname"\n-l,--log\tSet log file path""" % (sys.argv[0], sys.argv[0])
+    sys.exit(2) 
+                        
+def logts(msg):
+    print datetime.datetime.now().strftime('%d-%m-%Y %H:%M:%S'), msg
+    sys.stdout.flush()  
+    
+b58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+def is_address(addr):
+    try:
+        n = 0
+        for c in addr:
+            n = n * 58 + b58.index(c)
+        btc = ('%%0%dx' % (25 << 1) % n).decode('hex')[-25:]
+        return btc[-4:] == sha256(sha256(btc[:-4]).digest()).digest()[:4]
+    except Exception:
+        return False
+
+def addr2pkh(v):
+    long_value = 0L
+    for (i, c) in enumerate(v[::-1]):
+        long_value += b58.find(c) * (58**i)
+    result = ''
+    while long_value >= 256:
+        div, mod = divmod(long_value, 256)
+        result = chr(mod) + result
+        long_value = div
+    result = chr(long_value) + result
+    nPad = 0
+    for c in v:
+        if c == b58[0]: nPad += 1
+        else: break
+    result = chr(0)*nPad + result
+    return result[1:-4]
+
+def addr2id(cur, addr):
+    pkh = addr2pkh(addr)
+    addr_id, = unpack('<q', pkh[:5]+'\0'*3) 
+    addr_id *= 2
+    if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
+        addr_id += 1
+    cur.execute("select id from address where id>=%s and id<%s+128 and addr=%s limit 1;", (addr_id,addr_id,pkh))
+    row = cur.fetchone()
+    return row[0] if row else None
+    
+def mkaddr(pkh, aid):
+    pad = ''
+    an = chr(0 if aid%2==0 else 5) + str(pkh)
+    for c in an:
+        if c == '\0': pad += '1'
+        else: break
+    num = long((an + sha256(sha256(an).digest()).digest()[0:4]).encode('hex'), 16)
+    out = ''
+    while num >= 58:
+        num,m = divmod(num, 58)
+        out = b58[m] + out
+    return pad + b58[num] + out            
+            
+def bits2diff(bits):
+    return (0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))))
+def gethdr(data):
+    return dict(zip(['version','prev_block_hash','merkle_root', 'timestamp', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
+        
+def readBlob(pos, sz):
+    if sz != 0:
+        with open('/var/data/blobs.dat', 'rb') as blob:
+            blob.seek(pos)
+            return blob.read(sz)
+    return None
+        
+def sigterm_handler(_signo, _stack_frame):
+    logts("Shutting down.")
+    sys.exit(0)
+    
+def drop2user():
+    global drop
+    if ('user' in cfg) and (cfg['user'] != '') and (os.getuid() == 0):
+        #drop.wait()
+        uid = pwd.getpwnam(cfg['user']).pw_uid
+        os.setgroups([])
+        os.setgid(uid)
+        os.setuid(uid)
+        os.umask(077)      
+    
+if __name__ == '__main__':
+    
+    loadcfg()
+    
+    with open('electrum.banner') as f:
+        srvinfo['banner'] = f.read()
+        
+    if not cfg['debug']:
+        sys.stdout = open(cfg['log'], 'a')
+        signal.signal(signal.SIGTERM, sigterm_handler)
+    
+    # init last block info from db
+    sql = db.connect(*cfg['db'].split(':'))
+    cur = sql.cursor()
+    cur.execute("select id,hdr from blocks order by id desc limit 1")
+    row = cur.fetchone()
+    if row:
+        hdr = gethdr(row[1])
+        hdr.update({ 'block_height':int(row[0]/4), 'merkle_root':hdr['merkle_root'][::-1].encode('hex'), 'prev_block_hash':hdr['prev_block_hash'][::-1].encode('hex') })
+        srvinfo['block'],srvinfo['header'] = row[0]/4,hdr
+
+    pool = ThreadPool(4)
+    gevent.spawn(ReqHandler)
+    gevent.spawn(RespHandler)
+
+    logts("Starting on %s" % cfg['listen'])
+    while True:
+        try:
+            host,port = cfg['listen'].split(':')
+            cert = {'certfile':cfg['ssl']} if ('ssl' in cfg) and (cfg['ssl'] != '') else {}
+            server = StreamServer((host, int(port)), TcpHandler, **cert)
+            server.serve_forever()
+        except KeyboardInterrupt:
+            sys.exit(0)
+        #except:
+            #logts("Uknown exception")
+            #pass
+            
+        
