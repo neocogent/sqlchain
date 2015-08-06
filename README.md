@@ -1,18 +1,27 @@
-### sqlchain - Project to convert Bitcoin blockchain to SQL data
+### sqlchain - The Blockchain as a SQL Layer
 
-See my [blog series](http://www.neocogent.com) describing work here. At this point this is just a first stab - a python script for converting and first pass on db schema.
+**sqlChain** is a *compact* SQL layer that runs on top of bitcoind. It extends the query options on the blockchain with a priority placed on low storage overhead. A demonstration server provides multiple API (mostly compatible) interfaces (all under development):
 
-Update: Resuming work. July 29, 2015 
+- Insight API
+- Blockchain.info API
+- RPC via POST, GET urls
+- Web Interface (using bootstrap, integrated with API backend)
+- Electrum Server
+- WebSocket Feed (soon)
 
-Have new SSD and built db up to block 353259 but then realized some deficiencies in db schema so reworked and currently rebuilding db. This time I'm keeping track of time and will post details of conversion in a new blog post.
+(at this time the demo server is being tested locally, but later will be hosted on a public server)
 
-In case anyone watching is confused I've changed the name to "sqlchain". I think this is more suitable as otherwise it seems like another alt coin. If you have cloned the repo you should probably update the origin or upstream url in .git/config even though it will redirect properly (according to github docs).
+**sqChain** currently consists of three daemon programs.
 
-I've reworked some of the code and have pushed the update (sql db build still in progress). I've altered where script blob data is stored and created a tx_id "back link" in outputs so that it's easy to build tx data sets. This reduces data size while also easing the queries needed to support an api.
+- sqlchaind             - monitors bitcoind and updates a mysql database
+- sqlchain-api          - provides multiple http API interfaces over the mysql database
+- sqlchain-electrum     - runs an electrum server over the sqlchain API layer
 
-- July 29, I'm now working on an api server layer initially Insight compatible but eventually perhaps will also support blockchain.info.
-- July 30, added sqlchain api server, initial code added, has /block-index and /block (with some missing values)
+sqlchain-electrum is using gevent to provide fast, low overhead connections. sqlchain-api currently uses the Python HTTPServer module but will be migrated to an gevent based WSGI server soon.
 
-Warning: work in progress so treat as ALPHA software.
+Testing and development is under way to run sqlChain (optionally) on top of a pruning bitcoind node, providing full querying with much lower storage demands compared to other API stacks.
+
+sqlChain is still "Alpha" level software under active development (not ready for prime time) - but I'm busy on getting it there.
+
 
 
