@@ -154,8 +154,9 @@ def decodeBlock(data):
         off += toff
         txcnt -= 1
     block['height'] = 0
-    if block['version'] > 1 and block['height'] >= 227836 and block['tx'][0]['vin'][0]['coinbase'][0] == '\x03':
-        block['height'] = unpack('<I', block['tx'][0]['vin'][0]['coinbase'][1:4]+'\0')[0]
+    block['coinbase'] = block['tx'][0]['vin'][0]['coinbase']
+    if block['version'] > 1 and block['height'] >= 227836 and block['coinbase'][0] == '\x03':
+        block['height'] = unpack('<I', block['coinbase'][1:4]+'\0')[0]
         #print 'coinbase height', block['height'], block['tx'][0]['vin'][0]['coinbase'][1:4].encode('hex')
     return block
 
@@ -193,9 +194,11 @@ def decodeScriptPK(data):
     if len(data) > 1:
         if data[:3] == '\x76\xa9\x14' and data[23:25] == '\x88\xac': # P2PKH
             return { 'type':'p2pkh', 'data':'', 'addr':mkaddr(data[3:23]) };
-        if data[0] == '\xa9' and data[21] == '\x87': # P2SH
-            return { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[1:21],5)};
+        if data[:2] == '\xa9\x14' and data[22] == '\x87': # P2SH
+            return { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[2:22],5)};
         if data[0] == '\x41' and data[66] == '\xac': # P2PK
+            return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
+        if data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
         if len(data) <= 41 and data[0] == '\x6a': # NULL
             return { 'type':'null', 'data':data };
@@ -221,7 +224,7 @@ def encodeVarInt(v):
     
 def insertAddress(cur, addr):
     pkh = addr2pkh(addr)
-    addr_id, = unpack('<q', pkh[:5]+'\0'*3) 
+    addr_id, = unpack('<q', hashlib.sha256(pkh).digest()[:5]+'\0'*3) 
     addr_id *= 2
     if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
         addr_id += 1
@@ -240,7 +243,7 @@ def insertAddress(cur, addr):
 
 def findTx(cur, txhash, mkNew=False, limit=32):
     tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
-    tx_id >>= 4    
+    tx_id >>= 3    
     limit_id = tx_id+limit
     start_id = tx_id
     while True:
@@ -259,64 +262,50 @@ def findTx(cur, txhash, mkNew=False, limit=32):
         tx_id += 1
         
 def insertTxMemPool(tx, sync_id):
-    tx_id = findTx(cur, tx['txid'])
+    tx_id = findTx(cur, tx['txid'], mkNew=True)
     if tx_id == None:
-        outs,ins = [],[]
-        inputs,txdata = '',''
-        tx_id = findTx(cur, tx['txid'], mkNew=True)
-        for vin in tx['vin']:
-            if 'txid' in vin:
-                in_id = findTx(cur, vin['txid'])
-                if in_id and vin['vout'] < 4096:
-                    in_id = (in_id<<12) + vin['vout']
-                    ins.append((tx_id, in_id))
-                    inputs += pack('<Q', in_id)
-                    txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig'] + pack('<I', vin['sequence'])
-        for vout in tx['vout']:
-            addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
-            outs.append( ( (tx_id<<12) + vout['n'], addr_id, vout['value'] ) )
-            txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']  
-            
-        txdata = pack('<HH', len(inputs)/8, len(tx['vout'])) + inputs + txdata
-        cur.execute("insert ignore into trxs (id,hash,txdata) values(%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version']&0xFF, tx['locktime']), insertBlob(txdata) ))
+        ins,outs = InsertTx(cur, tx, tx_id, 0)
         cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
         cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
     cur.execute("insert ignore into mempool (id,sync_id) values(%s,%s);", (tx_id, sync_id))
+
+def insertTx(cur, tx, tx_id, blk_id):
+    ins,outs = [],[]
+    inputs,txdata = '','' 
+    for vin in tx['vin']:
+        if 'coinbase' not in vin and 'txid' in vin:
+            in_id = findTx(cur, vin['txid'])
+            if in_id and vin['vout'] < 4096:
+                in_id = (in_id<<12) + vin['vout']
+                ins.append((tx_id, in_id))
+                inputs += pack('<Q', in_id)
+                txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig'] + pack('<I', vin['sequence'])
+                        
+    for vout in tx['vout']:
+        addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
+        if vout['n'] < 4096:
+            outs.append( ( (tx_id<<12) + vout['n'], addr_id, vout['value'] ) )
+            txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
+                
+    txdata = pack('<HH', len(inputs)/8, len(tx['vout'])) + inputs + txdata
+    cur.execute("insert ignore into trxs (id,hash,txdata,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version']&0xFF, tx['locktime']), insertBlob(txdata), blk_id ))    
+    return ins,outs
     
 def insertBlock(cur, data):
     print "block", data['height'], 
     blkstart = time.time()
     blk_id = data['height']*4
-    outs,ins = [],[]
+    ins,outs = [],[]
     for tx in data['tx']:
-        tx_id = findTx(cur, tx['txid'])
-        if tx_id:
-            if tx['txid'] in memPool:
-                memPool.remove(tx['txid'])
-                cur.execute("delete from mempool where id=%s limit 1;", (tx_id,))
-            cur.execute("update trxs set block_id=%s where id=%s limit 1;", (blk_id,tx_id))
-        else:
-            inputs,txdata = '',''
-            tx_id = findTx(cur, tx['txid'], mkNew=True)        
-            for vin in tx['vin']:
-                if 'coinbase' in vin:
-                    data['coinbase'] = vin['coinbase']
-                elif 'txid' in vin:
-                    in_id = findTx(cur, vin['txid'])
-                    if in_id and vin['vout'] < 4096:
-                        in_id = (in_id<<12) + vin['vout']
-                        ins.append((tx_id, in_id))
-                        inputs += pack('<Q', in_id)
-                        txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig'] + pack('<I', vin['sequence'])
-                                
-            for vout in tx['vout']:
-                addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
-                if vout['n'] < 4096:
-                    outs.append( ( (tx_id<<12) + vout['n'], addr_id, vout['value'] ) )
-                    txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
-                        
-            txdata = pack('<HH', len(inputs)/8, len(tx['vout'])) + inputs + txdata
-            cur.execute("insert ignore into trxs (id,hash,txdata,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version']&0xFF, tx['locktime']), insertBlob(txdata), blk_id ))
+        tx_id = findTx(cur, tx['txid'], mkNew=True)
+        if tx_id in memPool:
+            memPool.remove(tx['txid'])
+            cur.execute("delete from mempool where id=%s limit 1;", (tx_id,))
+            
+        xi,xo = insertTx(cur, tx, tx_id, blk_id)
+        ins.extend(xi)
+        outs.extend(xo)
+        
     cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
     cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
     cur.execute("insert ignore into blocks (id,hash,hdr) values (%s,%s,%s);", (blk_id, data['hash'], data['hdr']+data['coinbase']))

@@ -50,46 +50,53 @@
         <legend>Overview</legend>
             sqlChain is a compact SQL layer that runs on top of bitcoind. It extends the query options on the 
             blockchain with a priority placed on low storage demands. 
-            This demonstration server provides multiple API (mostly compatible) interfaces:<br>
+            This demonstration server provides multiple API (compatible) interfaces:<br>
             <ul>
                 <li>Insight API</li> 
                 <li>Blockchain.info API</li> 
-                <li>RPC via POST, and simplified GET urls</li> 
+                <li>RPC via POST, GET urls</li>
+                <li>Electrum server</li>  
+                <li>WebSocket (soon)</li> 
             </ul>
             The API page above documents the queries supported and differences to the original sites, as well as other technical details.<br><br>
-            Two daemon programs are provided. <strong>sqlchaind</strong> updates the mysql backend from bitcoind, and <strong>sqlchain-api</strong> 
-            provides the web interface for querying the database (including this page, which is easy to extend as a blockchain web app). 
-            Using sqlChain over a pruning node, as a compact alternative to a full node, 
-            a web socket interface, and an Electrum server based on sqlChain, are currently under development.<br><br>
+            Three daemon programs are provided:<br>
+            <ul>
+                <li><strong>sqlchaind</strong> updates the mysql backend from bitcoind.</li>
+                <li><strong>sqlchain-api</strong> provides an the API and web interfaces for querying the database.</li> 
+                <li><strong>sqlchain-electrum</strong> adds a layer over sqlchain-api supporting Electrum clients.</li>
+            </ul>
+            Using sqlChain over a pruning node as a compact alternative, 
+            a web socket interface, and other ideas, are currently under development.
             Status and blockchain analysis information below is updated periodically from this server. The open source Python code is 
             available in the <a href="https://github.com/neocogent/sqlchain">neocogent Github</a> and please check out 
              the <a href="http://neocogent.com">neocogent blog</a>.
-        <legend>Server Status</legend>
-            More to come
+        <legend>Server Status</legend>This information is provided by the /api/status call.
+            
         </div>
 <!-- API docs -->
         <div class="tab-pane fade" id="api">
-        <legend>Insight API</legend>
-        <ul>
-            <li>/api/block</li>
-            <li>/api/tx</li>
-            <li>/api/addr</li>
-            <li>/api/addrs</li>
-            <li>/api/txs</li>
+        <legend>Insight</legend>
+        <ul class='apiClk'>
+            <li>/api/block/<span>0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
+            <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span></li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
+            <li>/api/addrs/<span>17pfg6L3hT1ZPBASPt7DCQZfy9jWeMGq1W,1CmTtsKEqPxZsW3YjGYXbPSY89xrzkhy94</span></li>
+            <li>/api/txs?block=<span>0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
+            <li>/api/txs?address=<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
         </ul>
-        <legend>Blockchain.info API</legend>
-        <ul>
-            <li>/bci/block-height</li>
-            <li>/bci/rawblock</li>
-            <li>/bci/rawtx</li>
-            <li>/bci/address</li>
-            <li>/bci/unspent</li>
+        <legend>Blockchain.info</legend>
+        <ul class='apiClk'>
+            <li>/bci/block-height/<span>123432</li>
+            <li>/bci/rawblock/<span>0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
+            <li>/bci/rawtx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span><span class='opt'>[?format=hex]</span></li>
+            <li>/bci/address/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
+            <li>/bci/unspent/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
             <li>/bci/latestblock</li>
             <li>/bci/q/getblockcount</li>
         </ul>
-        <legend>RPC API</legend>
-        This api also available via POST on / with method,params args.
-        <ul>
+        <legend>RPC</legend>
+        This api also available via POST with [method,params] args.
+        <ul class='apiClk'>
             <li>/rpc/getinfo</li>
             <li>/rpc/getdifficulty</li>
             <li>/rpc/getblock</li>
@@ -100,7 +107,24 @@
             <li>/rpc/getmempoolinfo</li>
             <li>/rpc/getrawmempool</li>
         </ul>
-        
+        <legend>Electrum</legend> Extensions to support sqlchain-electrum server.
+        <ul class="apiClk">
+            <li>/api/history/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
+            <li>/api/history/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/status</li>
+            <li>/api/history/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/balance</li>
+            <li>/api/history/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/uncfmd</li>
+            <li>/api/history/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/utxo</li>
+            <li>/api/block-index/<span>167324/electrum</li>
+            <li>/api/chunk/<span>25</li>
+            <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/output/<span>2</span></li>
+            <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/raw</li>
+        </ul>
+        Extensions for status, analysis or debugging.
+        <ul class="apiClk">
+            <li>/api/status</li>
+            <li class="raw">/api/tx/23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/raw/html</li>
+        </ul>
+        <div id="blank" class="resp"></div>
         </div>   
 <!-- Extend docs -->
         <div class="tab-pane fade" id="extend">

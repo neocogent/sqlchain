@@ -92,8 +92,7 @@ def addrHistory(fp, req, args=''):
     respQ.put((fp, req['id'], data if args else data['txs'] if len(data['txs']) > 0 else None ))
         
 def addrBalance(fp, req):
-    data = apicall('/history/'+req['params'][0]+'/balance')
-    respQ.put((fp, req['id'], { 'confirmed':data['cfmd'], 'unconfirmed':data['uncfmd'] }))
+    respQ.put((fp, req['id'], apicall('/history/'+req['params'][0]+'/balance')))
     
 def addrMemPool(fp, req):
     respQ.put((fp, req['id'], apicall('/history/'+req['params'][0]+'/uncfmd')))
@@ -108,10 +107,10 @@ def blkHeader(fp, req):
     respQ.put((fp, req['id'], apicall('/block-index/'+req['params'][0]+'/electrum') ))
     
 def blkChunk(fp, req):
-    pass
+    respQ.put((fp, req['id'], apicall('/chunk/'+req['params'][0]) ))
     
 def utxoAddress(fp, req):
-    respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/address/%d' % req['params'][1]) ))
+    respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/output/%d' % req['params'][1]) ))
     
 def txGet(fp, req):
     respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/raw') ))
