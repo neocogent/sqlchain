@@ -107,7 +107,7 @@ def blkHeader(fp, req):
     respQ.put((fp, req['id'], apicall('/block-index/'+req['params'][0]+'/electrum') ))
     
 def blkChunk(fp, req):
-    respQ.put((fp, req['id'], apicall('/chunk/'+req['params'][0]) ))
+    respQ.put((fp, req['id'], getChunk(int(req['params'][0]).encode('hex') ))
     
 def utxoAddress(fp, req):
     respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/output/%d' % req['params'][1]) ))
@@ -202,7 +202,12 @@ def apicall(url):
         logts("Error: sqlchain-api must be at %s" % cfg['api'])
         return None
     return json.loads(data)
-        
+
+def getChunk(chunk):
+    with open('/var/data/hdrs.dat', 'rb') as f:
+        f.seek(chunk*80*2016)
+        return f.read(80*2016)
+
 def sigterm_handler(_signo, _stack_frame):
     logts("Shutting down.")
     sys.exit(0)

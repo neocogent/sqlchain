@@ -5,7 +5,7 @@ USE bitcoin;
 CREATE TABLE `blocks` (
   `id` int(11) NOT NULL,
   `hash` binary(32) NOT NULL,
-  `hdr` varbinary(180) NOT NULL,
+  `coinbase` varbinary(100) NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 

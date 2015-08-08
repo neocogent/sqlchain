@@ -12,6 +12,7 @@ from struct import pack, unpack, unpack_from
 
 version = "0.1.0"
 cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0 }
+serverinfo = { 'version':version }
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """ This class allows to handle requests in separated threads.
@@ -92,8 +93,6 @@ class WebHandler(BaseHTTPRequestHandler):
             return apiAddr(cur, args[1].split(','), args[2:], get)
         if args[0] == "history":
             return addrHistory(cur, args[1], args[2:])
-        if args[0] == "chunk":
-            return hdrChunk(cur, int(args[1]))
         if args[0] == "status":
             return apiStatus(cur, get)
         return None
@@ -102,13 +101,9 @@ class WebHandler(BaseHTTPRequestHandler):
         if path.startswith("/getblockcount"):
             return cfg['block']
         if path.startswith("/getinfo"):
-            cur.execute("select hdr from blocks where id=%s*4 limit 1;", (cfg['block'],))
-            hdr = gethdr(cur.fetchone()[0])
-            return { 'blocks':cfg['block'], 'difficulty':bits2diff(hdr['bits']) }
+            return { 'blocks':cfg['block'], 'difficulty':bits2diff(gethdr(cfg['block'], 'bits')) }
         if path.startswith("/getdifficulty"):
-            cur.execute("select hdr from blocks where id=%s*4 limit 1;", (cfg['block'],))
-            hdr = gethdr(cur.fetchone()[0])
-            return bits2diff(hdr['bits'])
+            return bits2diff(gethdr(cfg['block'], 'bits'))
         if path.startswith("/getblock/"):
             return self.do_API("/block/"+path[10:], cur, get)
         if path.startswith("/getblockhash/"):
@@ -292,8 +287,8 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid):
     out = [ pack('<I', version) ]
     vi,vo = unpack('<HH', readBlob(int(txdata), 4))
     if vi == 0:
-        cur.execute("select hdr from blocks where id=%s;", (blkid,))
-        cb = cur.fetchone()[0][80:]
+        cur.execute("select coinbase from blocks where id=%s;", (blkid,))
+        cb = cur.fetchone()[0]
         out += [ '\x01', '\0'*32, '\xff'*4, encodeVarInt(len(cb)), cb, '\0'*4 ]
         vpos = 0
     else:
@@ -322,17 +317,22 @@ def txh2id(txh):
     return ( unpack('<q', txh[:5]+'\0'*3)[0] >> 3 )
 def bits2diff(bits):
     return (0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))))
-def gethdr(data):
-    return dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
+    
+def gethdr(blk, var=None):
+    with open('/var/data/hdrs.dat', 'rb') as f:
+        f.seek(blk*80)
+        data = f.read(80)
+    hdr = dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
+    return hdr if var == None else hdr[var] if var != 'raw' else data
 
 def apiHeader(cur, blk, args):
     if blk.isdigit():
-        cur.execute("select id,hash,hdr from blocks where id=%s*4 limit 1;", (blk,))
+        cur.execute("select id,hash from blocks where id=%s*4 limit 1;", (blk,))
     else:
-        cur.execute("select id,hash,hdr from blocks order by id desc limit 1;")
+        cur.execute("select id,hash from blocks order by id desc limit 1;")
     row = cur.fetchone()
     if row:
-        hdr = gethdr(row[2])
+        hdr = gethdr(int(blk))
         if 'electrum' in args:
             return { 'block_height':int(row[0])/4, 'version':hdr['version'], 'time':hdr['time'], 'bits':hdr['bits'], 'nonce':hdr['nonce'],
                      'merkle_root':hdr['merkleroot'][::-1].encode('hex'), 'prev_block_hash':hdr['previousblockhash'][::-1].encode('hex') }
@@ -344,12 +344,12 @@ def apiHeader(cur, blk, args):
     
 def apiBlock(cur, blkhash):
     data = { 'hash':blkhash, 'tx':[] }
-    cur.execute("select id,hash,hdr from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
+    cur.execute("select id,hash from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
     row = cur.fetchone()
     if row:
         data['height'] = int(row[0])/4
         data['confirmations'] = cfg['block'] - data['height'] + 1
-        data.update(gethdr(row[2]))
+        data.update(gethdr(data['height']))
         data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
         data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
         data['difficulty'] = bits2diff(data['bits'])
@@ -410,10 +410,10 @@ def addrTXs(cur, addr_id, addr, args, incTxs):
 
 def addrUTXOs(cur, addr_id, addr):
     data = []
-    cur.execute("select value,o.id,left(t.hash,32),block_id/4,hdr from outputs o, trxs t, blocks b where tx_id is null and addr_id=%s and t.id=floor(o.id/4096) and b.id=t.block_id;", (addr_id,))
+    cur.execute("select value,o.id,left(t.hash,32),block_id/4 from outputs o, trxs t, blocks b where tx_id is null and addr_id=%s and t.id=floor(o.id/4096) and b.id=t.block_id;", (addr_id,))
     for tx in cur:
         data.append({ 'address':addr, 'txid':tx[2][::-1].encode('hex'), 'vout':int(tx[1])%4096, 'amount':float(tx[0])/1e8, 
-                      'confirmations':cfg['block']-int(tx[3])+1, 'ts':gethdr(tx[4])['time'] })
+                      'confirmations':cfg['block']-int(tx[3])+1, 'ts':gethdr(int(tx[3]), 'time') })
     return data
 
 def addrHistory(cur, addr, args):
@@ -454,11 +454,11 @@ def apiTx(cur, txhash, args):
         data['valueIn'],data['vin'] = apiInputs(cur, row[3]/4, int(row[2]))
         data['valueOut'],data['vout'] = apiOutputs(cur, int(row[0]))
         data['fees'] = round(data['valueIn'] - data['valueOut'],8)
-        cur.execute("select hash,hdr from blocks where id=%s limit 1;", (row[3],))
-        row = cur.fetchone()
-        if row:
-            data['blockhash'] = row[0][::-1].encode('hex')
-            data['time'] = data['blocktime'] = gethdr(row[1])['time']
+        cur.execute("select hash from blocks where id=%s limit 1;", (row[3],))
+        blk = cur.fetchone()
+        if blk:
+            data['blockhash'] = blk[0][::-1].encode('hex')
+            data['time'] = data['blocktime'] = gethdr(int(row[3]/4), 'time')
         if 'coinbase' in data['vin'][0]:
             del data['valueIn']
             del data['fees']
@@ -471,8 +471,8 @@ def apiInputs(cur, height, blob):
     data = []
     ins,_ = unpack('<HH', readBlob(blob, 4))
     if ins == 0:
-        cur.execute("select hdr from blocks where id=%s*4;", (height,))
-        data.append({ 'n':0, 'coinbase':cur.fetchone()[0][80:].encode('hex') })
+        cur.execute("select coinbase from blocks where id=%s*4;", (height,))
+        data.append({ 'n':0, 'coinbase':cur.fetchone()[0].encode('hex') })
     else:
         inputs = unpack('<'+'Q'*ins, readBlob(blob+4, ins*8))
         for n,in_id in enumerate(inputs):
@@ -500,12 +500,12 @@ def apiOutputs(cur, txid):
     return round(total,8),data
     
 def apiSpent(cur, txid, outid):
-    cur.execute("select txdata,left(t.hash,32),hdr from trxs t, blocks b where t.id=%s and b.id=t.block_id;", (txid,))
+    cur.execute("select txdata,left(hash,32),block_id/4 from trxs where id=%s;", (txid,))
     row = cur.fetchone()
     if row:
         ins,outs = unpack('<HH', readBlob(int(row[0]), 4))
         inputs = unpack('<'+'Q'*ins, readBlob(int(row[0])+4, ins*8))
-        return { 'spentTxId':row[1][::-1].encode('hex'), 'spentIndex':inputs.index(outid), 'spentTs':gethdr(row[2])['time'] }
+        return { 'spentTxId':row[1][::-1].encode('hex'), 'spentIndex':inputs.index(outid), 'spentTs':gethdr(int(row[2]),'time') }
     return {}
 
 def txoAddr(cur, txid, n):
@@ -516,12 +516,12 @@ def txoAddr(cur, txid, n):
         
 def bciBlock(cur, blkhash):
     data = { 'hash':blkhash, 'tx':[] }
-    cur.execute("select id,hash,hdr from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
+    cur.execute("select id,hash from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
     row = cur.fetchone()
     if row:
         data['height'] = int(row[0])/4
         data['block_index'] = int(row[0])
-        hdr = gethdr(row[2])
+        hdr = gethdr(data['height'])
         data['ver'] = hdr['version']
         data['time'] = hdr['time']
         data['prev_block'] = hdr['previousblockhash'][::-1].encode('hex')
@@ -573,8 +573,7 @@ def bciTx(cur, txhash):
         data['vin_sz'] = len(data['inputs'])
         data['out'] = bciOutputs(cur, int(row[0]))
         data['vout_sz'] = len(data['out'])
-        cur.execute("select hdr from blocks where id=%s limit 1;", (row[3],))
-        data['time'] = gethdr(cur.fetchone()[0])['time']
+        data['time'] = gethdr(data['block_height'], 'time')
         return data
     return None
 
@@ -603,27 +602,33 @@ def bciOutputs(cur, txid):
             vo['spent'] = True
         data.append(vo)
     return data
-    
-def hdrChunk(cur, chunk):
-    pass
 
 def apiStatus(cur, get):
-    status = {}
-    cur.execute("show table status;")
-    for row in cur:
-        status.update({ row[0]:{ 'rows':row[4], 'data GB':float("%.3f"%float(row[6]/1e9)), 'idx GB':float("%.3f"%float(row[8]/1e9)), 'total GB':float("%.3f"%float(row[6]/1e9+row[8]/1e9)), 'total bytes':row[6]+row[8] }})
-    cur.execute("select count(*) from address where id%2=1;")
-    status['address']['multi-sigs'] = cur.fetchone()[0]
-    #cur.execute("select count(*) from address where  cast(conv(hex(reverse(unhex(substr(sha2(addr,0),1,10)))),16,10)*2 as unsigned) != id;")
-    #status['address']['id-collisions'] = cur.fetchone()[0]
-    #cur.execute("select count(*) from trxs where  strcmp(reverse(unhex(hex(id*8))), left(hash,5)) > 0;")
-    #status['trxs']['id-collisions'] = cur.fetchone()[0] 
-    cur.execute("select count(*) from outputs where addr_id=0;")
-    status['outputs']['non-standard'] = cur.fetchone()[0] 
-    cur.execute("select count(*) from outputs where tx_id is null;")
-    status['outputs']['unspent'] = cur.fetchone()[0]
-    status['updated'] = datetime.datetime.now().strftime('%d-%m-%Y %H:%M:%S')
-    return status
+    global serverinfo
+    if 'server' in get:
+        level = int(get['server'][0])
+        serverinfo['total bytes'] = 0
+        cur.execute("show table status;")
+        for row in cur:
+            serverinfo.update({ row[0]:{ 'rows':row[4], 'data GB':float("%.3f"%float(row[6]/1e9)), 'idx GB':float("%.3f"%float(row[8]/1e9)), 'total GB':float("%.3f"%float(row[6]/1e9+row[8]/1e9)), 'total bytes':row[6]+row[8] }})
+            serverinfo['total bytes'] += row[6]+row[8]
+        if level > 1:
+            cur.execute("select count(*) from address where id%2=1;")
+            serverinfo['address']['multi-sigs'] = cur.fetchone()[0]
+            cur.execute("select count(*) from address where  cast(conv(hex(reverse(unhex(substr(sha2(addr,0),1,10)))),16,10)*2 as unsigned) != id;")
+            serverinfo['address']['id-collisions'] = cur.fetchone()[0]
+            cur.execute("select count(*) from trxs where  strcmp(reverse(unhex(hex(id*8))), left(hash,5)) > 0;")
+            serverinfo['trxs']['id-collisions'] = cur.fetchone()[0] 
+            cur.execute("select count(*) from outputs where addr_id=0;")
+            serverinfo['outputs']['non-std'] = cur.fetchone()[0] 
+            cur.execute("select count(*) from outputs where tx_id is null;")
+            serverinfo['outputs']['unspent'] = cur.fetchone()[0]
+        serverinfo['outputs']['script-data'] = os.stat('/var/data/blobs.dat').st_size 
+        serverinfo['blocks']['hdr-data'] = os.stat('/var/data/hdrs.dat').st_size 
+        serverinfo['total bytes'] += serverinfo['outputs']['script-data'] + serverinfo['blocks']['hdr-data']
+        serverinfo['total GB'] = float("%.3f"%float(serverinfo['total bytes']/1e9))
+        serverinfo['updated'] = datetime.datetime.now().strftime('%d-%m-%Y %H:%M:%S')
+    return serverinfo
     
 def readBlob(pos, sz):
     if sz != 0:

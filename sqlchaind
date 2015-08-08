@@ -308,7 +308,8 @@ def insertBlock(cur, data):
         
     cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
     cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
-    cur.execute("insert ignore into blocks (id,hash,hdr) values (%s,%s,%s);", (blk_id, data['hash'], data['hdr']+data['coinbase']))
+    cur.execute("insert ignore into blocks (id,hash,coinbase) values (%s,%s,%s);", (blk_id, data['hash'], data['coinbase']))
+    puthdr(data['height'], data['hdr'])
     blktime = time.time() - blkstart
     print "[ %4d txs - %s - %03.0f/%03.0f ]" % ( len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime*1000)
 
@@ -320,6 +321,12 @@ def insertBlob(data):
         pos = blob.tell()
         blob.write(data)
     return pos
+    
+def puthdr(blk, hdr):
+    with open('/var/data/hdrs.dat', 'r+b') as f:
+        f.seek(blk*80)
+        f.write(hdr)
+        f.flush()
     
 if __name__ == '__main__':
 
