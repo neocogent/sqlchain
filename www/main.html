@@ -49,7 +49,7 @@
         <div class="tab-pane fade in active" id="overview">
         <legend>Overview</legend>
             sqlChain is a compact SQL layer that runs on top of bitcoind. It extends the query options on the 
-            blockchain with a priority placed on low storage demands. 
+            blockchain with a priority towards lower storage demands. 
             This demonstration server provides multiple API (compatible) interfaces:<br>
             <ul>
                 <li>Insight API</li> 
@@ -78,17 +78,32 @@
         <legend>Insight</legend>
         <ul class='apiClk'>
             <li>/api/block/<span>0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
+            <li>/api/block-index/<span>123432</span></li>
             <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span></li>
-            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
-            <li>/api/addrs/<span>17pfg6L3hT1ZPBASPt7DCQZfy9jWeMGq1W,1CmTtsKEqPxZsW3YjGYXbPSY89xrzkhy94</span></li>
-            <li>/api/txs?block=<span>0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
-            <li>/api/txs?address=<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
+            <li>/api/raw/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span></li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span><span class='opt'>?noTxList=1</span></li>
+            <div class='info'>Spelling mistake on txApperances is maintained for compatibility.</div>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/balance</li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/totalReceived</li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/totalSent</li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/unconfirmedBalance</li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/utxo</li>
+            <li>/api/addrs/<span>17pfg6L3hT1ZPBASPt7DCQZfy9jWeMGq1W,1CmTtsKEqPxZsW3YjGYXbPSY89xrzkhy94</span>/utxo</li>
+            <div class='info'>Also supports POST at '/api/addrs/utxo' with param 'addrs'.</div>
+            <li>/api/addrs/<span>17pfg6L3hT1ZPBASPt7DCQZfy9jWeMGq1W,1CmTtsKEqPxZsW3YjGYXbPSY89xrzkhy94</span>/txs<span class='opt'>?from=0&to=1</span></li>
+            <div class='info'>Also supports POST at '/api/addrs/txs' with params 'addrs,from,to'.</div>
+            <li>/api/txs<span class='opt'>?block=0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
+            <li>/api/txs<span class='opt'>?address=<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
+            <li class='noargs'>/api/utils/estimatefee<span class='opt'>?nbBlocks=2</span></li>
+            <li>/api/tx/send</li>
+            <div class='info'>Send raw transaction by POST method with param 'rawtx'.</div>
         </ul>
         <legend>Blockchain.info</legend>
         <ul class='apiClk'>
             <li>/bci/block-height/<span>123432</li>
+            <div class='info'>...</div>
             <li>/bci/rawblock/<span>0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
-            <li>/bci/rawtx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span><span class='opt'>[?format=hex]</span></li>
+            <li>/bci/rawtx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span><span class='opt'>?format=hex</span></li>
             <li>/bci/address/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
             <li>/bci/unspent/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
             <li>/bci/latestblock</li>
@@ -119,10 +134,10 @@
             <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/output/<span>2</span></li>
             <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/raw</li>
         </ul>
-        Extensions for status, analysis or debugging.
+        <legend>Extras</legend> Extensions for status / debugging.
         <ul class="apiClk">
-            <li>/api/status</li>
-            <li class="raw">/api/tx/23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/raw/html</li>
+            <li class='noargs'>/api/status</li>
+            <li class="raw">/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/html</li>
         </ul>
         <div id="blank" class="resp"></div>
         </div>   

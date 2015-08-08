@@ -66,18 +66,16 @@ class WebHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(data))
                 
     def do_API(self, path, cur, get):
-        if path.startswith("/block-index/"):
-            args = path.split('/')[2:]
-            return apiHeader(cur, args[0], args[1:])
-        if path.startswith("/block/"):
-            blkhash = path[7:]
-            if len(blkhash) == 64 and all(c in string.hexdigits for c in blkhash):
-                return apiBlock(cur, blkhash)
-        if path.startswith("/tx/"):
-            args = path.split('/')[2:]
-            if len(args[0]) == 64 and all(c in string.hexdigits for c in args[0]):
-                return apiTx(cur, args[0], args)
-        if path.startswith("/txs"):
+        args = path.split('/')[1:]
+        if args[0] == "block-index":
+            return apiHeader(cur, args[1], args[2:])
+        if args[0] == "block":
+            if len(args[1]) == 64 and all(c in string.hexdigits for c in args[1]):
+                return apiBlock(cur, args[1])
+        if args[0] in ["tx","raw"]:
+            if len(args[1]) == 64 and all(c in string.hexdigits for c in args[1]):
+                return apiTx(cur, args[1], args)
+        if args[0] == "txs":
             txs = []
             if 'block' in get:
                 blkhash = get['block'][0]
@@ -90,16 +88,14 @@ class WebHandler(BaseHTTPRequestHandler):
             for txhash in txhashes:
                 txs.append(apiTx(cur, txhash, []))
             return { 'pagesTotal':1, 'txs': txs }
-        if path.startswith("/addr/") or path.startswith("/addrs/"):
-            args = path.split('/')[2:]
-            return apiAddr(cur, args[0].split(','), args[1:], get)
-        if path.startswith("/history/"):
-            args = path.split('/')[2:]
-            return addrHistory(cur, args[0], args[1:])
-        if path.startswith("/chunk/"):
-            return hdrChunk(cur, int(path[7:]))
-        if path.startswith("/status"):
-            return apiStatus(cur)
+        if args[0] in ["addr","addrs"]:
+            return apiAddr(cur, args[1].split(','), args[2:], get)
+        if args[0] == "history":
+            return addrHistory(cur, args[1], args[2:])
+        if args[0] == "chunk":
+            return hdrChunk(cur, int(args[1]))
+        if args[0] == "status":
+            return apiStatus(cur, get)
         return None
         
     def do_RPC(self, path, cur, get):
@@ -127,13 +123,13 @@ class WebHandler(BaseHTTPRequestHandler):
             blk = path[14:]
             return apiHeader(cur, blk, 'bci')
         if path.startswith("/rawblock/"):
-            blkhash = path[10:]
-            if len(blkhash) == 64 and all(c in string.hexdigits for c in blkhash):
+            blkhash = path[10:75]
+            if all(c in string.hexdigits for c in blkhash):
                 return bciBlock(cur, blkhash)
         if path.startswith("/rawtx/"):
-            txhash = path[7:]
-            if len(txhash) == 64 and all(c in string.hexdigits for c in txhash):
-                return bciTx(cur, txhash)
+            txhash = path[7:72]
+            if all(c in string.hexdigits for c in txhash):
+                return apiTx(cur, txhash, ['raw']) if 'format' in get and get['format'][0] =='hex' else bciTx(cur, txhash)
         if path.startswith("/address/") or path.startswith("/unspent"):
             addrs = get['active'].split('|') if 'active' in get else path.split('/')[2].split(',')
             return bciAddr(cur, addrs, path.startswith("/unspent"), get)
@@ -385,30 +381,36 @@ def apiAddr(cur, addrs, args, get={}):
                             
 def addrTXs(cur, addr_id, addr, args, incTxs):
     txs = []
-    recd = sent = 0
-    cur.execute("select value,t.id,tx_id,left(hash,32) from outputs o, trxs t where addr_id=%s and (t.id=floor(o.id/4096) or t.id=o.tx_id);", (addr_id,))
+    sums = [[0,0],[0,0]]
+    untxs = 0
+    cur.execute("select value,t.id,tx_id,left(hash,32),block_id from trxs t left join outputs o on t.id=floor(o.id/4096) or t.id=o.tx_id where addr_id=%s order by block_id;", (addr_id,))
     for tx in cur:
-        if tx[1] != tx[2]:
-            recd += tx[0]
-        else:
-            sent += tx[0]
+        uncfmd = 1 if tx[4] == 0 else 0
+        untxs += uncfmd
+        spent = 1 if tx[1] == tx[2] else 0
+        sums[uncfmd][spent] += tx[0]
+        
         txhash = tx[3][::-1].encode('hex')
         if incTxs and txhash not in txs:
             txs.append(txhash)
+            
     if 'balance' in args:
-        return int(recd-sent)
-    if 'totalreceived' in args:
-        return int(recd)
-    if 'totalsent' in args:
-        return int(sent)
-                        
-    return { 'addStr':addr, 'balanceSat':int(recd-sent), 'balance':float(recd-sent)/1e8, 'totalReceivedSat':int(recd), 
-             'totalReceived': float(recd)/1e8, 'totalSentSat':int(sent), 'totalSent':float(sent)/1e8, 
-             'txApperances':len(txs), 'transactions':txs }   
+        return int(sums[0][0]-sums[0][1])
+    if 'unconfirmedBalance' in args:
+        return int(sums[1][0]-sums[1][1])
+    if 'totalReceived' in args:
+        return int(sums[0][0])
+    if 'totalSent' in args:
+        return int(sums[0][1])
+    
+    return { 'addStr':addr, 'balanceSat':int(sums[0][0]-sums[0][1]), 'balance':float(sums[0][0]-sums[0][1])/1e8, 'totalReceivedSat':int(sums[0][0]), 
+             'totalReceived': float(sums[0][0])/1e8, 'totalSentSat':int(sums[0][1]), 'totalSent':float(sums[0][1])/1e8, 
+             'unconfirmedBalanceSat':int(sums[1][0]-sums[1][1]), 'unconfirmedBalance':float(sums[1][0]-sums[1][1])/1e8,
+             'txApperances':len(txs)-untxs, 'transactions':txs, 'unconfirmedTxApperances':untxs }   
 
 def addrUTXOs(cur, addr_id, addr):
     data = []
-    cur.execute("select value,o.id,left(t.hash,32),block_id/4,hdr from outputs o, trxs t, blocks b where addr_id=%s and t.id=floor(o.id/4096) and b.id=t.block_id;", (addr_id,))
+    cur.execute("select value,o.id,left(t.hash,32),block_id/4,hdr from outputs o, trxs t, blocks b where tx_id is null and addr_id=%s and t.id=floor(o.id/4096) and b.id=t.block_id;", (addr_id,))
     for tx in cur:
         data.append({ 'address':addr, 'txid':tx[2][::-1].encode('hex'), 'vout':int(tx[1])%4096, 'amount':float(tx[0])/1e8, 
                       'confirmations':cfg['block']-int(tx[3])+1, 'ts':gethdr(tx[4])['time'] })
@@ -445,7 +447,7 @@ def apiTx(cur, txhash, args):
     cur.execute("select id,hash,txdata,block_id from trxs where id>=%s and left(hash,32)=%s limit 1;", (txh2id(txh), txh))
     row = cur.fetchone()
     if row:
-        if 'raw' in args:
+        if [i for i in ['raw','html'] if i in args]:
             return mkRawTx(cur, args, *row)
         data['confirmations'] = cfg['block'] - row[3]/4 + 1
         data['version'],data['locktime'] = unpack_from('<BI', row[1], 32)
@@ -605,7 +607,7 @@ def bciOutputs(cur, txid):
 def hdrChunk(cur, chunk):
     pass
 
-def apiStatus(cur):
+def apiStatus(cur, get):
     status = {}
     cur.execute("show table status;")
     for row in cur:

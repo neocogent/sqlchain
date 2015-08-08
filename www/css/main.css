@@ -43,12 +43,10 @@ h3 {
 	margin-top: 50px;
 }
 
-.container {
-    width: 750px;
-}
+.container { width: 800px; }
 
-#overview { text-align:justify; }
-#overview legend { margin-top:20px; }
+#overview { width:750px; text-align:justify; }
+#overview legend { margin: 20px 0 10px; }
 #overview ul, #api ul, #extend ol { margin-top:10px; line-height:180%; }
 
 .resp { margin: 5px 40px 5px 20px; }
@@ -56,7 +54,11 @@ h3 {
 .rawtx tr td { padding:5px; border: 1px solid white; word-break: break-all; }
 .rawtx tr td:first-child { width:150px; text-align: right; }
 
-.apiClk li:hover { cursor: pointer; }
-.apiClk li span { color:lightsteelblue; }
-.apiClk li .opt { margin-left:5px; position:relative; bottom:2px; font-size:12px; color:coral; }
+.apiClk li span { color:lightsteelblue; font-size:13px; }
+.apiClk li .opt { margin-left:5px; position:relative; font-size:13px; color:coral; }
+.apiClk li:hover, .apiClk li span:hover, .apiClk li .opt:hover { cursor: pointer; color:red; }
+.apiClk .info { display:none; margin: 0 0 10px; padding: 9.5px;background-color: #f5f5f5;  
+    border: 1px solid #ccc;  border-radius: 4px; color: #333;  word-break: break-all; word-wrap: break-word; }
+
+
 
