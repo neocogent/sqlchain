@@ -3,7 +3,6 @@
 import os, sys, pwd, getopt, datetime, time, cgi, urlparse, signal, string
 from time import sleep
 import ssl, json, gevent
-from bitcoinrpc.authproxy import AuthServiceProxy
 from hashlib import sha256
 from struct import pack, unpack, unpack_from
 from gevent import socket
@@ -12,10 +11,11 @@ from gevent.queue import Queue
 from gevent import monkey; monkey.patch_socket()
 from urllib2 import urlopen, URLError
 
+
+cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api' }
+
 srvinfo = { 'version':"1.0", 'banner':'', 'block':0, 'header':{} }
-cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api',
-        'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' }
-subs = { 'numblocks':{}, 'headers':{}, 'address':{}, '_ip':{} }
+subs = { 'numblocks':{}, 'headers':{}, 'address':{}, '_ip_':{} }
 reqQ,respQ = Queue(),Queue()
 
 def ReqHandler():
@@ -34,7 +34,7 @@ def ReqHandler():
         elif req['method'] in reqFuncs:
             gevent.spawn(reqFuncs[req['method']], fp, req)
         else:
-            logts("Bad Req %s:%d - %s" % (subs['_ip'][fp][0]+(req['method'],)))
+            logts("Bad Req %s:%d - %s" % (subs['_ip_'][fp][0]+(req['method'],)))
 
 def RespHandler():
     while True:
@@ -43,10 +43,29 @@ def RespHandler():
         print "RESP", reqid, resp
         fp.write(resp+'\n')
         fp.flush()
+        
+def SyncHandler():
+    sync_id = 0
+    while True:
+        resp = apicall('/sync/'+sync_id)
+        if resp and 'error' in resp:
+            sleep(30)
+        elif resp:
+            if resp['block'] != srvinfo['block']:
+                srvinfo['block'] = resp['block']
+                pubSubs('numblocks', msg=resp['block'])
+            hdr = apicall('/block-index/'+resp['block']+'/electrum')
+            if hdr != srvinfo['header']:
+                srvinfo['header'] = hdr
+                pubSubs('headers', msg=hdr)
+            if len(resp['txs']) > 0:
+                for tx in resp['txs']:
+                    pubSubs('address', addrs=apicall('/tx/'+tx+'/addrs'))
+            sync_id = resp['sync_id']
             
 def TcpHandler(sock, address):
     fp = sock.makefile()
-    addSub('_ip', address, fp)
+    addSub('_ip_', address, fp)
     while True:
         line = fp.readline()
         if line:
@@ -57,10 +76,22 @@ def TcpHandler(sock, address):
     sock.shutdown(socket.SHUT_WR)
     sock.close()
 
-def getSubs(sub, val, key=None):
+def pubSubs(sub, msg=None, addrs=[]):
+    for addr in addrs:
+        fps = getSubs(sub, addr)
+        if len(fps) > 0:
+            data = apicall('/history/'+v+'/status')
+            for fp in fps:
+                respQ.put((fp, None, data)) 
+    if msg:
+        for fp in getSubs(sub):
+            respQ.put((fp, None, msg))
+    
+def getSubs(sub, val=1, key=None):
     if key:
         return key in subs[sub] and val in subs[sub][key]
-    keys = []
+    if val == 1:
+        return subs[sub].keys()
     for k in subs[sub]:
         if val in subs[sub][k]:
             fps.append(k)
@@ -107,7 +138,7 @@ def blkHeader(fp, req):
     respQ.put((fp, req['id'], apicall('/block-index/'+req['params'][0]+'/electrum') ))
     
 def blkChunk(fp, req):
-    respQ.put((fp, req['id'], getChunk(int(req['params'][0]).encode('hex') ))
+    respQ.put((fp, req['id'], getChunk(int(req['params'][0]).encode('hex')) ))
     
 def utxoAddress(fp, req):
     respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/output/%d' % req['params'][1]) ))
@@ -116,18 +147,14 @@ def txGet(fp, req):
     respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/raw') ))
     
 def txSend(fp, req):
-    rpc = AuthServiceProxy(cfg['rpc'])
-    txid = rpc.sendrawtransaction(*req['params'])
     logts("Tx Sent: %s" % txid)
-    respQ.put((fp, req['id'], txid ))
+    respQ.put((fp, req['id'], apicall('/tx/send', {'rawtx':req['params'][0]}) ))
     
 def txMerkle(fp, req):
-    pass
+    respQ.put((fp, req['id'], apicall('/merkle/'+req['params'][0]) ))
     
 def feeEstimate(fp, req):
-    rpc = AuthServiceProxy(cfg['rpc'])
-    fee = rpc.estimatefee(int(req['params'][0]))
-    respQ.put((fp, req['id'], fee ))
+    respQ.put((fp, req['id'], apicall('/util/estimatefee/'+req['params'][0]) ))
 
 reqFuncs = { 'blockchain.address.get_history':addrHistory, 'blockchain.address.get_balance':addrBalance, 
              'blockchain.address.get_mempool':addrMemPool, 'blockchain.address.get_proof':addrProof,
@@ -194,13 +221,12 @@ def logts(msg):
     print datetime.datetime.now().strftime('%d-%m-%Y %H:%M:%S'), msg
     sys.stdout.flush()  
     
-def apicall(url):
+def apicall(url, post=None):
     try:
-        data = urlopen(cfg['api']+url).read()
-        #print '---', data
+        data = urlopen(cfg['api']+url, post).read()
     except URLError:
-        logts("Error: sqlchain-api must be at %s" % cfg['api'])
-        return None
+        logts("Error: sqlchain-api not at %s" % cfg['api'])
+        return { 'error':'No api connection' }
     return json.loads(data)
 
 def getChunk(chunk):
@@ -234,12 +260,13 @@ if __name__ == '__main__':
         signal.signal(signal.SIGTERM, sigterm_handler)
     
     hdr = apicall('/block-index/latest/electrum')
-    if not hdr:
-        sys.exit("Error: sqlchain-api must be at %s" % cfg['api'])
+    if 'error' in hdr:
+        sys.exit()
     srvinfo['block'],srvinfo['header'] = hdr['block_height'],hdr
     
     gevent.spawn(ReqHandler)
     gevent.spawn(RespHandler)
+    gevent.spawn(SyncHandler)
 
     logts("Starting on %s" % cfg['listen'])
     while True:

@@ -13,6 +13,12 @@ import MySQLdb as db
 
 cfg = { 'log':sys.argv[0]+'.log', 'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
 
+# cannot change these without first updating existing table schema and data, must also change in sqlchain-api
+# these are set to reasonable values for now - to increase, alter trxs.block_id or outputs.id column widths
+# and update data eg. update trxs set block_id=block_id/OLD_MAX*NEW_MAX + block_id%OLD_MAX
+MAX_TX_BLK = 10000  # allows 9,999,999 blocks with decimal(11)
+MAX_IO_TX = 4096    # allows 37 bit id value, (5 byte hash >> 3)*4096 in decimal(16), 7 bytes in blobs
+
 state = { 'pause':False }
 b58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 blockQ = []
@@ -91,7 +97,7 @@ def getBlocks(blk):
     sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
     if blk == 0:
-        cur.execute('select ifnull(max(id)/4, -1) from blocks')
+        cur.execute('select ifnull(max(id), -1) from blocks')
         blk = int(cur.fetchone()[0] + 1)
     startblk = blk
     while IsKbdCmd(cur):
@@ -149,9 +155,9 @@ def decodeBlock(data):
     off += 80
     block['tx'] = []
     while txcnt > 0:
-        tx,toff = decodeTx(data[off:])
+        tx = decodeTx(data[off:])
         block['tx'].append(tx)
-        off += toff
+        off += tx['size']
         txcnt -= 1
     block['height'] = 0
     block['coinbase'] = block['tx'][0]['vin'][0]['coinbase']
@@ -187,8 +193,9 @@ def decodeTx(data):
         off += pksz
         n += 1
     tx['locktime'], = unpack_from('<I', data, off)
-    tx['txid'] = hashlib.sha256(hashlib.sha256(data[:off+4]).digest()).digest()
-    return tx,off+4
+    tx['size'] = off+4
+    tx['txid'] = hashlib.sha256(hashlib.sha256(data[:tx['size']]).digest()).digest()
+    return tx
 
 def decodeScriptPK(data):
     if len(data) > 1:
@@ -270,49 +277,82 @@ def insertTxMemPool(tx, sync_id):
     cur.execute("insert ignore into mempool (id,sync_id) values(%s,%s);", (tx_id, sync_id))
 
 def insertTx(cur, tx, tx_id, blk_id):
-    ins,outs = [],[]
-    inputs,txdata = '','' 
+    inlist,outlist = [],[]
+    in_ids,txdata = '','' 
+    stdSeq = True
     for vin in tx['vin']:
-        if 'coinbase' not in vin and 'txid' in vin:
+        if vin['sequence'] != 0xffffffff:
+            stdSeq = False
+            break
+    for vin in tx['vin']:
+        if 'coinbase' not in vin:
             in_id = findTx(cur, vin['txid'])
-            if in_id and vin['vout'] < 4096:
-                in_id = (in_id<<12) + vin['vout']
-                ins.append((tx_id, in_id))
-                inputs += pack('<Q', in_id)
-                txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig'] + pack('<I', vin['sequence'])
-                        
+            if in_id and vin['vout'] < MAX_IO_TX:
+                in_id = (in_id*MAX_IO_TX) + vin['vout']
+                inlist.append(( tx_id, in_id ))
+                in_ids += pack('<Q', in_id)[:7]
+                txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig']
+                if not stdSeq:
+                    txdata += pack('<I', vin['sequence'])
+                                       
     for vout in tx['vout']:
         addr_id = insertAddress(cur, vout['scriptPubKey']['addr']) if 'addr' in vout['scriptPubKey'] else 0
-        if vout['n'] < 4096:
-            outs.append( ( (tx_id<<12) + vout['n'], addr_id, vout['value'] ) )
+        if vout['n'] < MAX_IO_TX:
+            outlist.append(( tx_id*MAX_IO_TX + vout['n'], addr_id, vout['value'] ))
             txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
-                
-    txdata = pack('<HH', len(inputs)/8, len(tx['vout'])) + inputs + txdata
-    cur.execute("insert ignore into trxs (id,hash,txdata,block_id) values(%s,%s,%s,%s)", ( tx_id, tx['txid'] + pack('<BI', tx['version']&0xFF, tx['locktime']), insertBlob(txdata), blk_id ))    
-    return ins,outs
-    
+            
+    ins,outs,sz,txhdr = blobhdr(len(inlist), len(outlist), tx, stdSeq)
+    cur.execute("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", 
+        ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata), blk_id ))    
+    return inlist,outlist
+            
 def insertBlock(cur, data):
     print "block", data['height'], 
     blkstart = time.time()
-    blk_id = data['height']*4
+    blk_id = data['height']*MAX_TX_BLK
     ins,outs = [],[]
-    for tx in data['tx']:
+    for n,tx in enumerate(data['tx']):
         tx_id = findTx(cur, tx['txid'], mkNew=True)
         if tx_id in memPool:
             memPool.remove(tx['txid'])
             cur.execute("delete from mempool where id=%s limit 1;", (tx_id,))
-            
-        xi,xo = insertTx(cur, tx, tx_id, blk_id)
+        xi,xo = insertTx(cur, tx, tx_id, blk_id + n)
         ins.extend(xi)
         outs.extend(xo)
-        
     cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
     cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
-    cur.execute("insert ignore into blocks (id,hash,coinbase) values (%s,%s,%s);", (blk_id, data['hash'], data['coinbase']))
+    cur.execute("insert ignore into blocks (id,hash,coinbase) values (%s,%s,%s);", (data['height'], data['hash'], data['coinbase']))
     puthdr(data['height'], data['hdr'])
     blktime = time.time() - blkstart
     print "[ %4d txs - %s - %03.0f/%03.0f ]" % ( len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime*1000)
 
+def blobhdr(ins, outs, tx, stdSeq):
+    flags,hdr = 0,''
+    sz = tx['size']
+    if ins >= 0xC0:
+        flags |= 0x80
+        hdr += pack('<B', ins & 0xFF)
+        ins = 0xC0|(ins>>8)
+    if outs >= 0xC0:
+        flags |= 0x40
+        hdr += pack('<B', outs & 0xFF)
+        outs = 0xC0|(outs>>8)
+    if sz >= 0xFF00:
+        flags |= 0x20
+        hdr += pack('<H', sz & 0xFFFF)
+        sz = 0xFF00|(sz>>16)
+    if tx['version'] != 1:
+        flags |= 0x10
+        hdr += pack('<I', tx['version'])
+    if tx['locktime'] != 0:
+        flags |= 0x08
+        hdr += pack('<I', tx['locktime'])
+    if not stdSeq:
+        flags |= 0x04  
+    # future use: 0x02 = sigs pruned, 0x01 = pks pruned
+    # max hdr = 13 bytes but most will be only 1 flag byte
+    return ins,outs,sz,pack('<B', flags) + hdr
+    
 def insertBlob(data):
     if len(data) == 0:
         return 0
@@ -358,7 +398,7 @@ if __name__ == '__main__':
             time.sleep(5)
             pass
         except KeyboardInterrupt:
-            pass
+            break
         except:
             print "Unknown error"
             time.sleep(5)
