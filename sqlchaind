@@ -2,63 +2,23 @@
 #
 #   sqlchaind - daemon to update sql blockchain db
 #
-
-
-import os, sys, socket, datetime, time
+import os, sys, socket, time, threading
 import select, termios, fcntl
+import MySQLdb as db
+
+from datetime import datetime
 from bitcoinrpc.authproxy import AuthServiceProxy
 from struct import pack, unpack, unpack_from
-import threading, hashlib
-import MySQLdb as db
+from hashlib import sha256
+from sqlchainlib import *
 
 cfg = { 'log':sys.argv[0]+'.log', 'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
 
-# cannot change these without first updating existing table schema and data, must also change in sqlchain-api
-# these are set to reasonable values for now - to increase, alter trxs.block_id or outputs.id column widths
-# and update data eg. update trxs set block_id=block_id/OLD_MAX*NEW_MAX + block_id%OLD_MAX
-MAX_TX_BLK = 10000  # allows 9,999,999 blocks with decimal(11)
-MAX_IO_TX = 4096    # allows 37 bit id value, (5 byte hash >> 3)*4096 in decimal(16), 7 bytes in blobs
-
 state = { 'pause':False }
-b58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
 blockQ = []
 memPool = set()
 done = threading.Event()
-
-def mkpkh(pk):
-    rmd = hashlib.new('ripemd160')
-    rmd.update(hashlib.sha256(pk).digest())
-    return rmd.digest()
-
-def addr2pkh(v):
-    long_value = 0L
-    for (i, c) in enumerate(v[::-1]):
-        long_value += b58.find(c) * (58**i)
-    result = ''
-    while long_value >= 256:
-        div, mod = divmod(long_value, 256)
-        result = chr(mod) + result
-        long_value = div
-    result = chr(long_value) + result
-    nPad = 0
-    for c in v:
-        if c == b58[0]: nPad += 1
-        else: break
-    result = chr(0)*nPad + result
-    return result[1:-4]
-
-def mkaddr(pkh, ver=0):
-    pad = ''
-    an = chr(ver) + str(pkh)
-    for c in an:
-        if c == '\0': pad += '1'
-        else: break
-    num = long((an + hashlib.sha256(hashlib.sha256(an).digest()).digest()[0:4]).encode('hex'), 16)
-    out = ''
-    while num >= 58:
-        num,m = divmod(num, 58)
-        out = b58[m] + out
-    return pad + b58[num] + out    
    
 def IsKbdCmd(cur):
     while True:
@@ -149,7 +109,7 @@ def decodeBlock(data):
     hv = unpack_from('<I32s32s3I', data)
     block = dict(zip(hdr,hv))
     block['hdr'] = data[:80]
-    block['hash'] = hashlib.sha256(hashlib.sha256(block['hdr']).digest()).digest()
+    block['hash'] = sha256(sha256(block['hdr']).digest()).digest()
     block['bits'] = '%08x' % block['bits'] 
     txcnt,off = decodeVarInt(data[80:89])
     off += 80
@@ -194,80 +154,9 @@ def decodeTx(data):
         n += 1
     tx['locktime'], = unpack_from('<I', data, off)
     tx['size'] = off+4
-    tx['txid'] = hashlib.sha256(hashlib.sha256(data[:tx['size']]).digest()).digest()
+    tx['txid'] = sha256(sha256(data[:tx['size']]).digest()).digest()
     return tx
-
-def decodeScriptPK(data):
-    if len(data) > 1:
-        if data[:3] == '\x76\xa9\x14' and data[23:25] == '\x88\xac': # P2PKH
-            return { 'type':'p2pkh', 'data':'', 'addr':mkaddr(data[3:23]) };
-        if data[:2] == '\xa9\x14' and data[22] == '\x87': # P2SH
-            return { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[2:22],5)};
-        if data[0] == '\x41' and data[66] == '\xac': # P2PK
-            return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
-        if data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
-            return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
-        if len(data) <= 41 and data[0] == '\x6a': # NULL
-            return { 'type':'null', 'data':data };
-    return { 'type':'other', 'data':data } # other, non-std
-
-def decodeVarInt(v):
-    if v[0] <= '\xfc':
-        return unpack('<B', v[0])[0],1
-    if v[0] == '\xfd':
-        return unpack('<H', v[1:3])[0],3
-    if v[0] == '\xfe':
-        return unpack('<I', v[1:5])[0],5
-    return unpack('<Q', v[1:9])[0],9
-    
-def encodeVarInt(v):
-    if v <= 252:
-        return pack('<B', v)
-    if v < 2**16:
-        return '\xfd' + pack('<H', v)
-    if v < 2**32:
-        return '\xfe' + pack('<I', v)
-    return '\xff' + pack('<Q', v)
-    
-def insertAddress(cur, addr):
-    pkh = addr2pkh(addr)
-    addr_id, = unpack('<q', hashlib.sha256(pkh).digest()[:5]+'\0'*3) 
-    addr_id *= 2
-    if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
-        addr_id += 1
-    start_id = addr_id
-    while True:    
-        cur.execute("select addr from address where id=%s", (addr_id,))
-        row = cur.fetchone()
-        if row == None:
-            cur.execute("insert into address (id,addr) values(%s,%s)", (addr_id, pkh))
-            if addr_id != start_id:
-                print '!', # collision
-            return addr_id
-        elif str(row[0]) == str(pkh):
-            return addr_id
-        addr_id += 2
-
-def findTx(cur, txhash, mkNew=False, limit=32):
-    tx_id, = unpack('<q', txhash[:5]+'\0'*3) 
-    tx_id >>= 3    
-    limit_id = tx_id+limit
-    start_id = tx_id
-    while True:
-        cur.execute("select hash from trxs where id=%s", (tx_id,))
-        row = cur.fetchone()
-        if row == None:
-            if mkNew:
-                if tx_id != start_id:
-                    print '#', # collision
-                return tx_id
-            return None
-        if str(row[0][:32]) == txhash:
-            return tx_id
-        if tx_id > limit_id:
-            return None
-        tx_id += 1
-        
+       
 def insertTxMemPool(tx, sync_id):
     tx_id = findTx(cur, tx['txid'], mkNew=True)
     if tx_id == None:
@@ -301,7 +190,7 @@ def insertTx(cur, tx, tx_id, blk_id):
             outlist.append(( tx_id*MAX_IO_TX + vout['n'], addr_id, vout['value'] ))
             txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
             
-    ins,outs,sz,txhdr = blobhdr(len(inlist), len(outlist), tx, stdSeq)
+    ins,outs,sz,txhdr = mkBlobHdr(len(inlist), len(outlist), tx, stdSeq)
     cur.execute("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", 
         ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata), blk_id ))    
     return inlist,outlist
@@ -324,52 +213,13 @@ def insertBlock(cur, data):
     cur.execute("insert ignore into blocks (id,hash,coinbase) values (%s,%s,%s);", (data['height'], data['hash'], data['coinbase']))
     puthdr(data['height'], data['hdr'])
     blktime = time.time() - blkstart
-    print "[ %4d txs - %s - %03.0f/%03.0f ]" % ( len(data['tx']), datetime.datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime*1000)
+    print "[ %4d txs - %s - %3.0fms %2.1fs %3.0f tx/s]" % ( len(data['tx']), datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime, len(data['tx'])/blktime)
 
-def blobhdr(ins, outs, tx, stdSeq):
-    flags,hdr = 0,''
-    sz = tx['size']
-    if ins >= 0xC0:
-        flags |= 0x80
-        hdr += pack('<B', ins & 0xFF)
-        ins = 0xC0|(ins>>8)
-    if outs >= 0xC0:
-        flags |= 0x40
-        hdr += pack('<B', outs & 0xFF)
-        outs = 0xC0|(outs>>8)
-    if sz >= 0xFF00:
-        flags |= 0x20
-        hdr += pack('<H', sz & 0xFFFF)
-        sz = 0xFF00|(sz>>16)
-    if tx['version'] != 1:
-        flags |= 0x10
-        hdr += pack('<I', tx['version'])
-    if tx['locktime'] != 0:
-        flags |= 0x08
-        hdr += pack('<I', tx['locktime'])
-    if not stdSeq:
-        flags |= 0x04  
-    # future use: 0x02 = sigs pruned, 0x01 = pks pruned
-    # max hdr = 13 bytes but most will be only 1 flag byte
-    return ins,outs,sz,pack('<B', flags) + hdr
-    
-def insertBlob(data):
-    if len(data) == 0:
-        return 0
-    with open('/var/data/blobs.dat', 'r+b') as blob:
-        blob.seek(0,2)
-        pos = blob.tell()
-        blob.write(data)
-    return pos
-    
-def puthdr(blk, hdr):
-    with open('/var/data/hdrs.dat', 'r+b') as f:
-        f.seek(blk*80)
-        f.write(hdr)
-        f.flush()
     
 if __name__ == '__main__':
 
+    loadcfg(cfg)
+    
     blk = 0
     if len(sys.argv) > 1:
         blk = int(sys.argv[1])
@@ -398,11 +248,12 @@ if __name__ == '__main__':
             time.sleep(5)
             pass
         except KeyboardInterrupt:
+            done.set()
             break
-        except:
-            print "Unknown error"
-            time.sleep(5)
-            pass
+        #except:
+            #print "Unknown error"
+            #time.sleep(5)
+            #pass
     
     # let block processing finish
     done.set()
