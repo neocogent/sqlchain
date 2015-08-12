@@ -3,10 +3,7 @@
 #   sqlchaind - daemon to update sql blockchain db
 #
 from gevent import monkey; monkey.patch_socket()
-
-import os, sys, socket, time
-#import MySQLdb as db
-
+import os, sys, socket, time, signal
 from datetime import datetime
 from bitcoinrpc.authproxy import AuthServiceProxy
 from struct import pack, unpack, unpack_from
@@ -16,9 +13,10 @@ from gevent.event import Event
 from dbpool import *
 from sqlchainlib import *
 
-cfg = { 'log':sys.argv[0]+'.log', 'prunegap':10, 'workers':1, 'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
+cfg = { 'log':sys.argv[0]+'.log', 'prunegap':10, 'workers':1, 'queue':8, 
+        'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
 
-blockQ,done = Queue(maxsize=4),Event()
+blockQ,done = Queue(),Event()
 memPool = set()
 
 def getBlocks(blk):
@@ -34,6 +32,9 @@ def getBlocks(blk):
             rpc.stop() # if pruning node, prevent it stoping us permanently
         if blk > blkinfo['blocks']:
             checkMemPool(rpc)
+            continue
+        if blockQ.qsize() >= cfg['queue']:
+            gevent.sleep(10)
             continue
         rpcstart = time.time()
         blkhash = rpc.getblockhash(blk)
@@ -179,9 +180,15 @@ def insertBlock(cur, data):
     print "block %d [ Q:%d %4d txs - %s - %3.0fms %2.1fs %3.0f tx/s]" % ( data['height'], blockQ.qsize(), 
         len(data['tx']), datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime, len(data['tx'])/blktime)
 
+def sigterm_handler(_signo, _stack_frame):
+    done.set()
+    
 if __name__ == '__main__':
 
     loadcfg(cfg)
+    
+    signal.signal(signal.SIGTERM, sigterm_handler)
+    signal.signal(signal.SIGINT, sigterm_handler)
     
     blk = int(sys.argv[1]) if len(sys.argv) > 1 else 0
     
@@ -197,9 +204,6 @@ if __name__ == '__main__':
         except socket.error:
             print "Cannot connect to rpc"
             gevent.sleep(5)
-            pass
-        except KeyboardInterrupt:
-            done.set()
             pass
     
     done.set()
