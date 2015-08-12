@@ -163,7 +163,7 @@ reqFuncs = { 'blockchain.address.get_history':addrHistory, 'blockchain.address.g
 
 def options(cfg):
     try:                                
-        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:s:a:w:r:u:", 
+        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:a:u:", 
             ["help", "version", "debug", "db=", "log=", "listen=", "www=", "user=", "defaults" ])
     except getopt.GetoptError:
         usage()
@@ -171,15 +171,19 @@ def options(cfg):
         if opt in ("-h", "--help"):
             usage()
         elif opt in ("-v", "--version"):
-            sys.exit('sqlchain server: '+version)
+            sys.exit(sys.argv[0]+': '+version)
         elif opt in ("-d", "--db"):
             cfg['db'] = arg
         elif opt in ("-l", "--log"):
             cfg['log'] = arg
         elif opt in ("-w", "--www"):
             cfg['www'] = arg            
-        elif opt in ("-a", "--listen"):
+        elif opt in ("-p", "--listen"):
             cfg['listen'] = arg
+        elif opt in ("-a", "--api"):
+            cfg['api'] = arg
+        elif opt in ("-u", "--user"):
+            cfg['user'] = arg
         elif opt in ("--defaults"):
             savecfg(cfg)
             sys.exit("%s updated" % (sys.argv[0]+'.cfg'))

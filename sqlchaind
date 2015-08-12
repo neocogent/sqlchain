@@ -2,8 +2,7 @@
 #
 #   sqlchaind - daemon to update sql blockchain db
 #
-from gevent import monkey; monkey.patch_socket()
-import os, sys, socket, time, signal
+import os, sys, socket, getopt, time, signal
 from datetime import datetime
 from bitcoinrpc.authproxy import AuthServiceProxy
 from struct import pack, unpack, unpack_from
@@ -16,7 +15,6 @@ from sqlchainlib import *
 cfg = { 'log':sys.argv[0]+'.log', 'prunegap':10, 'workers':1, 'queue':8, 
         'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
 
-blockQ,done = Queue(),Event()
 memPool = set()
 
 def getBlocks(blk):
@@ -180,18 +178,58 @@ def insertBlock(cur, data):
     print "block %d [ Q:%d %4d txs - %s - %3.0fms %2.1fs %3.0f tx/s]" % ( data['height'], blockQ.qsize(), 
         len(data['tx']), datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime, len(data['tx'])/blktime)
 
+def options(cfg):
+    try:                                
+        opts,args = getopt.getopt(sys.argv[1:], "hvd:l:r:w:p:q:w:u:b:", 
+            ["help", "version", "debug", "db=", "log=", "rpc=", "workers=", "prunegap=", "queue=", "user=", "block=", "defaults" ])
+    except getopt.GetoptError:
+        usage()
+    for opt,arg in opts:
+        if opt in ("-h", "--help"):
+            usage()
+        elif opt in ("-v", "--version"):
+            sys.exit(sys.argv[0]+': '+version)
+        elif opt in ("-d", "--db"):
+            cfg['db'] = arg
+        elif opt in ("-l", "--log"):
+            cfg['log'] = arg
+        elif opt in ("-r", "--rpc"):
+            cfg['rpc'] = arg
+        elif opt in ("-w", "--workers"):
+            cfg['workers'] = int(arg)
+        elif opt in ("-p", "--prunegap"):
+            cfg['prunegap'] = int(arg)
+        elif opt in ("-q", "--queue"):
+            cfg['queue'] = int(arg)
+        elif opt in ("-u", "--user"):
+            cfg['user'] = arg 
+        elif opt in ("--defaults"):
+            savecfg(cfg)
+            sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
+        elif opt in ("-b", "--block"):
+            cfg['block'] = int(arg)
+        elif opt in ("--debug"):
+            cfg['debug'] = True
+        
+def usage():
+    print """Usage: %s [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
+--defaults\tUpdate cfg and exit\nDefault files are %s.cfg .log .db
+\nThese options get saved in cfg file as default.
+-p,--prunegap\tSet min number blocks pruneable before stoping bitcoind\n-w,--workers\tSet number of workers
+-q,--queue\tSet block queue size\n-u,--user\tSet user to run as\n-d,--db  \tSet mysql db connection, "host:user:pwd:dbname"
+-l,--log\tSet log file path\n-r,--rpc\tSet rpc connection, "http://user:pwd@host:port"\n-b,--block\tStart at block number""" % (sys.argv[0], sys.argv[0])
+    sys.exit(2) 
+    
 def sigterm_handler(_signo, _stack_frame):
     done.set()
+    if not cfg['debug']:
+        os.unlink(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid')
     
-if __name__ == '__main__':
-
-    loadcfg(cfg)
+def run():
+    global dbpool,blockQ,done
+    from gevent import monkey; monkey.patch_socket()
     
-    signal.signal(signal.SIGTERM, sigterm_handler)
-    signal.signal(signal.SIGINT, sigterm_handler)
-    
-    blk = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-    
+    blockQ,done = Queue(),Event()
     dbpool = DBPool(cfg['db'].split(':'), cfg['workers']+1, 'MySQLdb')
     workers = [ gevent.spawn(BlockHandler) for i in range(cfg['workers']) ]
     
@@ -199,18 +237,33 @@ if __name__ == '__main__':
     workstart = time.time()
     while True:
         try:
-            blksdone = getBlocks(blk)
+            blksdone = getBlocks(cfg['block'] if 'block' in cfg else 0)
             break
         except socket.error:
             print "Cannot connect to rpc"
             gevent.sleep(5)
-            pass
-    
-    done.set()
+            pass  
     gevent.joinall(workers)
-
     if blksdone:
         print "Session %.2f blks/s" % float(blksdone / (time.time() - workstart))
+    
+if __name__ == '__main__':
+
+    loadcfg(cfg)
+    options(cfg)
+    drop2user(cfg)
+       
+    if cfg['debug']:
+        signal.signal(signal.SIGINT, sigterm_handler)
+        run()
+    else:
+        with daemon.DaemonContext(working_directory='.', stdout=open(sys.argv[0]+'.log','a'), stderr=open(sys.argv[0]+'.log','a'), 
+                signal_map={signal.SIGTERM:sigterm_handler } ):
+            with file(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid','w') as f: 
+                f.write(str(os.getpid()))
+            run()
+
+    
 
     
 
