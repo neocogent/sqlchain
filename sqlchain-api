@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import os, sys, pwd, getopt, time, cgi, urlparse, signal
+import os, sys, pwd, getopt, time, cgi, urlparse, signal, daemon
 import threading, mimetypes, json
 
 from gevent.pywsgi import WSGIServer
@@ -579,7 +579,7 @@ def bciOutputs(cur, txid, blob):
         data.append(vout)
     return data,len(outs)
 
-def options():
+def options(cfg):
     try:                                
         opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:s:a:w:r:u:", 
             ["help", "version", "debug", "db=", "log=", "listen=", "www=", "user=", "defaults" ])
@@ -614,29 +614,15 @@ def usage():
     
 def sigterm_handler(_signo, _stack_frame):
     logts("Shutting down.")
+    if not cfg['debug']:
+        os.unlink(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid')
     sys.exit(0)
     
-def drop2user():
-    global drop
-    if ('user' in cfg) and (cfg['user'] != '') and (os.getuid() == 0):
-        #drop.wait()
-        uid = pwd.getpwnam(cfg['user']).pw_uid
-        os.setgroups([])
-        os.setgid(uid)
-        os.setuid(uid)
-        os.umask(077)     
+def run():
+    global dbpool
     
-if __name__ == '__main__':
-    
-    loadcfg(cfg)
-    options()
-        
-    if not cfg['debug']:
-        sys.stdout = open(cfg['log'], 'a')
-        signal.signal(signal.SIGTERM, sigterm_handler)
-        
     dbpool = DBPool(cfg['db'].split(':'), cfg['pool'], 'MySQLdb')
-        
+    
     syncd = threading.Thread(target = syncMonitor)
     syncd.daemon = True
     syncd.start()
@@ -646,21 +632,34 @@ if __name__ == '__main__':
     mimetypes.add_type('application/x-font-woff2', '.woff2')
     mimetypes.add_type('application/x-font-woff', '.ttf')
 
+    logts("Starting on %s" % cfg['listen'])
     host,port = cfg['listen'].split(':')
     cert = {'certfile':cfg['ssl']} if ('ssl' in cfg) and (cfg['ssl'] != '') else {}
     server = WSGIServer((host, int(port)), REQHandler, **cert)
     
-    drop2user()
+    drop2user(cfg)
     
-    logts("Starting on %s" % cfg['listen'])
-    while True:
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            sys.exit(0)
-        except:
-            logts("Uknown exception")
-            pass
+    server.serve_forever()
+    
+if __name__ == '__main__':
+    
+    loadcfg(cfg)
+    options(cfg)
+
+    if cfg['debug']:
+        signal.signal(signal.SIGINT, sigterm_handler)
+        run()
+    else:
+        with daemon.DaemonContext(working_directory='.', stdout=open(sys.argv[0]+'.log','a'), stderr=open(sys.argv[0]+'.log','a'), 
+                signal_map={signal.SIGTERM:sigterm_handler } ):
+            with file(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid','w') as f: 
+                f.write(str(os.getpid()))
+            run()
+
+    
+        
+    
+    
 
 
         

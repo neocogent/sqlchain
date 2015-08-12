@@ -162,6 +162,11 @@ def gethdr(blk, var=None):
     hdr = dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
     return hdr if var == None else hdr[var] if var != 'raw' else data
 
+def getChunk(chunk):
+    with open('/var/data/hdrs.dat', 'rb') as f:
+        f.seek(chunk*80*2016)
+        return f.read(80*2016)
+        
 def bits2diff(bits):
     return (0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))))
     
@@ -241,5 +246,13 @@ def savecfg(cfg):
 def logts(msg):
     print datetime.now().strftime('%d-%m-%Y %H:%M:%S'), msg
     sys.stdout.flush() 
-    
+
+def drop2user(cfg):
+    if ('user' in cfg) and (cfg['user'] != '') and (os.getuid() == 0):
+        uid = pwd.getpwnam(cfg['user']).pw_uid
+        os.setgroups([])
+        os.setgid(uid)
+        os.setuid(uid)
+        os.umask(077) 
+            
 

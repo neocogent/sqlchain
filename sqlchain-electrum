@@ -1,8 +1,6 @@
 #!/usr/bin/env python
-from gevent import monkey; monkey.patch_socket()
-
 import os, sys, pwd, getopt, datetime, time, cgi, urlparse, signal, string
-import ssl, json, gevent
+import ssl, json, gevent, daemon
 
 from time import sleep
 from hashlib import sha256
@@ -11,13 +9,12 @@ from gevent import socket
 from gevent.server import StreamServer
 from gevent.queue import Queue
 from urllib2 import urlopen, URLError
-
+from sqlchainlib import *
 
 cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api' }
 
 srvinfo = { 'version':"1.0", 'banner':'', 'block':0, 'header':{} }
 subs = { 'numblocks':{}, 'headers':{}, 'address':{}, '_ip_':{} }
-reqQ,respQ = Queue(),Queue()
 
 def ReqHandler():
     while True:
@@ -48,14 +45,14 @@ def RespHandler():
 def SyncHandler():
     sync_id = 0
     while True:
-        resp = apicall('/sync/'+sync_id)
+        resp = apicall('/sync/'+str(sync_id))
         if resp and 'error' in resp:
             sleep(30)
         elif resp:
             if resp['block'] != srvinfo['block']:
                 srvinfo['block'] = resp['block']
                 pubSubs('numblocks', msg=resp['block'])
-            hdr = apicall('/block-index/'+resp['block']+'/electrum')
+            hdr = apicall('/block-index/'+str(resp['block'])+'/electrum')
             if hdr != srvinfo['header']:
                 srvinfo['header'] = hdr
                 pubSubs('headers', msg=hdr)
@@ -163,29 +160,8 @@ reqFuncs = { 'blockchain.address.get_history':addrHistory, 'blockchain.address.g
              'blockchain.block.get_header':blkHeader,      'blockchain.block.get_chunk':blkChunk, 
              'blockchain.transaction.broadcast':txSend,    'blockchain.transaction.get_merkle':txMerkle,
              'blockchain.transaction.get':txGet,           'blockchain.estimatefee':feeEstimate }
-        
-# cfg file and option handling stuff
 
-def loadcfg():
-    global cfg
-    try:
-        with open(sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else sys.argv[0]+'.cfg') as json_file:
-            cfg = json.load(json_file)
-    except IOError:
-        logts('No cfg file.')
-    finally:
-        cfg['debug'] = False
-        options()
-
-def savecfg():
-    try:
-        with open(sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else sys.argv[0]+'.cfg', 'w') as json_file:
-            json.dump(cfg, json_file, indent=2)
-    except IOError:
-        logts('Cannot save cfg file')
-
-def options():
-    global cfgfile
+def options(cfg):
     try:                                
         opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:s:a:w:r:u:", 
             ["help", "version", "debug", "db=", "log=", "listen=", "www=", "user=", "defaults" ])
@@ -205,7 +181,7 @@ def options():
         elif opt in ("-a", "--listen"):
             cfg['listen'] = arg
         elif opt in ("--defaults"):
-            savecfg()
+            savecfg(cfg)
             sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
         elif opt in ("--debug"):
             cfg['debug'] = True
@@ -217,11 +193,7 @@ def usage():
 -a,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
 -d,--db  \tSet mysql db connection, "host:user:pwd:dbname"\n-l,--log\tSet log file path""" % (sys.argv[0], sys.argv[0])
     sys.exit(2) 
-                        
-def logts(msg):
-    print datetime.datetime.now().strftime('%d-%m-%Y %H:%M:%S'), msg
-    sys.stdout.flush()  
-    
+
 def apicall(url, post=None):
     try:
         data = urlopen(cfg['api']+url, post).read()
@@ -230,56 +202,53 @@ def apicall(url, post=None):
         return { 'error':'No api connection' }
     return json.loads(data)
 
-def getChunk(chunk):
-    with open('/var/data/hdrs.dat', 'rb') as f:
-        f.seek(chunk*80*2016)
-        return f.read(80*2016)
-
 def sigterm_handler(_signo, _stack_frame):
     logts("Shutting down.")
+    if not cfg['debug']:
+        os.unlink(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid')
     sys.exit(0)
-    
-def drop2user():
-    global drop
-    if ('user' in cfg) and (cfg['user'] != '') and (os.getuid() == 0):
-        #drop.wait()
-        uid = pwd.getpwnam(cfg['user']).pw_uid
-        os.setgroups([])
-        os.setgid(uid)
-        os.setuid(uid)
-        os.umask(077)      
-    
-if __name__ == '__main__':
-    
-    loadcfg()
-    
+
+def run():
+    global reqQ,respQ
+    from gevent import monkey; monkey.patch_socket()
+
     with open('electrum.banner') as f:
         srvinfo['banner'] = f.read()
-        
-    if not cfg['debug']:
-        sys.stdout = open(cfg['log'], 'a')
-        signal.signal(signal.SIGTERM, sigterm_handler)
     
     hdr = apicall('/block-index/latest/electrum')
     if 'error' in hdr:
-        sys.exit()
+        sys.exit(1)
     srvinfo['block'],srvinfo['header'] = hdr['block_height'],hdr
     
+    reqQ,respQ = Queue(),Queue()
     gevent.spawn(ReqHandler)
     gevent.spawn(RespHandler)
     gevent.spawn(SyncHandler)
 
     logts("Starting on %s" % cfg['listen'])
-    while True:
-        try:
-            host,port = cfg['listen'].split(':')
-            cert = {'certfile':cfg['ssl']} if ('ssl' in cfg) and (cfg['ssl'] != '') else {}
-            server = StreamServer((host, int(port)), TcpHandler, **cert)
-            server.serve_forever()
-        except KeyboardInterrupt:
-            sys.exit(0)
-        #except:
-            #logts("Uknown exception")
-            #pass
+    host,port = cfg['listen'].split(':')
+    cert = {'certfile':cfg['ssl']} if ('ssl' in cfg) and (cfg['ssl'] != '') else {}
+    server = StreamServer((host, int(port)), TcpHandler, **cert)
+    
+    drop2user(cfg)
+    
+    server.serve_forever()
+    
+if __name__ == '__main__':
+    
+    loadcfg(cfg)
+    options(cfg)
+    
+    if cfg['debug']:
+        signal.signal(signal.SIGINT, sigterm_handler)
+        run()
+    else:
+        with daemon.DaemonContext(working_directory='.', stdout=open(sys.argv[0]+'.log','a'), stderr=open(sys.argv[0]+'.log','a'), 
+                signal_map={signal.SIGTERM:sigterm_handler } ):
+            with file(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid','w') as f: 
+                f.write(str(os.getpid()))
+            run()
             
+    
+        
         
