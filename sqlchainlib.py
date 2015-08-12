@@ -12,7 +12,7 @@ from hashlib import sha256
 # these are set to reasonable values for now - to increase, alter trxs.block_id or outputs.id column widths
 # and update data eg. update trxs set block_id=block_id/OLD_MAX*NEW_MAX + block_id%OLD_MAX
 MAX_TX_BLK = 10000  # allows 9,999,999 blocks with decimal(11)
-MAX_IO_TX = 4096    # allows 37 bit id value, (5 byte hash >> 3)*4096 in decimal(16), 7 bytes in blobs
+MAX_IO_TX = 4096    # allows 37 bit out_id value, (5 byte hash >> 3)*4096 in decimal(16), 7 bytes in blobs
 
 b58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -122,8 +122,8 @@ def insertAddress(cur, addr):
         row = cur.fetchone()
         if row == None:
             cur.execute("insert into address (id,addr) values(%s,%s)", (addr_id, pkh))
-            if addr_id != start_id:
-                print '!', # collision
+            #if addr_id != start_id:
+            #    print '!', # collision
             return addr_id
         elif str(row[0]) == str(pkh):
             return addr_id
@@ -138,8 +138,8 @@ def findTx(cur, txhash, mkNew=False, limit=32):
         row = cur.fetchone()
         if row == None:
             if mkNew:
-                if tx_id != start_id:
-                    print '#', # collision
+                #if tx_id != start_id:
+                #    print '#', # collision
                 return tx_id
             return None
         if str(row[0][:32]) == txhash:
@@ -219,7 +219,7 @@ def readBlob(pos, sz):
         with open('/var/data/blobs.dat', 'rb') as blob:
             blob.seek(pos)
             return blob.read(sz)
-    return None
+    return ''
         
 # cfg file handling stuff
 def loadcfg(cfg):

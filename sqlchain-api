@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
 import os, sys, pwd, getopt, time, cgi, urlparse, signal
-import threading, mimetypes, ssl, json
-#import MySQLdb as db
+import threading, mimetypes, json
 
 from gevent.pywsgi import WSGIServer
 from datetime import datetime
@@ -22,37 +21,36 @@ sync = threading.Condition();
 sync_id = 0
 
 def REQHandler(env, send_resp):
-    global dbpool
     try:
         path = env['PATH_INFO']
-        if env['REQUEST_METHOD'] == 'POST':
+        if env['REQUEST_METHOD'] == 'POST': # POST
             form = cgi.FieldStorage(fp=env['wsgi.input'], environ=env, keep_blank_values=True)
             send_resp('200 OK', [('Content-Type', 'application/json')])
-            sql = dbpool.get()
             if path.startswith("/api/addrs/"):
-                return [ json.dumps(apiAddr(sql.cursor(), form['addrs'].value.split(','), path.split('/')[3:])) ]
+                return [ json.dumps(apiAddr(dbpool.get().cursor(), form['addrs'].value.split(','), path.split('/')[3:])) ]
             if path.startswith("/api/tx/send/"):
                 return [ apiRPC('send', form['rawtx'].value) ]
             if path == '/':
-                return [  json.dumps(do_RPC("/%s/%s" % (form['method'].value, "/".join(form.getlist('params'))), sql.cursor(), {})) ]
+                return [  json.dumps(do_RPC("/%s/%s" % (form['method'].value, "/".join(form.getlist('params'))), dbpool.get().cursor(), {})) ]
         else: # GET
             get = urlparse.parse_qs(env['QUERY_STRING'])
             path = '/main.html' if path in ['', '/'] else path
             if os.path.isfile(cfg['www']+path):
                 _,ext = os.path.splitext(path)
                 filesize = os.path.getsize(cfg['www']+path)
-                f = open(cfg['www']+path) 
-                send_resp('200 OK', [('Content-Type', mimetypes.types_map[ext]), ('Content-Length', filesize), 
-                                     ('Expires', datetime.utcfromtimestamp(time.time()+3600).strftime("%a, %d %b %Y %H:%M:%S %ZGMT"))])
-                return [ f.read() ]
-            if path[:4] in apis:
+                with open(cfg['www']+path) as fd:
+                    send_resp('200 OK', [('Content-Type', mimetypes.types_map[ext]), ('Content-Length', filesize), 
+                                         ('Expires', datetime.utcfromtimestamp(time.time()+3600).strftime("%a, %d %b %Y %H:%M:%S %ZGMT"))])
+                    return [ fd.read() ]
+            if path[:4] in APIs:
                 send_resp('200 OK', [('Content-Type', 'application/json')])
-                sql = dbpool.get()
-                return [ json.dumps(apis[ path[:4] ](path[4:], sql.cursor(), get)) ]
+                return [ json.dumps(APIs[ path[:4] ](path[4:], dbpool.get().cursor(), get)) ]
+        send_resp('404 - File Not Found: %s' % path, [("Content-Type", "text/html")], sys.exc_info())
+        with open(cfg['www']+'/404.html') as fd:
+            return [ fd.read() ]
     except IOError:
         pass
-    send_resp('404 - File Not Found: %s' % path, [("Content-Type", "text/plain")], sys.exc_info())
-
+        
 def do_API(path, cur, get):
     args = path.split('/')[1:]
     if args[0] == "block-index":
@@ -64,18 +62,7 @@ def do_API(path, cur, get):
         if len(args[1]) == 64 and all(c in hexdigits for c in args[1]):
             return apiTx(cur, args[1], args)
     if args[0] == "txs":
-        txs = []
-        if 'block' in get:
-            blkhash = get['block'][0]
-            if len(blkhash) == 64 and all(c in hexdigits for c in blkhash):
-                txhashes = apiBlock(cur, blkhash)
-                txhashes = txhashes['tx'] if 'tx' in txhashes else []
-        elif 'address' in get:
-            txhashes = apiAddr(cur, [ get['address'][0] ], {}, {})
-            txhashes = txhashes['transactions'] if 'transactions' in txhashes else []
-        for txhash in txhashes:
-            txs.append(apiTx(cur, txhash, []))
-        return { 'pagesTotal':1, 'txs': txs }
+        return { 'pagesTotal':1, 'txs': apiTxs(cur, get) }
     if args[0] in ["addr","addrs"]:
         return apiAddr(cur, args[1].split(','), args[2:], get)
     if args[0] == "history":
@@ -124,31 +111,33 @@ def do_BCI(path, cur, get):
         return self.do_RPC('/'+args[1], cur, get)
     return None
 
-apis = { "/api":do_API, "/rpc":do_RPC, "/bci":do_BCI }
+APIs = { "/api":do_API, "/rpc":do_RPC, "/bci":do_BCI }
 
 # monitor for mempool, block, orphan changes and notify any active sync connections
 def syncMonitor():
-    global sync_id, pool
-    cur = dbpool.get().cursor()
-    cur.execute("select greatest(ifnull(m,0),ifnull(o,0)) from (select max(sync_id) as m from mempool) m,(select max(sync_id) as o from orphans) o;")
-    sync_id = cur.fetchone()[0]
-    cur.execute("select max(id) from blocks;")
-    cfg['block'] = cur.fetchone()[0]
-    while True:
-        cur.execute("select count(*) from mempool where sync_id > %s;", (sync_id,))
-        new_trxs = cur.fetchone()[0] > 0
-        cur.execute("select count(*) from orphans where sync_id > %s;", (sync_id,))
-        new_orphans = cur.fetchone()[0] > 0
+    global sync_id
+    with dbpool.get().cursor() as cur:
+        cur.execute("select greatest(ifnull(m,0),ifnull(o,0)) from (select max(sync_id) as m from mempool) m,(select max(sync_id) as o from orphans) o;")
+        sync_id = cur.fetchone()[0]
         cur.execute("select max(id) from blocks;")
-        block = cur.fetchone()[0]
+        cfg['block'] = cur.fetchone()[0]
+    while True:
+        with dbpool.get().cursor() as cur:
+            cur.execute("select count(*) from mempool where sync_id > %s;", (sync_id,))
+            new_trxs = cur.fetchone()[0] > 0
+            cur.execute("select count(*) from orphans where sync_id > %s;", (sync_id,))
+            new_orphans = cur.fetchone()[0] > 0
+            cur.execute("select max(id) from blocks;")
+            block = cur.fetchone()[0]
         if block != cfg['block'] or new_orphans or new_trxs:
             cfg['block'] = block
             sync_id += 1
             with sync:
                 sync.notifyAll()
         if (datetime.now() - cfg['lastDBts']).total_seconds() > 3*60*60:
-            mkDBInfo(cur)
-        sleep(10) 
+            with dbpool.get().cursor() as cur:
+                mkDBInfo(cur)
+        gevent.sleep(10) 
 
 rawTxHdr = [ 'version','# inputs','# outputs', 'locktime' ]
 rawCbHdr = [ 'null txid','n','coinbase size','coinbase bytes','sequence' ]
@@ -312,6 +301,20 @@ def addrHistory(cur, addr, args):
             elif ('uncfmd' not in args or tmp['height'] == 0) and 'balance' not in args:
                 data['txs'].append(tmp)
     return (sha256(txt).digest().encode('hex') if txt else None) if 'status' in args else data
+
+def apiTxs(cur, get):
+    txs = []
+    if 'block' in get:
+        blkhash = get['block'][0]
+        if len(blkhash) == 64 and all(c in hexdigits for c in blkhash):
+            txhashes = apiBlock(cur, blkhash)
+            txhashes = txhashes['tx'] if 'tx' in txhashes else []
+    elif 'address' in get:
+        txhashes = apiAddr(cur, [ get['address'][0] ], {}, {})
+        txhashes = txhashes['transactions'] if 'transactions' in txhashes else []
+    for txhash in txhashes:
+        txs.append(apiTx(cur, txhash, []))
+    return txs
     
 def apiTx(cur, txhash, args):
     if 'output' in args:
@@ -456,14 +459,14 @@ def apiStatus(cur, level='info', item=None):
         srvinfo['db']['all']['total-bytes'] = 0
         cur.execute("show table status;")
         for tbl in cur:
-            srvinfo['db'].update({ tbl[0]:{ 'tbls':tbl[4], 'data-GB':float("%.3f"%float(tbl[6]/1e9)), 'idx-GB':float("%.3f"%float(tbl[8]/1e9)), 'total-GB':float("%.3f"%float(tbl[6]/1e9+tbl[8]/1e9)), 'total-bytes':tbl[6]+tbl[8] }})
+            srvinfo['db'].update({ tbl[0]:{ 'rows':tbl[4], 'data-GB':float("%.1f"%float(tbl[6]/1e9)), 'idx-GB':float("%.1f"%float(tbl[8]/1e9)), 'total-GB':float("%.1f"%float(tbl[6]/1e9+tbl[8]/1e9)), 'total-bytes':tbl[6]+tbl[8] }})
             srvinfo['db']['all']['total-bytes'] += tbl[6]+tbl[8]
         srvinfo['db']['outputs']['max-io-tx'] = MAX_IO_TX
         srvinfo['db']['blocks']['hdr-data'] = os.stat('/var/data/hdrs.dat').st_size 
         srvinfo['db']['trxs']['blob-data'] = os.stat('/var/data/blobs.dat').st_size 
         srvinfo['db']['trxs']['max-tx-block'] = MAX_TX_BLK
         srvinfo['db']['all']['total-bytes'] += srvinfo['db']['trxs']['blob-data'] + srvinfo['db']['blocks']['hdr-data']
-        srvinfo['db']['all']['total-GB'] = float("%.3f"%float(srvinfo['db']['all']['total-bytes']/1e9))
+        srvinfo['db']['all']['total-GB'] = float("%.1f"%float(srvinfo['db']['all']['total-bytes']/1e9))
     if level in srvinfo:
         if item and item in srvinfo[level]:
             return srvinfo[level][item]

@@ -1,8 +1,12 @@
-#  Based on gevent.db 
-#  https://github.com/gordonc/gevent-db/blob/master/db.py
 #
-#  Modified for use with MySQLdb by allowing it to take a connection tuple, not string
-#  And adding a cursor __getitem__ to allow iteration like MySQLdb supports
+#  Extended from gevent.db by neocogent
+#  Original: https://github.com/gordonc/gevent-db/blob/master/db.py
+#
+#  Modified for use with MySQLdb 
+#  - allowing it to take a connection list arg as well as string
+#  - adding a cursor __getitem__ to allow iteration like MySQLdb supports.
+#  - adding __enter__ and __exit_ to support using "with" context manager
+#  - adding executemany on cursor
 #
 import gevent.socket
 from gevent import queue
@@ -56,7 +60,7 @@ class DBConnection_():
         self.state = self.State()
 
     def connect(self,connectionstring,modulename):
-        self.conn = self.apply(__import__(modulename).connect,*connectionstring)
+        self.conn = self.apply(__import__(modulename).connect,*(connectionstring,) if isinstance(connectionstring, basestring) else connectionstring)
 
     def __del__():
         self.conn.close()
@@ -93,6 +97,12 @@ class DBCursor():
         self.conn = conn
         self.cursor = cursor
         
+    def __enter__(self):
+        return self.cursor
+        
+    def __exit__(self, type, value, traceback):
+        pass
+        
     def __getitem__(self,*args):
         result = self.fetchone()
         if not result:
@@ -101,6 +111,9 @@ class DBCursor():
 
     def execute(self,*args):
         return self.conn.apply(self.cursor.execute,*args)
+        
+    def executemany(self,*args):
+        return self.conn.apply(self.cursor.executemany,*args)
 
     def fetchone(self,*args):
         return self.conn.apply(self.cursor.fetchone,*args)
