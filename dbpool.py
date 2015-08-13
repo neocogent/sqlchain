@@ -103,11 +103,8 @@ class DBCursor():
     def __exit__(self, type, value, traceback):
         pass
         
-    def __getitem__(self,*args):
-        result = self.fetchone()
-        if not result:
-            raise IndexError
-        return result
+    def __iter__(self,*args):
+         return self.conn.apply(self.cursor.__iter__,*args)
 
     def execute(self,*args):
         return self.conn.apply(self.cursor.execute,*args)
