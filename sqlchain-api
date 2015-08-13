@@ -52,6 +52,7 @@ def do_API(env, send_resp):
             return [ json.dumps(apiAddr(cur, form['addrs'].value.split(','), args[2:])) ]
         if args[0] == "tx" and args[1] == "send":
             return [ apiRPC('send', form['rawtx'].value) ]
+        return [ ]
     if args[0] == "block-index":
         return [ json.dumps(apiHeader(cur, args[1], args[2:])) ]
     if args[0] == "block":
@@ -139,9 +140,8 @@ class BCIWebSocket(WebSocketApplication):
     def on_close(self, reason):
         logts("WS Client disconnected %s %s" % (self.remote, reason))
 
-# monitor for mempool, block, orphan changes and notify any active sync connections
+# monitor for mempool, block, orphan changes and notify waiting sync connections or websocket subscriptions
 def syncMonitor():
-    global sync_id
     with dbpool.get().cursor() as cur:
         cur.execute("select greatest(ifnull(m,0),ifnull(o,0)) from (select max(sync_id) as m from mempool) m,(select max(sync_id) as o from orphans) o;")
         sync_id = cur.fetchone()[0]
@@ -156,25 +156,32 @@ def syncMonitor():
             cur.execute("select max(id) from blocks;")
             block = cur.fetchone()[0]
         if block != cfg['block'] or new_orphans or len(syncTxs) > 0:
-            cfg['block'] = block
-            sync_id += 1
-            if 'block_sub' in clients[client]['subs']:
-                client.ws.send(json.dumps({ 'op': 'block', 'x': lastBlk })) #todo build block data
-            with sync:
-                sync.notifyAll()
-        if len(syncTxs) > 0:
-            for client in server.clients.values():
-                for tx in syncTxs:
-                    if 'unconfirmed_sub' in clients[client]['subs']:
-                        client.ws.send(json.dumps({ 'op': 'utx', 'x': tx }))
-                        clients[client]['lasttx'] = tx
-                    if len(clients[client]['addrs']) > 0:
-                        pass # todo check tx address against list and send tx
-                        
+            pass #do_Sync(block)
         if (datetime.now() - cfg['lastDBts']).total_seconds() > 3*60*60:
             with dbpool.get().cursor() as cur:
                 mkDBInfo(cur)
-        gevent.sleep(10) 
+        sleep(5) 
+            
+def do_Sync(block):
+    global sync_id
+    if block != cfg['block']:
+        cfg['block'] = min(block, cfg['block']+1)
+        with dbpool.get().cursor() as cur:
+            lastBlk = bciBlockWS(cur, block)
+        for client in server.clients.values():
+            if 'blocks_sub' in clients[client]['subs']:
+                client.ws.send(json.dumps({ 'op': 'block', 'x': lastBlk } )) 
+    sync_id += 1
+    with sync:
+        sync.notifyAll()
+    if len(syncTxs) > 0:
+        for client in server.clients.values():
+            for tx in syncTxs:
+                if 'unconfirmed_sub' in clients[client]['subs']:
+                    client.ws.send(json.dumps({ 'op': 'utx', 'x': tx }))
+                    clients[client]['lasttx'] = tx
+                if len(clients[client]['addrs']) > 0:
+                    pass # todo check tx address against list and send tx  
 
 rawTxHdr = [ 'version','# inputs','# outputs', 'locktime' ]
 rawCbHdr = [ 'null txid','n','coinbase size','coinbase bytes','sequence' ]
@@ -533,6 +540,35 @@ def apiSync(cur, sync_req=0, timeout=30):
     cur.execute("select min(block_id) from orphans where sync_id > %s;", (sync_req if sync_req > 0 else sync_id,))
     orphan = cur.fetchone()[0]
     return { 'block':cfg['block'] if orphan == None else orphan, 'orphan':orphan != None, 'txs':utxs, 'sync_id':sync_id }
+
+def bciBlockWS(cur, block):
+    data = { 'height': int(block), 'tx':[], 'txIndexes':[] }
+    cur.execute("select hash from blocks where id=%s limit 1;", (block,))
+    for data['hash'], in cur:
+        data['hash'] = data['hash'][::-1].encode('hex')
+        hdr = gethdr(data['height'])
+        data['blockIndex'] = data['height']
+        data['version'] = hdr['version']
+        data['time'] = hdr['time']
+        #data['prev_block'] = hdr['previousblockhash'][::-1].encode('hex')
+        data['mrklRoot'] = hdr['merkleroot'][::-1].encode('hex')
+        data['nonce'] = hdr['nonce']
+        data['bits'] = hdr['bits']        
+        cur.execute("select hash from trxs where block_id>=%s and block_id<%s;", (block*MAX_TX_BLK, block*MAX_TX_BLK+MAX_TX_BLK))
+        for txhash, in cur:
+            data['tx'].append(bciTx(cur, txhash[::-1].encode('hex')))
+            data['txIndexes'].append(txhash[::-1].encode('hex'))
+        data['nTx'] = len(data['tx'])
+        data['reward'] = -(5000000000 >> (data['height'] / 210000))
+        for out in data['tx'][0]['out']:
+            data['reward'] += out['value']
+        data['totalBTCSent'] = 0
+        for tx in data['tx']:
+            for out in tx['out']:
+                data['totalBTCSent'] += out['value']
+        del data['tx']
+        return data
+    return None
     
 def bciBlock(cur, blkhash):
     data = { 'hash':blkhash, 'tx':[] }

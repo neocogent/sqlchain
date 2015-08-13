@@ -27,7 +27,8 @@
   function onOpen(evt)
   {
     writeToScreen("CONNECTED");
-    doSend('{"op":"unconfirmed_sub"}');
+    doSend('{"op":"blocks_sub"}');
+    //doSend('{"op":"unconfirmed_sub"}');
   }
 
   function onClose(evt)
