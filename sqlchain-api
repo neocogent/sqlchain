@@ -3,7 +3,6 @@
 import os, sys, pwd, getopt, time, cgi, urlparse, signal, daemon
 import threading, mimetypes, json, gevent
 
-#from gevent.pywsgi import WSGIServer
 from geventwebsocket import WebSocketServer, WebSocketApplication, Resource
 from collections import OrderedDict
 from datetime import datetime
