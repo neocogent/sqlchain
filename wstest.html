@@ -38,13 +38,12 @@
 
   function onMessage(evt)
   {
-    writeToScreen('<span style="color: blue;">RESPONSE: ' + evt.data+'</span>');
-    //websocket.close();
+    writeToScreen('<span style="color: blue;">RESPONSE:</span>' + JSON.stringify(JSON.parse(evt.data), null, 2)); // gives nicer fmt output
   }
 
   function onError(evt)
   {
-    writeToScreen('<span style="color: red;">ERROR:</span> ' + evt.data);
+    writeToScreen('<span style="color: red;">ERROR:</span> ' + JSON.stringify(JSON.parse(evt.data), null, 2)); 
   }
 
   function doSend(message)
@@ -55,7 +54,7 @@
 
   function writeToScreen(message)
   {
-    var pre = document.createElement("p");
+    var pre = document.createElement("pre");
     pre.style.wordWrap = "break-word";
     pre.innerHTML = message;
     output.appendChild(pre);

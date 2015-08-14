@@ -14,20 +14,20 @@ def do_API(env, send_resp):
     if env['REQUEST_METHOD'] == 'POST':
         form = cgi.FieldStorage(fp=env['wsgi.input'], environ=env, keep_blank_values=True)
         if args[0] == "addrs":
-            return [ json.dumps(apiAddr(cur, form['addrs'].value.split(','), args[2:])) ]
+            return json.dumps(apiAddr(cur, form['addrs'].value.split(','), args[2:]))
         if args[0] == "tx" and args[1] == "send":
-            return [ apiRPC('send', form['rawtx'].value) ]
-        return [ ]
+            return apiRPC('send', form['rawtx'].value)
+        return None
     if args[0] == "block-index":
-        return [ json.dumps(apiHeader(cur, args[1], args[2:])) ]
+        return json.dumps(apiHeader(cur, args[1], args[2:]))
     if args[0] == "block":
         if len(args[1]) == 64 and all(c in hexdigits for c in args[1]):
-            return [ json.dumps(apiBlock(cur, args[1])) ]
+            return json.dumps(apiBlock(cur, args[1]))
     if args[0] in ["tx","raw"]:
         if len(args[1]) == 64 and all(c in hexdigits for c in args[1]):
-            return [ json.dumps(apiTx(cur, args[1], args)) ]
+            return json.dumps(apiTx(cur, args[1], args))
     if args[0] == "txs":
-        return [ json.dumps({ 'pagesTotal':1, 'txs': apiTxs(cur, get) }) ]
+        return json.dumps({ 'pagesTotal':1, 'txs': apiTxs(cur, get) })
     if args[0] in ["addr","addrs"]:
         return json.dumps(apiAddr(cur, args[1].split(','), args[2:], get))
     if args[0] == "history":
@@ -40,7 +40,7 @@ def do_API(env, send_resp):
         return json.dumps(apiRPC(args[1], get['nbBlocks'][0] if 'nbBlocks' in get else args[2] if len(args) > 2 else 2))
     if args[0] == "sync":
         return json.dumps(apiSync(cur, *[int(x) if x.isdigit() else 0 for x in args[1:]]))
-    return [ ]
+    return None
 
 def apiHeader(cur, blk, args):
     if blk.isdigit():
@@ -200,8 +200,8 @@ def apiInputs(cur, height, blob, ins):
     total = 0
     data = []
     hdr = getBlobHdr(blob)
-    if ins >= 0xC0:
-        ins = (ins&0x3F)<<8 + hdr[1] 
+    if ins >= 192:
+        ins = (ins & 63)*256 + hdr[1]  
     if ins == 0:
         cur.execute("select coinbase from blocks where id=%s;", (height,))
         data.append({ 'n':0, 'coinbase':cur.fetchone()[0].encode('hex') })
@@ -244,8 +244,8 @@ def apiSpent(cur, txid, out_id):
     return {}
 
 def txoAddr(cur, txhash, n):
-    txh = txhash.decode('hex')[::-1]
-    cur.execute("select addr,addr_id from outputs o, address a where o.id>=%s and a.id=o.addr_id limit 1;", (txh2id(txh)*MAX_IO_TX + int(n),))
+    txid = txh2id(txhash.decode('hex')[::-1])
+    cur.execute("select addr,addr_id from outputs o, address a where o.id>=%s*{0} and o.id<%s*{0} and o.id%%{0}=%s and a.id=o.addr_id limit 1;".format(MAX_IO_TX), (txid,txid+1,int(n)))
     row = cur.fetchone()
     return mkaddr(row[0],row[1]) if row else None
     

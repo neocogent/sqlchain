@@ -8,9 +8,15 @@ from string import hexdigits
 from sqlchain import *
 
 from insight import apiHeader, apiTx
+from rpc import do_RPC
 
 def do_BCI(env, send_resp):
-    get,args,cur = urlparse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
+    args = env['PATH_INFO'].split('/')[2:]
+    if args[0] == 'q':
+        env['PATH_INFO'] = '/rpc/'+args[1]
+        return do_RPC(env, send_resp)
+        
+    get,cur = urlparse.parse_qs(env['QUERY_STRING']), sqc.dbpool.get().cursor()
     send_resp('200 OK', [('Content-Type', 'application/json')])
     if args[0] == "block-height":
         return json.dumps(apiHeader(cur, args[1], 'bci'))
@@ -23,8 +29,6 @@ def do_BCI(env, send_resp):
     if args[0] in ["address","unspent"]:
         addrs = get['active'][0].split('|') if 'active' in get else args[1].split(',')
         return json.dumps(bciAddr(cur, addrs, args[0] == "unspent", get))
-    if args[0] == 'q':
-        return do_RPC('/'+args[1], cur, get)
     return []
     
 def bciBlockWS(cur, block):
@@ -36,7 +40,7 @@ def bciBlockWS(cur, block):
         data['blockIndex'] = data['height']
         data['version'] = hdr['version']
         data['time'] = hdr['time']
-        #data['prev_block'] = hdr['previousblockhash'][::-1].encode('hex')
+        data['prevBlockIndex'] = data['height']-1
         data['mrklRoot'] = hdr['merkleroot'][::-1].encode('hex')
         data['nonce'] = hdr['nonce']
         data['bits'] = hdr['bits']        
@@ -45,7 +49,7 @@ def bciBlockWS(cur, block):
             data['tx'].append(bciTx(cur, txhash[::-1].encode('hex')))
             data['txIndexes'].append(txhash[::-1].encode('hex'))
         data['nTx'] = len(data['tx'])
-        data['reward'] = -(5000000000 >> (data['height'] / 210000))
+        data['reward'] = 0#-(5000000000 >> (data['height'] / 210000))
         for out in data['tx'][0]['out']:
             data['reward'] += out['value']
         data['totalBTCSent'] = 0
@@ -117,8 +121,8 @@ def bciTx(cur, txhash):
 def bciInputs(cur, height, blob, ins):
     data = []
     hdr = getBlobHdr(blob)
-    if ins >= 0xC0:
-        ins = (ins&0x3F)<<8 + hdr[1] 
+    if ins >= 192:
+        ins = (ins & 63)*256 + hdr[1] 
     if ins == 0:
         data.append({ })
     else:

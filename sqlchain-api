@@ -27,10 +27,11 @@ def do_Root(env, send_resp):
     try:
         path = env['PATH_INFO']
         if env['REQUEST_METHOD'] == 'POST': # POST
-            if path == '/': 
+            if path == '/': # the /rpc api is mirrored on / 
                 form = cgi.FieldStorage(fp=env['wsgi.input'], environ=env, keep_blank_values=True)
-                return [ do_RPC("/%s/%s" % (form['method'].value, "/".join(form.getlist('params'))), sqc.dbpool.get().cursor(), {}) ]
-        else: # GET
+                env['PATH_INFO'] = "/rpc/%s/%s" % (form['method'].value, "/".join(form.getlist('params')))
+                return lib.rpc.do_RPC(env, send_resp)
+        else: # GET static website files
             path = '/main.html' if path in ['', '/'] else path
             if os.path.isfile(sqc.cfg['www']+path):
                 _,ext = os.path.splitext(path)
@@ -44,24 +45,6 @@ def do_Root(env, send_resp):
             return [ fd.read() ]
     except IOError:
         pass
-    
-def do_RPC(env, send_resp):
-    get,args,cur = urlparse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
-    send_resp('200 OK', [('Content-Type', 'application/json')])
-    if args[0] == "getblockcount":
-        return json.dumps(sqc.cfg['block'])
-    if args[0] == "getinfo":
-        return json.dumps({ 'blocks':sqc.cfg['block'], 'difficulty':bits2diff(gethdr(sqc.cfg['block'], 'bits')) } )
-    if args[0] == "getdifficulty":
-        return json.dumps(bits2diff(gethdr(sqc.cfg['block'], 'bits')) )
-    if args[0] == "getblock":
-        return json.dumps(lib.insight.do_API("/block/"+args[1], cur, get) )
-    if args[0] == "getblockhash":
-        rtn = lib.insight.do_API("/block-index/"+args[1], cur, get)
-        return json.dumps(rtn['blockHash'] if 'blockHash' in rtn else rtn )
-    if args[0] == "getrawtransaction":
-        return json.dumps(lib.insight.do_API("/tx/"+args[1], cur, get) )
-    return []
 
 clients = {}
 sqc.syncTxs,lastBlk = [],{}
@@ -82,7 +65,7 @@ class BCIWebSocket(WebSocketApplication):
                 if msg['op'] == 'addr_sub' and 'addr' in msg:
                     clients[self.ws.handler.active_client]['addrs'].append(msg['addr'])
             if msg['op'] == 'ping_block':
-                self.ws.send(json.dumps({ 'op': 'block', 'x': lastBlk }))
+                self.ws.send({ 'op': 'block', 'x': lastBlk })
             if msg['op'] == 'ping_tx':
                 if 'lasttx' in clients[self.ws.handler.active_client]:
                     self.ws.send(json.dumps({ 'op': 'utx', 'x': clients[self.ws.handler.active_client]['lasttx'] }))
@@ -106,20 +89,22 @@ def syncMonitor():
             cur.execute("select max(id) from blocks;")
             block = cur.fetchone()[0]
         if block != sqc.cfg['block'] or new_orphans or len(sqc.syncTxs) > 0:
-            pass #do_Sync(block)
+            if not ('hash' in lastBlk): # testing, disable continuous
+                do_Sync(block)
         if (datetime.now() - sqc.cfg['lastDBts']).total_seconds() > 3*60*60:
             with sqc.dbpool.get().cursor() as cur:
                 mkDBInfo(cur)
         sleep(5) 
             
 def do_Sync(block):
+    global lastBlk
     if block != sqc.cfg['block']:
         sqc.cfg['block'] = min(block, sqc.cfg['block']+1)
         with sqc.dbpool.get().cursor() as cur:
             lastBlk = lib.bci.bciBlockWS(cur, block)
         for client in server.clients.values():
             if 'blocks_sub' in clients[client]['subs']:
-                client.ws.send(json.dumps({ 'op': 'block', 'x': lastBlk } )) 
+                client.ws.send(json.dumps({ 'op': 'block', 'x': lastBlk })) 
     sqc.sync_id += 1
     with sqc.sync:
         sqc.sync.notifyAll()
@@ -221,15 +206,14 @@ if __name__ == '__main__':
     loadcfg(sqc.cfg)
     options()
 
-    import lib.insight
-    import lib.bci
+    import lib.insight, lib.bci, lib.rpc
     
     APIs = Resource(OrderedDict(( 
         ('/api', lib.insight.do_API),
-        ('/bci',lib.bci.do_BCI),
-        ('/rpc',do_RPC),
-        ('/ws', BCIWebSocket),
-        ('/', do_Root) ))) # order important
+        ('/bci', lib.bci.do_BCI),
+        ('/rpc', lib.rpc.do_RPC),
+        ('/ws',  BCIWebSocket),
+        ('/',    do_Root) ))) # order important
 
     if sqc.cfg['debug']:
         signal.signal(signal.SIGINT, sigterm_handler)
