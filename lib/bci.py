@@ -31,7 +31,7 @@ def do_BCI(env, send_resp):
         return json.dumps(bciAddr(cur, addrs, args[0] == "unspent", get))
     return []
     
-def bciBlockWS(cur, block):
+def bciBlockWS(cur, block): # inconsistent websocket sub has different labels
     data = { 'height': int(block), 'tx':[], 'txIndexes':[] }
     cur.execute("select hash from blocks where id=%s limit 1;", (block,))
     for data['hash'], in cur:
@@ -49,7 +49,7 @@ def bciBlockWS(cur, block):
             data['tx'].append(bciTx(cur, txhash[::-1].encode('hex')))
             data['txIndexes'].append(txhash[::-1].encode('hex'))
         data['nTx'] = len(data['tx'])
-        data['reward'] = 0#-(5000000000 >> (data['height'] / 210000))
+        data['reward'] = 0
         for out in data['tx'][0]['out']:
             data['reward'] += out['value']
         data['totalBTCSent'] = 0
@@ -102,19 +102,35 @@ def bciAddr(cur, addrs, utxo, get={}):
     return { 'unspent_outputs':data } if utxo else tops[0] if single else { 'addresses':tops, 'txs':data }
 
 def bciAddrTXs(cur, addr_id, addr, args):
-    return {'recd':0},['asasas']
-    
+    return {'recd':0},['asasas'] # todo finish this call
+
+def bciTxWS(cur, txhash): # reduced data for websocket subs
+    data = bciTx(cur, txhash)
+    del data['block_height']
+    del data['lock_time']
+    for vi in data['inputs']:
+        if 'prev_out' in vi:
+            del vi['prev_out']['tx_index']
+            del vi['prev_out']['n']
+            del vi['prev_out']['spent']
+    for vo in data['out']:
+        del vo['tx_index']
+        del vo['n']
+    return data
+        
 def bciTx(cur, txhash):
     data = { 'hash':txhash }
     txh = txhash.decode('hex')[::-1]
-    cur.execute("select id,txdata,block_id,ins from trxs where id>=%s and hash=%s limit 1;", (txh2id(txh), txh))
-    for txid,blob,blkid,ins in cur:
+    cur.execute("select id,txdata,block_id,ins,txsize from trxs where id>=%s and hash=%s limit 1;", (txh2id(txh), txh))
+    for txid,blob,blkid,ins,txsize in cur:
+        hdr = getBlobHdr(blkid)
         data['tx_index'] = int(txid)
         data['block_height'] = int(blkid)/MAX_TX_BLK
-        data['ver'],data['lock_time'] = getBlobHdr(blkid)[4:6]
+        data['ver'],data['lock_time'] = hdr[4:6]
         data['inputs'],data['vin_sz'] = bciInputs(cur, blkid, int(blob), ins)
         data['out'],data['vout_sz'] = bciOutputs(cur, int(txid), int(blob))
         data['time'] = gethdr(data['block_height'], 'time')
+        data['size'] = txsize if txsize < 0xFF00 else (txsize&0xFF)<<16 + hdr[3]
         return data
     return None
 
@@ -124,7 +140,7 @@ def bciInputs(cur, height, blob, ins):
     if ins >= 192:
         ins = (ins & 63)*256 + hdr[1] 
     if ins == 0:
-        data.append({ })
+        data.append({ }) #todo add coinbase stuff
     else:
         buf = readBlob(blob+hdr[0], ins*7)
         for n in range(ins):

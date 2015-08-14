@@ -20,8 +20,8 @@ sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'd
             'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'lastDBts':datetime.now() }
 sqc.srvinfo = { 'info':{ 'version':"0.1.0" }, 'db':{'all':{}} }
 
-sqc.sync = threading.Condition();
-sqc.sync_id = 0
+sqc.sync = threading.Condition(); 
+sqc.sync_id = 0 
 
 def do_Root(env, send_resp):
     try:
@@ -46,8 +46,8 @@ def do_Root(env, send_resp):
     except IOError:
         pass
 
-clients = {}
-sqc.syncTxs,lastBlk = [],{}
+clients = {} # active websockets we publish to
+sqc.syncTxs,lastBlk = [],{} # current sync data shared for every sync/subscription
 
 class BCIWebSocket(WebSocketApplication):
     global clients
@@ -73,24 +73,27 @@ class BCIWebSocket(WebSocketApplication):
     def on_close(self, reason):
         logts("WS Client disconnected %s %s" % (self.remote, reason))
 
-# monitor for mempool, block, orphan changes and notify waiting sync connections or websocket subscriptions
+# monitor mempool, block, orphan changes - publish to websocket subscriptions, notify waiting sync connections
 def syncMonitor():
     with sqc.dbpool.get().cursor() as cur:
         cur.execute("select greatest(ifnull(m,0),ifnull(o,0)) from (select max(sync_id) as m from mempool) m,(select max(sync_id) as o from orphans) o;")
         sqc.sync_id = cur.fetchone()[0]
-        cur.execute("select max(id) from blocks;")
+        cur.execute("select ifnull(max(id),0) from blocks;")
         sqc.cfg['block'] = cur.fetchone()[0]
     while True:
         with sqc.dbpool.get().cursor() as cur:
+            txs = []
             cur.execute("select hash from mempool m, trxs t where m.sync_id > %s and t.id=m.id;", (sqc.sync_id,))
-            sqc.syncTxs = [] #todo build list data from cur.fetchall()
+            for tx in cur:
+                txs.append(lib.bci.bciTxWS(cur, tx))
+            if len(txs) > 0:
+                sqc.syncTxs = txs
             cur.execute("select count(*) from orphans where sync_id > %s;", (sqc.sync_id,))
             new_orphans = cur.fetchone()[0] > 0
             cur.execute("select max(id) from blocks;")
             block = cur.fetchone()[0]
-        if block != sqc.cfg['block'] or new_orphans or len(sqc.syncTxs) > 0:
-            if not ('hash' in lastBlk): # testing, disable continuous
-                do_Sync(block)
+        if block != sqc.cfg['block'] or new_orphans or len(txs) > 0:
+            pass #do_Sync(block)
         if (datetime.now() - sqc.cfg['lastDBts']).total_seconds() > 3*60*60:
             with sqc.dbpool.get().cursor() as cur:
                 mkDBInfo(cur)

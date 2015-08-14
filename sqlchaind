@@ -61,8 +61,9 @@ def checkMemPool(cur, rpc):
             cur.execute("delete from mempool;")
     trxs = rpc.getrawmempool()
     for tx in trxs:
-        if tx not in memPool:
-            memPool.add(tx)
+        txx = tx.decode('hex')[:8] # uses 1/4 space, only for detecting changes in mempool
+        if txx not in memPool:
+            memPool.add(txx)
             insertTxMemPool(rpc.getrawtransaction(tx,1), sync_id+1)           
 
 def decodeBlock(data):
@@ -164,7 +165,7 @@ def insertBlock(cur, data):
     for n,tx in enumerate(data['tx']):
         tx_id = findTx(cur, tx['txid'], mkNew=True)
         if tx_id in memPool:
-            memPool.remove(tx['txid'])
+            memPool.remove(tx['txid'].decode('hex')[:8])
             cur.execute("delete from mempool where id=%s limit 1;", (tx_id,))
         xi,xo = insertTx(cur, tx, tx_id, blk_id + n)
         ins.extend(xi)
