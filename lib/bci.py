@@ -104,6 +104,15 @@ def bciAddr(cur, addrs, utxo, get={}):
 def bciAddrTXs(cur, addr_id, addr, args):
     return {'recd':0},['asasas'] # todo finish this call
 
+def isTxAddrs(tx, addrs):
+    for vi in tx['inputs']:
+        if 'addr' in vi['prev_out'] and vi['prev_out']['addr'] in addrs:
+            return True
+    for vo in tx['out']:
+        if vo['addr'] in addrs:
+            return True
+    return False
+
 def bciTxWS(cur, txhash): # reduced data for websocket subs
     data = bciTx(cur, txhash)
     del data['block_height']
@@ -140,7 +149,7 @@ def bciInputs(cur, height, blob, ins):
     if ins >= 192:
         ins = (ins & 63)*256 + hdr[1] 
     if ins == 0:
-        data.append({ }) #todo add coinbase stuff
+        data.append({ }) # only sequence and script here 
     else:
         buf = readBlob(blob+hdr[0], ins*7)
         for n in range(ins):

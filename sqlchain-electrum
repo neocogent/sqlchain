@@ -59,7 +59,7 @@ def SyncHandler():
                 pubSubs('headers', msg=hdr)
             if len(resp['txs']) > 0:
                 for tx in resp['txs']:
-                    pubSubs('address', addrs=apicall('/tx/'+tx+'/addrs'))
+                    pubSubs('address', addrs=getAddrs(tx))
             sync_id = resp['sync_id']
             
 def TcpHandler(sock, address):
@@ -98,9 +98,9 @@ def getSubs(sub, val=1, key=None):
 
 def addSub(sub, val, key):
     if key in subs[sub]:
-        subs[sub][key].append(val)
+        subs[sub][key].add(val)
     else:
-        subs[sub][key] = [val]
+        subs[sub][key] = set(val)
         
 def delSubs(key):
     for sub in subs:
@@ -162,6 +162,15 @@ reqFuncs = { 'blockchain.address.get_history':addrHistory, 'blockchain.address.g
              'blockchain.transaction.broadcast':txSend,    'blockchain.transaction.get_merkle':txMerkle,
              'blockchain.transaction.get':txGet,           'blockchain.estimatefee':feeEstimate }
 
+def getAddrs(tx):
+    addrs = []
+    for vi in tx['inputs']:
+        if 'addr' in vi['prev_out']:
+            addrs.append(vi['prev_out']['addr'])
+    for vo in tx['out']:
+        addrs.append(vo['addr'])
+    return addrs
+    
 def options(cfg):
     try:                                
         opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:a:u:", 

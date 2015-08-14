@@ -27,7 +27,7 @@ def do_Root(env, send_resp):
     try:
         path = env['PATH_INFO']
         if env['REQUEST_METHOD'] == 'POST': # POST
-            if path == '/': # the /rpc api is mirrored on / 
+            if path == '/': # the /rpc api is mirrored here as form params
                 form = cgi.FieldStorage(fp=env['wsgi.input'], environ=env, keep_blank_values=True)
                 env['PATH_INFO'] = "/rpc/%s/%s" % (form['method'].value, "/".join(form.getlist('params')))
                 return lib.rpc.do_RPC(env, send_resp)
@@ -55,7 +55,7 @@ class BCIWebSocket(WebSocketApplication):
     def on_open(self):
         self.remote = self.ws.environ['REMOTE_ADDR']
         logts("WS Client connected from %s" % self.remote)
-        clients[self.ws.handler.active_client] = { 'subs':[], 'addrs':[] }
+        clients[self.ws.handler.active_client] = { 'subs':[], 'addrs':set() }
         
     def on_message(self, msg):
         if msg:
@@ -63,7 +63,7 @@ class BCIWebSocket(WebSocketApplication):
             if msg['op'] in [ 'blocks_sub', 'unconfirmed_sub' ]:
                 clients[self.ws.handler.active_client]['subs'].append(msg['op'])
                 if msg['op'] == 'addr_sub' and 'addr' in msg:
-                    clients[self.ws.handler.active_client]['addrs'].append(msg['addr'])
+                    clients[self.ws.handler.active_client]['addrs'].add(msg['addr'])
             if msg['op'] == 'ping_block':
                 self.ws.send({ 'op': 'block', 'x': lastBlk })
             if msg['op'] == 'ping_tx':
@@ -114,11 +114,10 @@ def do_Sync(block):
     if len(sqc.syncTxs) > 0:
         for client in server.clients.values():
             for tx in sqc.syncTxs:
-                if 'unconfirmed_sub' in clients[client]['subs']:
+                if 'unconfirmed_sub' in clients[client]['subs'] or 
+                  (clients[client]['addrs'] and lib.bci.isTxAddrs(tx, clients[client]['addrs'])):
                     client.ws.send(json.dumps({ 'op': 'utx', 'x': tx }))
-                    clients[client]['lasttx'] = tx
-                if len(clients[client]['addrs']) > 0:
-                    pass # todo check tx address against list and send tx  
+                    clients[client]['lasttx'] = tx                     
 
 def mkDBInfo(cur):
     logts("Updating server db info")

@@ -356,8 +356,10 @@ def apiSync(cur, sync_req=0, timeout=30):
     if sync_req == 0 or sync_req == sqc.sync_id:
         utxs = sqc.syncTxs
     else:
+        utxs = []
         cur.execute("select hash from mempool m, trxs t where m.sync_id > %s and t.id=m.id;", (sync_req,))
-        utxs = [] # todo: build list data, same as syncTxs
+        for tx in cur:
+            utxs.append(lib.bci.bciTxWS(cur, tx))
     cur.execute("select min(block_id) from orphans where sync_id > %s;", (sync_req if sync_req > 0 else sqc.sync_id,))
     orphan = cur.fetchone()[0]
     return { 'block':sqc.cfg['block'] if orphan == None else orphan, 'orphan':orphan != None, 'txs':utxs, 'sync_id':sqc.sync_id }

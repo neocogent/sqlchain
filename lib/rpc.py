@@ -39,7 +39,7 @@ def do_RPC(env, send_resp):
     return []
 
 def rpcTxOut(cur, txhash, out):
-    return 'blah'
+    return 'blah' # todo find output in fmt below
 
 '''
 {
