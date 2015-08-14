@@ -9,8 +9,9 @@ from struct import pack, unpack, unpack_from
 from hashlib import sha256
 from gevent.queue import Queue
 from gevent.event import Event
-from dbpool import *
-from sqlchainlib import *
+
+from lib.dbpool import *
+from lib.sqlchain import *
 
 cfg = { 'log':sys.argv[0]+'.log', 'prunegap':10, 'workers':1, 'queue':8, 
         'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 

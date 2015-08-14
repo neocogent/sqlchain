@@ -1,13 +1,33 @@
-#
+"""
+The MIT License
+
+Copyright (C) 2012 Gordon Chan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+and associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+"""
 #  Extended from gevent.db by neocogent
 #  Original: https://github.com/gordonc/gevent-db/blob/master/db.py
 #
 #  Modified for use with MySQLdb 
 #  - allowing it to take a connection list arg as well as string
-#  - adding a cursor __getitem__ to allow iteration like MySQLdb supports.
+#  - adding a cursor __iter__ to allow iteration like MySQLdb supports.
 #  - adding __enter__ and __exit_ to support using "with" context manager
 #  - adding executemany on cursor
-#
+#  - original license copied into file to avoid confusion
+#  
 import gevent.socket
 from gevent import queue
 

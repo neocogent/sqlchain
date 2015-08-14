@@ -9,7 +9,8 @@ from gevent import socket
 from gevent.server import StreamServer
 from gevent.queue import Queue
 from urllib2 import urlopen, URLError
-from sqlchainlib import *
+
+from lib.sqlchain import *
 
 cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api' }
 
