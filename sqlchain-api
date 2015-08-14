@@ -1,585 +1,155 @@
 #!/usr/bin/env python
 
 import os, sys, pwd, getopt, time, cgi, urlparse, signal, daemon
-import threading, mimetypes, json
+import threading, mimetypes, json, gevent
 
-from gevent.pywsgi import WSGIServer
+from geventwebsocket import WebSocketServer, WebSocketApplication, Resource
+from collections import OrderedDict
 from datetime import datetime
 from time import sleep
 from string import hexdigits
-from bitcoinrpc.authproxy import AuthServiceProxy
 from hashlib import sha256
 from struct import pack, unpack, unpack_from
-from dbpool import *
-from sqlchainlib import *
 
-cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0,
-        'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'lastDBts':datetime.now() }
-        
-srvinfo = { 'info':{ 'version':"0.1.0" }, 'db':{'all':{}} }
-sync = threading.Condition();
-sync_id = 0
+from lib.dbpool import *
+from lib.sqlchain import *
 
-def REQHandler(env, send_resp):
+__builtins__.sqc = dotdict()  # container for super globals 
+
+sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0,
+            'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'lastDBts':datetime.now() }
+sqc.srvinfo = { 'info':{ 'version':"0.1.0" }, 'db':{'all':{}} }
+
+sqc.sync = threading.Condition();
+sqc.sync_id = 0
+
+def do_Root(env, send_resp):
     try:
         path = env['PATH_INFO']
         if env['REQUEST_METHOD'] == 'POST': # POST
-            form = cgi.FieldStorage(fp=env['wsgi.input'], environ=env, keep_blank_values=True)
-            send_resp('200 OK', [('Content-Type', 'application/json')])
-            if path.startswith("/api/addrs/"):
-                return [ json.dumps(apiAddr(dbpool.get().cursor(), form['addrs'].value.split(','), path.split('/')[3:])) ]
-            if path.startswith("/api/tx/send/"):
-                return [ apiRPC('send', form['rawtx'].value) ]
-            if path == '/':
-                return [  json.dumps(do_RPC("/%s/%s" % (form['method'].value, "/".join(form.getlist('params'))), dbpool.get().cursor(), {})) ]
+            if path == '/': 
+                form = cgi.FieldStorage(fp=env['wsgi.input'], environ=env, keep_blank_values=True)
+                return [ do_RPC("/%s/%s" % (form['method'].value, "/".join(form.getlist('params'))), sqc.dbpool.get().cursor(), {}) ]
         else: # GET
-            get = urlparse.parse_qs(env['QUERY_STRING'])
             path = '/main.html' if path in ['', '/'] else path
-            if os.path.isfile(cfg['www']+path):
+            if os.path.isfile(sqc.cfg['www']+path):
                 _,ext = os.path.splitext(path)
-                filesize = os.path.getsize(cfg['www']+path)
-                with open(cfg['www']+path) as fd:
+                filesize = os.path.getsize(sqc.cfg['www']+path)
+                with open(sqc.cfg['www']+path) as fd:
                     send_resp('200 OK', [('Content-Type', mimetypes.types_map[ext]), ('Content-Length', filesize), 
                                          ('Expires', datetime.utcfromtimestamp(time.time()+3600).strftime("%a, %d %b %Y %H:%M:%S %ZGMT"))])
                     return [ fd.read() ]
-            if path[:4] in APIs:
-                send_resp('200 OK', [('Content-Type', 'application/json')])
-                return [ json.dumps(APIs[ path[:4] ](path[4:], dbpool.get().cursor(), get)) ]
         send_resp('404 - File Not Found: %s' % path, [("Content-Type", "text/html")], sys.exc_info())
-        with open(cfg['www']+'/404.html') as fd:
+        with open(sqc.cfg['www']+'/404.html') as fd:
             return [ fd.read() ]
     except IOError:
         pass
-        
-def do_API(path, cur, get):
-    args = path.split('/')[1:]
-    if args[0] == "block-index":
-        return apiHeader(cur, args[1], args[2:])
-    if args[0] == "block":
-        if len(args[1]) == 64 and all(c in hexdigits for c in args[1]):
-            return apiBlock(cur, args[1])
-    if args[0] in ["tx","raw"]:
-        if len(args[1]) == 64 and all(c in hexdigits for c in args[1]):
-            return apiTx(cur, args[1], args)
-    if args[0] == "txs":
-        return { 'pagesTotal':1, 'txs': apiTxs(cur, get) }
-    if args[0] in ["addr","addrs"]:
-        return apiAddr(cur, args[1].split(','), args[2:], get)
-    if args[0] == "history":
-        return addrHistory(cur, args[1], args[2:])
-    if args[0] == "status":
-        return apiStatus(cur, *args[1:2])
-    if args[0] == "merkle":
-        return apiMerkle(cur, args[1])
-    if args[0] == "utils":
-        return apiRPC(args[1], get['nbBlocks'][0] if 'nbBlocks' in get else args[2] if len(args) > 2 else 2)
-    if args[0] == "sync":
-        return apiSync(cur, *[int(x) if x.isdigit() else 0 for x in args[1:]])
-    return None
     
-def do_RPC(path, cur, get):
-    args = path.split('/')[1:]
+def do_RPC(env, send_resp):
+    get,args,cur = urlparse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
+    send_resp('200 OK', [('Content-Type', 'application/json')])
     if args[0] == "getblockcount":
-        return cfg['block']
+        return json.dumps(sqc.cfg['block'])
     if args[0] == "getinfo":
-        return { 'blocks':cfg['block'], 'difficulty':bits2diff(gethdr(cfg['block'], 'bits')) }
+        return json.dumps({ 'blocks':sqc.cfg['block'], 'difficulty':bits2diff(gethdr(sqc.cfg['block'], 'bits')) } )
     if args[0] == "getdifficulty":
-        return bits2diff(gethdr(cfg['block'], 'bits'))
+        return json.dumps(bits2diff(gethdr(sqc.cfg['block'], 'bits')) )
     if args[0] == "getblock":
-        return self.do_API("/block/"+args[1], cur, get)
+        return json.dumps(lib.insight.do_API("/block/"+args[1], cur, get) )
     if args[0] == "getblockhash":
-        rtn = self.do_API("/block-index/"+args[1], cur, get)
-        return rtn['blockHash'] if 'blockHash' in rtn else rtn
+        rtn = lib.insight.do_API("/block-index/"+args[1], cur, get)
+        return json.dumps(rtn['blockHash'] if 'blockHash' in rtn else rtn )
     if args[0] == "getrawtransaction":
-        return self.do_API("/tx/"+args[1], cur, get)
-    return None
+        return json.dumps(lib.insight.do_API("/tx/"+args[1], cur, get) )
+    return []
 
-def do_BCI(path, cur, get):
-    args = path.split('/')[1:]
-    if args[0] == "block-height":
-        return apiHeader(cur, args[1], 'bci')
-    if args[0] == "rawblock":
-        if all(c in hexdigits for c in args[1]):
-            return bciBlock(cur, args[1])
-    if args[0] == "rawtx":
-        if all(c in hexdigits for c in args[1]):
-            return apiTx(cur, args[1], ['raw']) if 'format' in get and get['format'][0] =='hex' else bciTx(cur, args[1])
-    if args[0] in ["address","unspent"]:
-        addrs = get['active'][0].split('|') if 'active' in get else args[1].split(',')
-        return bciAddr(cur, addrs, args[0] == "unspent", get)
-    if args[0] == 'q':
-        return self.do_RPC('/'+args[1], cur, get)
-    return None
+clients = {}
+sqc.syncTxs,lastBlk = [],{}
 
-APIs = { "/api":do_API, "/rpc":do_RPC, "/bci":do_BCI }
+class BCIWebSocket(WebSocketApplication):
+    global clients
+    remote = None
+    def on_open(self):
+        self.remote = self.ws.environ['REMOTE_ADDR']
+        logts("WS Client connected from %s" % self.remote)
+        clients[self.ws.handler.active_client] = { 'subs':[], 'addrs':[] }
+        
+    def on_message(self, msg):
+        if msg:
+            msg = json.loads(msg)
+            if msg['op'] in [ 'blocks_sub', 'unconfirmed_sub' ]:
+                clients[self.ws.handler.active_client]['subs'].append(msg['op'])
+                if msg['op'] == 'addr_sub' and 'addr' in msg:
+                    clients[self.ws.handler.active_client]['addrs'].append(msg['addr'])
+            if msg['op'] == 'ping_block':
+                self.ws.send(json.dumps({ 'op': 'block', 'x': lastBlk }))
+            if msg['op'] == 'ping_tx':
+                if 'lasttx' in clients[self.ws.handler.active_client]:
+                    self.ws.send(json.dumps({ 'op': 'utx', 'x': clients[self.ws.handler.active_client]['lasttx'] }))
 
-# monitor for mempool, block, orphan changes and notify any active sync connections
+    def on_close(self, reason):
+        logts("WS Client disconnected %s %s" % (self.remote, reason))
+
+# monitor for mempool, block, orphan changes and notify waiting sync connections or websocket subscriptions
 def syncMonitor():
-    global sync_id
-    with dbpool.get().cursor() as cur:
+    with sqc.dbpool.get().cursor() as cur:
         cur.execute("select greatest(ifnull(m,0),ifnull(o,0)) from (select max(sync_id) as m from mempool) m,(select max(sync_id) as o from orphans) o;")
-        sync_id = cur.fetchone()[0]
+        sqc.sync_id = cur.fetchone()[0]
         cur.execute("select max(id) from blocks;")
-        cfg['block'] = cur.fetchone()[0]
+        sqc.cfg['block'] = cur.fetchone()[0]
     while True:
-        with dbpool.get().cursor() as cur:
-            cur.execute("select count(*) from mempool where sync_id > %s;", (sync_id,))
-            new_trxs = cur.fetchone()[0] > 0
-            cur.execute("select count(*) from orphans where sync_id > %s;", (sync_id,))
+        with sqc.dbpool.get().cursor() as cur:
+            cur.execute("select hash from mempool m, trxs t where m.sync_id > %s and t.id=m.id;", (sqc.sync_id,))
+            sqc.syncTxs = [] #todo build list data from cur.fetchall()
+            cur.execute("select count(*) from orphans where sync_id > %s;", (sqc.sync_id,))
             new_orphans = cur.fetchone()[0] > 0
             cur.execute("select max(id) from blocks;")
             block = cur.fetchone()[0]
-        if block != cfg['block'] or new_orphans or new_trxs:
-            cfg['block'] = block
-            sync_id += 1
-            with sync:
-                sync.notifyAll()
-        if (datetime.now() - cfg['lastDBts']).total_seconds() > 3*60*60:
-            with dbpool.get().cursor() as cur:
+        if block != sqc.cfg['block'] or new_orphans or len(sqc.syncTxs) > 0:
+            pass #do_Sync(block)
+        if (datetime.now() - sqc.cfg['lastDBts']).total_seconds() > 3*60*60:
+            with sqc.dbpool.get().cursor() as cur:
                 mkDBInfo(cur)
-        gevent.sleep(10) 
-
-rawTxHdr = [ 'version','# inputs','# outputs', 'locktime' ]
-rawCbHdr = [ 'null txid','n','coinbase size','coinbase bytes','sequence' ]
-rawInHdr = [ 'in txid %d','n %d','sigScript size %d','sigScript bytes %d','sequence %d' ]
-rawOutHdr = [ 'out value %d','scriptPK size %d','scriptPK bytes %d' ]
-
-def rawHTML(out, vi, vo):
-    tags = [ x for x in rawTxHdr ]
-    for n in range(vo):
-        tags[3:3] = [ s%(vo-n-1) for s in rawOutHdr ]
-    if vi == 0:
-        tags[2:2] = rawCbHdr
-    else:
-        for n in range(vi):
-            tags[2:2] = [ s%(vi-n-1) for s in rawInHdr ]
-    return "<table class='rawtx'><tr>"+"</tr><tr>".join(['<td>%s</td><td>%s</td>'%(k,v.encode('hex')) for k,v in zip(tags,out) ])+"</tr></table>"
-    
-def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
-    hdr = getBlobHdr(txdata)
-    out = [ pack('<I', hdr[4]) ]
-    if ins >= 0xC0:
-        ins = (ins&0x3F)<<8 + hdr[1] 
-    if outs >= 0xC0:
-        outs = (outs&0x3F)<<8 + hdr[2] 
-    if ins == 0:
-        cur.execute("select coinbase from blocks where id=%s;", (blkid,))
-        cb = cur.fetchone()[0]
-        out += [ '\x01', '\0'*32, '\xff'*4, encodeVarInt(len(cb)), cb, '\0'*4 ]
-        vpos = 0
-    else:
-        out += encodeVarInt(ins)
-        vpos = int(txdata) + hdr[0]
-        buf = readBlob(vpos, ins*7)
-        vpos += ins*7
-        for n in range(ins):
-            in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
-            cur.execute("select hash from trxs where id=%s limit 1;", (in_id / MAX_IO_TX,))
-            out += [ cur.fetchone()[0][:32], pack('<I', in_id % MAX_IO_TX) ]
-            vsz,off = decodeVarInt(readBlob(vpos, 9))
-            sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4))
-            out += [ sigbuf[:off], sigbuf[off:off+vsz], ('\xFF'*4 if hdr[6] else sigbuf[off+vsz:]) ]
-            vpos += off+vsz+(0 if hdr[6] else 4)
-    out += encodeVarInt(outs)
-    for n in range(outs):
-        cur.execute("select value,addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (txid*MAX_IO_TX + n,))
-        value,addr,addr_id = cur.fetchone()
-        out += [ pack('<Q', int(value)) ]
-        vsz,off = decodeVarInt(readBlob(vpos, 9))
-        pkbuf = readBlob(vpos, off+vsz)
-        out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, addr_id)
-    out += [ pack('<I', hdr[5]) ]
-    return rawHTML(out, ins, outs) if 'html' in args else ''.join(out).encode('hex') 
-
-def apiHeader(cur, blk, args):
-    if blk.isdigit():
-        cur.execute("select id,hash from blocks where id=%s limit 1;", (blk,))
-    else:
-        cur.execute("select id,hash from blocks order by id desc limit 1;")
-    for blkid,blkhash in cur:
-        hdr = gethdr(int(blkid))
-        if 'electrum' in args:
-            return { 'block_height':int(blkid), 'version':hdr['version'], 'time':hdr['time'], 'bits':hdr['bits'], 'nonce':hdr['nonce'],
-                     'merkle_root':hdr['merkleroot'][::-1].encode('hex'), 'prev_block_hash':hdr['previousblockhash'][::-1].encode('hex') }
-        elif 'bci' in args:
-            return { 'blocks': [ bciBlock(cur, blkhash[::-1].encode('hex')) ] }
-        else:
-            return { 'blockHash': blkhash[::-1].encode('hex') }
-    return None
-    
-def apiBlock(cur, blkhash):
-    data = { 'hash':blkhash, 'tx':[] }
-    cur.execute("select id from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
-    for blk, in cur:
-        data['height'] = int(blk)
-        data['confirmations'] = cfg['block'] - data['height'] + 1
-        data.update(gethdr(data['height']))
-        data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
-        data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
-        data['difficulty'] = bits2diff(data['bits'])
-        data['bits'] = '%08x' % data['bits']
-        data['reward'] = float((50 * 100000000) >> (data['height'] / 210000))/1e8
-        data['isMainChain'] = True
-        cur.execute("select hash from trxs where block_id>=%s and block_id<%s;", (blk*MAX_TX_BLK, blk*MAX_TX_BLK+MAX_TX_BLK))
-        for txhash, in cur:
-            data['tx'].append(txhash[::-1].encode('hex'))
-        cur.execute("select hash from blocks where id=%s limit 1;", (data['height']+1,))
-        for txhash, in cur:
-            data['nextblockhash'] = txhash[::-1].encode('hex')
-        return data
-    return None
-                
-def apiAddr(cur, addrs, args, get={}):
-    data = []
-    for addr in addrs:
-        if is_address(addr):
-            addr_id = addr2id(addr, cur)
-            if addr_id:
-                if 'utxo' in args:
-                    data.append(addrUTXOs(cur, addr_id, addr))
-                else:
-                    data.append(addrTXs(cur, addr_id, addr, args, 'noTxList' not in get or get['noTxList'][0] == '0'))
-    return data if len(data) != 1 else data[0]
-    
-                            
-def addrTXs(cur, addr_id, addr, args, incTxs):
-    txs = []
-    sums = [[0,0],[0,0]]
-    untxs = 0
-    cur.execute("select value,t.id,tx_id,hash,block_id from trxs t left join outputs o on t.id=floor(o.id/{0}) or t.id=o.tx_id where addr_id=%s order by block_id;".format(MAX_IO_TX), (addr_id,))
-    for tx in cur:
-        uncfmd = 1 if tx[4] == 0 else 0
-        untxs += uncfmd
-        spent = 1 if tx[1] == tx[2] else 0
-        sums[uncfmd][spent] += tx[0]
-        
-        txhash = tx[3][::-1].encode('hex')
-        if incTxs and txhash not in txs:
-            txs.append(txhash)
+        sleep(5) 
             
-    if 'balance' in args:
-        return int(sums[0][0]-sums[0][1])
-    if 'unconfirmedBalance' in args:
-        return int(sums[1][0]-sums[1][1])
-    if 'totalReceived' in args:
-        return int(sums[0][0])
-    if 'totalSent' in args:
-        return int(sums[0][1])
-    
-    return { 'addStr':addr, 'balanceSat':int(sums[0][0]-sums[0][1]), 'balance':float(sums[0][0]-sums[0][1])/1e8, 'totalReceivedSat':int(sums[0][0]), 
-             'totalReceived': float(sums[0][0])/1e8, 'totalSentSat':int(sums[0][1]), 'totalSent':float(sums[0][1])/1e8, 
-             'unconfirmedBalanceSat':int(sums[1][0]-sums[1][1]), 'unconfirmedBalance':float(sums[1][0]-sums[1][1])/1e8,
-             'txApperances':len(txs)-untxs, 'transactions':txs, 'unconfirmedTxApperances':untxs }   
-
-def addrUTXOs(cur, addr_id, addr):
-    data = []
-    cur.execute("select value,o.id,t.hash,block_id/{1} from outputs o, trxs t, blocks b where tx_id is null and addr_id=%s and t.id=floor(o.id/{0}) and b.id=t.block_id/{0};".format(MAX_IO_TX,MAX_TX_BLK), (addr_id,))
-    for tx in cur:
-        data.append({ 'address':addr, 'txid':tx[2][::-1].encode('hex'), 'vout':int(tx[1])%MAX_IO_TX, 'amount':float(tx[0])/1e8, 
-                      'confirmations':cfg['block']-int(tx[3])+1, 'ts':gethdr(int(tx[3]), 'time') })
-    return data
-
-def addrHistory(cur, addr, args):
-    txt = ''
-    data = { 'cfmd':0, 'uncfmd':0 } if 'balance' in args else { 'txs':[] }
-    addr_id = addr2id(addr, cur)
-    if addr_id:
-        cur.execute("select value,t.id,o.tx_id,hash,block_id/{0},o.id%%{0} from outputs o, trxs t where addr_id=%s and (t.id=floor(o.id/{0}) or t.id=o.tx_id) order by block_id;".format(MAX_IO_TX), (addr_id,))
-        for tx in cur:
-            value = int(tx[0])
-            if 'balance' in args:
-                if tx[4] == 0:
-                    data['uncfmd'] += value if tx[1] == tx[2] else -value
-                else:
-                    data['cfmd'] += value if tx[1] == tx[2] else -value
-            elif 'utxo' in args and not tx[2]:
-                tmp = { 'tx_hash':tx[3][::-1].encode('hex'), 'height':int(tx[4]), 'value':value, 'n':int(tx[5]) }
-            else:
-                tmp = { 'tx_hash':tx[3][::-1].encode('hex'), 'height':int(tx[4]) }
-            if 'status' in args:
-                txt += tmp['tx_hash'] + ":%d:" % tmp['height']
-            elif ('uncfmd' not in args or tmp['height'] == 0) and 'balance' not in args:
-                data['txs'].append(tmp)
-    return (sha256(txt).digest().encode('hex') if txt else None) if 'status' in args else data
-
-def apiTxs(cur, get):
-    txs = []
-    if 'block' in get:
-        blkhash = get['block'][0]
-        if len(blkhash) == 64 and all(c in hexdigits for c in blkhash):
-            txhashes = apiBlock(cur, blkhash)
-            txhashes = txhashes['tx'] if 'tx' in txhashes else []
-    elif 'address' in get:
-        txhashes = apiAddr(cur, [ get['address'][0] ], {}, {})
-        txhashes = txhashes['transactions'] if 'transactions' in txhashes else []
-    for txhash in txhashes:
-        txs.append(apiTx(cur, txhash, []))
-    return txs
-    
-def apiTx(cur, txhash, args):
-    if 'output' in args:
-        return txoAddr(cur, txhash, args[-1])
-    if 'addrs' in args:
-        return txAddrs(cur, txhash)
-    data = { 'txid':txhash }
-    txh = txhash.decode('hex')[::-1]
-    cur.execute("select id,hash,txdata,block_id,ins,outs,txsize from trxs where id>=%s and hash=%s limit 1;", (txh2id(txh), txh))
-    for tid,txh,blob,blkid,ins,outs,txsize in cur:
-        if [i for i in ['raw','html'] if i in args]:
-            return mkRawTx(cur, args, tid, txh, blob, blkid, ins, outs)
-        data['confirmations'] = cfg['block'] - int(blkid)/MAX_TX_BLK + 1
-        data['version'],data['locktime'] = getBlobHdr(blob)[4:6]
-        data['valueIn'],data['vin'] = apiInputs(cur, blkid/MAX_TX_BLK, int(blob), ins)
-        data['valueOut'],data['vout'] = apiOutputs(cur, int(tid), int(blob))
-        data['fees'] = round(data['valueIn'] - data['valueOut'],8)
-        data['size'] = txsize if txsize < 0xFF00 else (txsize&0xFF)<<16 + getBlobHdr(blob)[3]
-        cur.execute("select hash from blocks where id=%s limit 1;", (int(blkid)/MAX_TX_BLK,))
-        for txhash, in cur:
-            data['blockhash'] = txhash[::-1].encode('hex')
-            data['time'] = data['blocktime'] = gethdr(int(blkid/MAX_TX_BLK), 'time')
-        if 'coinbase' in data['vin'][0]:
-            del data['valueIn']
-            del data['fees']
-            data['isCoinBase'] = True
-        return data
-    return None
-        
-def apiInputs(cur, height, blob, ins):
-    total = 0
-    data = []
-    hdr = getBlobHdr(blob)
-    if ins >= 0xC0:
-        ins = (ins&0x3F)<<8 + hdr[1] 
-    if ins == 0:
-        cur.execute("select coinbase from blocks where id=%s;", (height,))
-        data.append({ 'n':0, 'coinbase':cur.fetchone()[0].encode('hex') })
-    else:
-        buf = readBlob(blob+hdr[0], ins*7)
-        for n in range(ins):
-            in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
-            cur.execute("select value,addr,addr_id,hash from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id, in_id/MAX_IO_TX))
-            for value,addr,aid,txhash in cur:
-                btc = float(value)/1e8
-                data.append({ 'n':n, 'vout':in_id%MAX_IO_TX, 'value':round(btc,8), 'valueSat':int(value), 'txid':txhash[::-1].encode('hex'), 'addr':mkaddr(addr,aid) })
-                total += btc
-    return round(total,8),data
-    
-def apiOutputs(cur, txid, blob):
-    total = 0
-    data = []
-    cur.execute("select o.id,o.id%%{0},value,addr,addr_id,o.tx_id from outputs o, address a where o.id>=%s*{0} and o.id<%s*{0} and a.id=o.addr_id;".format(MAX_IO_TX), (txid,txid+1))
-    for out_id,n,value,addr,aid,in_id, in cur:
-        btc = float(value)/1e8
-        total += btc
-        vout = { 'n':int(n), 'value':"%1.8f" % btc }
-        vout['scriptPubKey'] = { 'addresses':[ mkaddr(addr,aid) ] }
-        if in_id:
-            vout.update(apiSpent(cur, int(in_id), int(out_id)))
-        data.append(vout)
-    return round(total,8),data
-    
-def apiSpent(cur, txid, out_id):
-    cur.execute("select txdata,hash,block_id/{0},ins from trxs where id=%s limit 1;".format(MAX_TX_BLK), (txid,))
-    for blob,txh,blk,ins in cur:
-        hdr = getBlobHdr(int(blob))
-        if ins >= 0xC0:
-            ins = (ins&0x3F)<<16 + hdr[1] 
-        buf = readBlob(int(blob)+hdr[0], ins*7)
-        for n in range(ins):
-            in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
-            if in_id == out_id:
-                return { 'spentTxId':txh[::-1].encode('hex'), 'spentIndex':n, 'spentTs':gethdr(int(blk),'time') }
-    return {}
-
-def txoAddr(cur, txhash, n):
-    txh = txhash.decode('hex')[::-1]
-    cur.execute("select addr,addr_id from outputs o, address a where o.id>=%s and a.id=o.addr_id limit 1;", (txh2id(txh)*MAX_IO_TX + int(n),))
-    row = cur.fetchone()
-    return mkaddr(row[0],row[1]) if row else None
-    
-def txAddrs(cur, txhash):
-    data = []
-    txid = txh2id(txhash.decode('hex')[::-1])
-    cur.execute("select addr,addr_id from outputs o, address a where o.id>=%s*{0} and o.id<%s*{0} and a.id=o.addr_id;".format(MAX_IO_TX), (txid,txid+1))
-    for pkh,aid in cur:
-        data.append(mkaddr(pkh,aid))
-    cur.execute("select txdata,ins from trxs where id=%s limit 1;", (txid,))
-    for blob,ins in cur:
-        hdr = getBlobHdr(int(blob))
-        if ins > 0:
-            if ins >= 0xC0:
-                ins = (ins&0x3F)<<8 + hdr[1] 
-            buf = readBlob(int(blob)+hdr[0], ins*7)
-            for n in range(ins):
-                in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
-                cur.execute("select addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (in_id,))
-                for pkh,aid in cur:
-                    data.append(mkaddr(pkh,aid))
-    return data
-
-def apiMerkle(cur, txhash):
-    txh = txhash.decode('hex')[::-1]
-    cur.execute("select block_id from trxs where id>=%s and hash=%s limit 1", (txh2id(txh), txh))
-    for blkid, in cur:
-        blk,pos = divmod(int(blkid), MAX_TX_BLK)
-        cur.execute("select hash from trxs where block_id>=%s and block_id<%s order by block_id;", (blk*MAX_TX_BLK, blk*MAX_TX_BLK+MAX_TX_BLK))
-        mkt = [ tx for tx, in cur ]
-        mkb,t = [],pos
-        while len(mkt) > 1:
-            if len(mkt) % 2 == 1:
-                mkt.append(mkt[-1])
-            mkb.append(mkt[t-1][::-1].encode('hex') if t % 2 == 1 else mkt[t+1][::-1].encode('hex'))
-            mkt = [ sha256(sha256(mkt[i]+mkt[i+1]).digest()).digest() for i in range(0,len(mkt),2) ]
-            t //= 2
-        if mkt[0] != gethdr(blk, 'merkleroot'):
-            logts("Panic! Merkle tree failure, tx %s" % txhash )
-        return { "block_height": blk, "merkle": mkb, "pos": pos }
-    return None
+def do_Sync(block):
+    if block != sqc.cfg['block']:
+        sqc.cfg['block'] = min(block, sqc.cfg['block']+1)
+        with sqc.dbpool.get().cursor() as cur:
+            lastBlk = lib.bci.bciBlockWS(cur, block)
+        for client in server.clients.values():
+            if 'blocks_sub' in clients[client]['subs']:
+                client.ws.send(json.dumps({ 'op': 'block', 'x': lastBlk } )) 
+    sqc.sync_id += 1
+    with sqc.sync:
+        sqc.sync.notifyAll()
+    if len(sqc.syncTxs) > 0:
+        for client in server.clients.values():
+            for tx in sqc.syncTxs:
+                if 'unconfirmed_sub' in clients[client]['subs']:
+                    client.ws.send(json.dumps({ 'op': 'utx', 'x': tx }))
+                    clients[client]['lasttx'] = tx
+                if len(clients[client]['addrs']) > 0:
+                    pass # todo check tx address against list and send tx  
 
 def mkDBInfo(cur):
-    global srvinfo
     logts("Updating server db info")
+    lib.insight.apiStatus(cur, 'db')
     cur.execute("select count(*) from address where id%2=1;")
-    srvinfo['db']['address']['multi-sigs'] = cur.fetchone()[0]
+    sqc.srvinfo['db']['address']['multi-sigs'] = cur.fetchone()[0]
     cur.execute("select count(*) from address where  cast(conv(hex(reverse(unhex(substr(sha2(addr,0),1,10)))),16,10)*2 as unsigned) != id;")
-    srvinfo['db']['address']['id-collisions'] = cur.fetchone()[0]
+    sqc.srvinfo['db']['address']['id-collisions'] = cur.fetchone()[0]
     cur.execute("select count(*) from trxs where  strcmp(reverse(unhex(hex(id*8))), left(hash,5)) > 0;")
-    srvinfo['db']['trxs']['id-collisions'] = cur.fetchone()[0] 
+    sqc.srvinfo['db']['trxs']['id-collisions'] = cur.fetchone()[0] 
     cur.execute("select count(*) from outputs where addr_id=0;")
-    srvinfo['db']['outputs']['non-std'] = cur.fetchone()[0] 
+    sqc.srvinfo['db']['outputs']['non-std'] = cur.fetchone()[0] 
     cur.execute("select count(*) from outputs where tx_id is null;")
-    srvinfo['db']['outputs']['unspent'] = cur.fetchone()[0]
-    srvinfo['.']['ts'] = datetime.now()
-    srvinfo['db']['all']['updated'] = cfg['lastDBts'].strftime('%d-%m-%Y %H:%M:%S')
-    
-def apiStatus(cur, level='info', item=None):
-    global srvinfo
-    srvinfo['info']['block'] = cfg['block']
-    if level == 'db':
-        srvinfo['db']['all']['total-bytes'] = 0
-        cur.execute("show table status;")
-        for tbl in cur:
-            srvinfo['db'].update({ tbl[0]:{ 'rows':tbl[4], 'data-GB':float("%.1f"%float(tbl[6]/1e9)), 'idx-GB':float("%.1f"%float(tbl[8]/1e9)), 'total-GB':float("%.1f"%float(tbl[6]/1e9+tbl[8]/1e9)), 'total-bytes':tbl[6]+tbl[8] }})
-            srvinfo['db']['all']['total-bytes'] += tbl[6]+tbl[8]
-        srvinfo['db']['outputs']['max-io-tx'] = MAX_IO_TX
-        srvinfo['db']['blocks']['hdr-data'] = os.stat('/var/data/hdrs.dat').st_size 
-        srvinfo['db']['trxs']['blob-data'] = os.stat('/var/data/blobs.dat').st_size 
-        srvinfo['db']['trxs']['max-tx-block'] = MAX_TX_BLK
-        srvinfo['db']['all']['total-bytes'] += srvinfo['db']['trxs']['blob-data'] + srvinfo['db']['blocks']['hdr-data']
-        srvinfo['db']['all']['total-GB'] = float("%.1f"%float(srvinfo['db']['all']['total-bytes']/1e9))
-    if level in srvinfo:
-        if item and item in srvinfo[level]:
-            return srvinfo[level][item]
-        return srvinfo[level]
-    return srvinfo['info']
-    
-def apiRPC(cmd, arg):
-    rpc = AuthServiceProxy(cfg['rpc'])
-    if cmd =='estimatefee':
-        return int(rpc.estimatefee(int(arg)))
-    if cmd =='send':
-        return rpc.sendrawtransaction(arg)
-    
-def apiSync(cur, sync_req=0, timeout=30):
-    global sync_id
-    if sync_req >= sync_id:
-        with sync:
-            sync.wait(timeout) # long polling support for sync connections
-        if sync_req >= sync_id:
-            return None # timeout
-    cur.execute("select hash from mempool m, trxs t where m.sync_id > %s and t.id=m.id;", (sync_req if sync_req > 0 else sync_id,))
-    utxs = cur.fetchall()
-    cur.execute("select min(block_id) from orphans where sync_id > %s;", (sync_req if sync_req > 0 else sync_id,))
-    orphan = cur.fetchone()[0]
-    return { 'block':cfg['block'] if orphan == None else orphan, 'orphan':orphan != None, 
-             'txs':[ tx[::-1].encode('hex') for tx in utxs ], 'sync_id':sync_id }
-    
-def bciBlock(cur, blkhash):
-    data = { 'hash':blkhash, 'tx':[] }
-    cur.execute("select id from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
-    for blkid, in cur:
-        data['height'] = data['block_index'] = int(blkid)
-        hdr = gethdr(data['height'])
-        data['ver'] = hdr['version']
-        data['time'] = hdr['time']
-        data['prev_block'] = hdr['previousblockhash'][::-1].encode('hex')
-        data['mrkl_root'] = hdr['merkleroot'][::-1].encode('hex')
-        data['nonce'] = hdr['nonce']
-        data['bits'] = hdr['bits']
-        data['main_chain'] = True
-        cur.execute("select hash from trxs where block_id>=%s and block_id<%s;", (blkid*MAX_TX_BLK, blkid*MAX_TX_BLK+MAX_TX_BLK))
-        for txhash, in cur:
-            data['tx'].append(bciTx(cur, txhash[::-1].encode('hex')))
-        data['n_tx'] = len(data['tx'])
-        data['fee'] = -(5000000000 >> (data['height'] / 210000))
-        for out in data['tx'][0]['out']:
-            data['fee'] += out['value']
-        return data
-    return None
+    sqc.srvinfo['db']['outputs']['unspent'] = cur.fetchone()[0]
+    sqc.srvinfo['.']['ts'] = datetime.now()
+    sqc.srvinfo['db']['all']['updated'] = sqc.cfg['lastDBts'].strftime('%d-%m-%Y %H:%M:%S')
 
-def bciAddr(cur, addrs, utxo, get={}):
-    data,tops = [],[]
-    single = (len(addrs) == 1)
-    for addr in addrs:
-        if is_address(addr):
-            addr_id = addr2id(addr, cur)
-            if addr_id:
-                if utxo:
-                    data.extend(addrUTXOs(cur, addr_id, addr))
-                else:
-                    hdr,txs = bciAddrTXs(cur, addr_id, addr, get)
-                    data.extend(txs)
-                    tops.append(hdr)
-    if not utxo and single:
-        tops[0].update({'txs':data})
-    return { 'unspent_outputs':data } if utxo else tops[0] if single else { 'addresses':tops, 'txs':data }
 
-def bciAddrTXs(cur, addr_id, addr, args):
-    return {'recd':0},['asasas']
-    
-def bciTx(cur, txhash):
-    data = { 'hash':txhash }
-    txh = txhash.decode('hex')[::-1]
-    cur.execute("select id,txdata,block_id,ins from trxs where id>=%s and hash=%s limit 1;", (txh2id(txh), txh))
-    for txid,blob,blkid,ins in cur:
-        data['tx_index'] = int(txid)
-        data['block_height'] = int(blkid)/MAX_TX_BLK
-        data['ver'],data['lock_time'] = getBlobHdr(blkid)[4:6]
-        data['inputs'],data['vin_sz'] = bciInputs(cur, blkid, int(blob), ins)
-        data['out'],data['vout_sz'] = bciOutputs(cur, int(txid), int(blob))
-        data['time'] = gethdr(data['block_height'], 'time')
-        return data
-    return None
-
-def bciInputs(cur, height, blob, ins):
-    data = []
-    hdr = getBlobHdr(blob)
-    if ins >= 0xC0:
-        ins = (ins&0x3F)<<8 + hdr[1] 
-    if ins == 0:
-        data.append({ })
-    else:
-        buf = readBlob(blob+hdr[0], ins*7)
-        for n in range(ins):
-            in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
-            cur.execute("select value,addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (in_id,))
-            for value,addr,aid in cur:
-                data.append({ 'prev_out':{ 'spent':True, 'type':0, 'n':in_id%MAX_IO_TX, 'value':int(value), 
-                              'tx_index':in_id/MAX_IO_TX, 'addr':mkaddr(addr,aid) }})
-    return data,ins
-    
-def bciOutputs(cur, txid, blob):
-    data = []
-    cur.execute("select o.tx_id,o.id%%{0},value,addr,addr_id from outputs o, address a where o.id>=%s*{0} and o.id<%s*{0} and a.id=o.addr_id;".format(MAX_IO_TX), (txid,txid+1))
-    outs = cur.fetchall()
-    for in_id,n,value,addr,aid in cur:
-        vout = { 'n':int(n), 'value':int(value), 'addr':mkaddr(addr,aid), 'type':0, 'tx_index':txid }
-        if in_id:
-            vout['spent'] = True
-        data.append(vout)
-    return data,len(outs)
-
-def options(cfg):
+def options():
     try:                         
         opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:b:r:u:", 
             ["help", "version", "debug", "db=", "log=", "www=", "listen=", "rpc=", "user=", "defaults" ])
@@ -589,24 +159,24 @@ def options(cfg):
         if opt in ("-h", "--help"):
             usage()
         elif opt in ("-v", "--version"):
-            sys.exit(sys.argv[0]+': '+srvinfo['info']['version'])
+            sys.exit(sys.argv[0]+': '+sqc.srvinfo['info']['version'])
         elif opt in ("-d", "--db"):
-            cfg['db'] = arg
+            sqc.cfg['db'] = arg
         elif opt in ("-l", "--log"):
-            cfg['log'] = arg
+            sqc.cfg['log'] = arg
         elif opt in ("-w", "--www"):
-            cfg['www'] = arg            
+            sqc.cfg['www'] = arg            
         elif opt in ("-p", "--listen"):
-            cfg['listen'] = arg
+            sqc.cfg['listen'] = arg
         elif opt in ("-r", "--rpc"):
-            cfg['rpc'] = arg
+            sqc.cfg['rpc'] = arg
         elif opt in ("-u", "--user"):
-            cfg['user'] = arg
+            sqc.cfg['user'] = arg
         elif opt in ("--defaults"):
-            savecfg(cfg)
+            savecfg(sqc.cfg)
             sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
         elif opt in ("--debug"):
-            cfg['debug'] = True
+            sqc.cfg['debug'] = True
             
 def usage():
     print """Usage: %s [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
@@ -619,45 +189,55 @@ def usage():
     
 def sigterm_handler(_signo, _stack_frame):
     logts("Shutting down.")
-    if not cfg['debug']:
-        os.unlink(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid')
+    if not sqc.cfg['debug']:
+        os.unlink(sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid')
     sys.exit(0)
     
 def run():
-    global dbpool
+    global server
     
-    dbpool = DBPool(cfg['db'].split(':'), cfg['pool'], 'MySQLdb')
-    
-    syncd = threading.Thread(target = syncMonitor)
-    syncd.daemon = True
-    syncd.start()
-    
+    sqc.dbpool = DBPool(sqc.cfg['db'].split(':'), sqc.cfg['pool'], 'MySQLdb')
+
     mimetypes.init()
     mimetypes.add_type('application/x-font-woff', '.woff')
     mimetypes.add_type('application/x-font-woff2', '.woff2')
     mimetypes.add_type('application/x-font-woff', '.ttf')
 
-    logts("Starting on %s" % cfg['listen'])
-    host,port = cfg['listen'].split(':')
-    cert = {'certfile':cfg['ssl']} if ('ssl' in cfg) and (cfg['ssl'] != '') else {}
-    server = WSGIServer((host, int(port)), REQHandler, **cert)
+    logts("Starting on %s" % sqc.cfg['listen'])
+    host,port = sqc.cfg['listen'].split(':')
+    cert = {'certfile':sqc.cfg['ssl']} if ('ssl' in sqc.cfg) and (sqc.cfg['ssl'] != '') else {}   
+    server = WebSocketServer((host, int(port)), APIs, **cert)
+
+    syncd = threading.Thread(target = syncMonitor)
+    syncd.daemon = True
+    syncd.start()
     
-    drop2user(cfg)
-    
+    drop2user(sqc.cfg)
+
     server.serve_forever()
     
 if __name__ == '__main__':
     
-    loadcfg(cfg)
-    options(cfg)
+    loadcfg(sqc.cfg)
+    options()
 
-    if cfg['debug']:
+    import lib.insight
+    import lib.bci
+    
+    APIs = Resource(OrderedDict(( 
+        ('/api', lib.insight.do_API),
+        ('/bci',lib.bci.do_BCI),
+        ('/rpc',do_RPC),
+        ('/ws', BCIWebSocket),
+        ('/', do_Root) ))) # order important
+
+    if sqc.cfg['debug']:
         signal.signal(signal.SIGINT, sigterm_handler)
         run()
     else:
         with daemon.DaemonContext(working_directory='.', stdout=open(sys.argv[0]+'.log','a'), stderr=open(sys.argv[0]+'.log','a'), 
                 signal_map={signal.SIGTERM:sigterm_handler } ):
-            with file(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid','w') as f: 
+            with file(sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid','w') as f: 
                 f.write(str(os.getpid()))
             run()
 
