@@ -62,8 +62,8 @@ class BCIWebSocket(WebSocketApplication):
             msg = json.loads(msg)
             if msg['op'] in [ 'blocks_sub', 'unconfirmed_sub' ]:
                 clients[self.ws.handler.active_client]['subs'].append(msg['op'])
-                if msg['op'] == 'addr_sub' and 'addr' in msg:
-                    clients[self.ws.handler.active_client]['addrs'].add(msg['addr'])
+            if msg['op'] == 'addr_sub' and 'addr' in msg:
+                clients[self.ws.handler.active_client]['addrs'].add(msg['addr'])
             if msg['op'] == 'ping_block':
                 self.ws.send({ 'op': 'block', 'x': lastBlk })
             if msg['op'] == 'ping_tx':
@@ -114,8 +114,7 @@ def do_Sync(block):
     if len(sqc.syncTxs) > 0:
         for client in server.clients.values():
             for tx in sqc.syncTxs:
-                if 'unconfirmed_sub' in clients[client]['subs'] or 
-                  (clients[client]['addrs'] and lib.bci.isTxAddrs(tx, clients[client]['addrs'])):
+                if 'unconfirmed_sub' in clients[client]['subs'] or (clients[client]['addrs'] and lib.bci.isTxAddrs(tx, clients[client]['addrs'])):
                     client.ws.send(json.dumps({ 'op': 'utx', 'x': tx }))
                     clients[client]['lasttx'] = tx                     
 
