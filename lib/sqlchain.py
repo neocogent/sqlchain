@@ -93,10 +93,55 @@ def decodeScriptPK(data):
         if data[0] == '\x41' and data[66] == '\xac': # P2PK
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
         if data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
-            return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
+            return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:34])) };
         if len(data) <= 41 and data[0] == '\x6a': # NULL
             return { 'type':'null', 'data':data };
     return { 'type':'other', 'data':data } # other, non-std
+    
+OpCodes = { '\x4F':'OP_1NEGATE', '\x61':'OP_NOP', '\x63':'OP_IF', '\x64':'OP_NOTIF', '\x67':'OP_ELSE', '\x68':'OP_ENDIF', 
+            '\x69':'OP_VERIFY', '\x6A':'OP_RETURN', '\x6B':'OP_TOALTSTACK', '\x6C':'OP_FROMALTSTACK', '\x6D':'OP_2DROP', '\x6E':'OP_2DUP', 
+            '\x6F':'OP_3DUP', '\x70':'OP_2OVER', '\x71':'OP_2ROT', '\x72':'OP_2SWAP','\x73':'OP_IFDUP', '\x74':'OP_DEPTH', '\x75':'OP_DROP', 
+            '\x76':'OP_DUP', '\x77':'OP_NIP', '\x78':'OP_OVER', '\x79':'OP_PICK', '\x7A':'OP_ROLL', '\x7B':'OP_ROT', '\x7C':'OP_SWAP', 
+            '\x7D':'OP_TUCK',  '\x7E':'OP_CAT', '\x7F':'OP_SUBSTR', '\x80':'OP_LEFT', '\x81':'OP_RIGHT', '\x82':'OP_SIZE', '\x83':'OP_INVERT', 
+            '\x84':'OP_AND', '\x85':'OP_OR', '\x86':'OP_XOR', '\x87':'OP_EQUAL', '\x88':'OP_EQUALVERIFY', '\x8B':'OP_1ADD', '\x8C':'OP_1SUB', 
+            '\x8D':'OP_2MUL', '\x8E':'OP_2DIV', '\x8F':'OP_NEGATE', '\x90':'OP_ABS', '\x91':'OP_NOT', '\x92':'OP_0NOTEQUAL', '\x93':'OP_ADD',
+            '\x94':'OP_SUB', '\x95':'OP_MUL', '\x96':'OP_DIV', '\x97':'OP_MOD', '\x98':'OP_LSHIFT', '\x99':'OP_RSHIFT', '\x9A':'OP_BOOLAND', 
+            '\x9B':'OP_BOOLOR', '\x9C':'OP_NUMEQUAL', '\x9D':'OP_NUMEQUALVERIFY', '\x9E':'OP_NUMNOTEQUAL', '\x9F':'OP_LESSTHAN', 
+            '\xA0':'OP_GREATERTHAN', '\xA1':'OP_LESSTHANOREQUAL', '\xA2':'OP_GREATERTHANOREQUAL', '\xA3':'OP_MIN', '\xA4':'OP_MAX', 
+            '\xA5':'OP_WITHIN', '\xA6':'OP_RIPEMD160', '\xA7':'OP_SHA1', '\xA8':'OP_SHA256', '\xA9':'OP_HASH160', '\xAA':'OP_HASH256', 
+            '\xAB':'OP_CODESEPARATOR ', '\xAC':'OP_CHECKSIG', '\xAD':'OP_CHECKSIGVERIFY', '\xAE':'OP_CHECKMULTISIG', '\xAF':'OP_CHECKMULTISIGVERIFY',
+            '\xFD':'OP_PUBKEYHASH', '\xFE':'OP_PUBKEY', '\xFF':'OP_INVALIDOPCODE', '\x50':'OP_RESERVED', '\x62':'OP_VER', '\x65':'OP_VERIF', 
+            '\x66':'OP_VERNOTIF', '\x89':'OP_RESERVED1', '\x8A':'OP_RESERVED2' }
+    
+def mkOpCodeStr(data, sepOP=' ', sepPUSH='\n'):
+    ops,pos = '',0
+    while pos < len(data):
+        if data[pos] == 0:
+            ops += 'OP_0'+sepOP
+        elif data[pos] <= '\x4C':
+            sz, = unpack('<B', data[pos])
+            ops += data[pos+1:pos+1+sz].encode('hex')+sepPUSH
+            pos += sz
+        elif data[pos] == '\x4C':
+            sz, = unpack('<B', data[pos+1:])
+            ops += data[pos+2:pos+2+sz].encode('hex')+sepPUSH
+            pos += sz
+        elif data[pos] == '\x4D':
+            sz, = unpack('<H', data[pos+1:])
+            ops += data[pos+2:pos+2+sz].encode('hex')+sepPUSH
+            pos += sz
+        elif data[pos] == '\x4E':
+            sz, = unpack('<I', data[pos+1:])
+            ops += data[pos+2:pos+2+sz].encode('hex')+sepPUSH
+            pos += sz
+        elif data[pos] >= '\x50' and data[pos] <= '\x60':
+            ops += 'OP_'+str(int(data[pos]))+sepOP
+        elif data[pos] >= '\xB0' and data[pos] <= '\xB9':
+            ops += 'OP_NOP'+str(int(data[pos])+1)+sepOP
+        else: 
+            ops += OpCodes[data[pos]]+sepOP
+        pos += 1
+    return ops
 
 def decodeVarInt(v):
     if v[0] <= '\xfc':

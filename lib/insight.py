@@ -290,19 +290,22 @@ def apiMerkle(cur, txhash):
 
 rawTxHdr = [ 'version','# inputs','# outputs', 'locktime' ]
 rawCbHdr = [ 'null txid','n','coinbase size','coinbase bytes','sequence' ]
-rawInHdr = [ 'in txid %d','n %d','sigScript size %d','sigScript bytes %d','sequence %d' ]
-rawOutHdr = [ 'out value %d','scriptPK size %d','scriptPK bytes %d' ]
+rawInHdr = [ 'in txid %d','n %d','sigScript size %d','sigScript bytes %d','sequence %d' ] 
+rawOutHdr = [ 'out value %d','scriptPK size %d','scriptPK<br>bytes/asm %d' ]
 
 def rawHTML(out, vi, vo):
+    outhex = [ x.encode('hex') for x in out ]
     tags = [ x for x in rawTxHdr ]
     for n in range(vo):
         tags[3:3] = [ s%(vo-n-1) for s in rawOutHdr ]
+        outhex[3+5*vi+3*n+2] += "<br><span class='opcode'>"+mkOpCodeStr(out[3+5*vi+3*n+2]).replace('\n', '<br>')+"</span>"
     if vi == 0:
         tags[2:2] = rawCbHdr
     else:
         for n in range(vi):
             tags[2:2] = [ s%(vi-n-1) for s in rawInHdr ]
-    return "<table class='rawtx'><tr>"+"</tr><tr>".join(['<td>%s</td><td>%s</td>'%(k,v.encode('hex')) for k,v in zip(tags,out) ])+"</tr></table>"
+            #outhex[2+5*n+3] += "<br><span class='opcode'>"+mkOpCodeStr(out[2+5*n+3]).replace('\n', '<br>')+"</span>"
+    return "<table class='rawtx'><tr>"+"</tr><tr>".join(['<td>%s</td><td>%s</td>' % (k,v) for k,v in zip(tags,outhex) ])+"</tr></table>"
     
 def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
     hdr = getBlobHdr(txdata)

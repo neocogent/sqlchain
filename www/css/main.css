@@ -53,6 +53,7 @@ h3 {
 .rawtx { width:700px; margin-left:-40px; background-color:#eeeeee; font-family: monospace; font-size:12px; }
 .rawtx tr td { padding:5px; border: 1px solid white; word-break: break-all; }
 .rawtx tr td:first-child { width:150px; text-align: right; }
+.opcode { color:blue; }
 
 .apiClk li span { color:lightsteelblue; font-size:13px; }
 .apiClk li .opt { margin-left:5px; position:relative; font-size:13px; color:coral; }
