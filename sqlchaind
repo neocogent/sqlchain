@@ -214,12 +214,13 @@ def options(cfg):
             cfg['debug'] = True
         
 def usage():
-    print """Usage: %s [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
---defaults\tUpdate cfg and exit\nDefault files are %s.cfg .log .db
+    print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
+--debug\t\tRun in foreground with logging to console
+--defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
 \nThese options get saved in cfg file as default.
--p,--prunegap\tSet min number blocks pruneable before stoping bitcoind\n-w,--workers\tSet number of workers
--q,--queue\tSet block queue size\n-u,--user\tSet user to run as\n-d,--db  \tSet mysql db connection, "host:user:pwd:dbname"
--l,--log\tSet log file path\n-r,--rpc\tSet rpc connection, "http://user:pwd@host:port"\n-b,--block\tStart at block number""" % (sys.argv[0], sys.argv[0])
+-p,--prunegap\tSet min number blocks pruneable before stoping bitcoind (10)\n-w,--workers\tSet number of workers (1)
+-q,--queue\tSet block queue size (8)\n-u,--user\tSet user to run as\n-d,--db  \tSet mysql db connection, "host:user:pwd:dbname"
+-l,--log\tSet log file path\n-r,--rpc\tSet rpc connection, "http://user:pwd@host:port"\n-b,--block\tStart at block number""".format(sys.argv[0])
     sys.exit(2) 
     
 def sigterm_handler(_signo, _stack_frame):

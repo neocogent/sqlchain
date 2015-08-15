@@ -373,7 +373,10 @@ def apiStatus(cur, level='info', item=None):
         sqc.srvinfo['db']['all']['total-bytes'] = 0
         cur.execute("show table status;")
         for tbl in cur:
-            sqc.srvinfo['db'].update({ tbl[0]:{ 'rows':tbl[4], 'data-GB':float("%.1f"%float(tbl[6]/1e9)), 'idx-GB':float("%.1f"%float(tbl[8]/1e9)), 'total-GB':float("%.1f"%float(tbl[6]/1e9+tbl[8]/1e9)), 'total-bytes':tbl[6]+tbl[8] }})
+            if tbl[6]+tbl[8] < 1e9:
+                sqc.srvinfo['db'].update({ tbl[0]:{ 'rows':tbl[4], 'data-MB':float("%.1f"%float(tbl[6]/1e6)), 'idx-MB':float("%.1f"%float(tbl[8]/1e6)), 'total-MB':float("%.1f"%float(tbl[6]/1e6+tbl[8]/1e6)), 'total-bytes':tbl[6]+tbl[8] }})
+            else:
+                sqc.srvinfo['db'].update({ tbl[0]:{ 'rows':tbl[4], 'data-GB':float("%.1f"%float(tbl[6]/1e9)), 'idx-GB':float("%.1f"%float(tbl[8]/1e9)), 'total-GB':float("%.1f"%float(tbl[6]/1e9+tbl[8]/1e9)), 'total-bytes':tbl[6]+tbl[8] }})
             sqc.srvinfo['db']['all']['total-bytes'] += tbl[6]+tbl[8]
         sqc.srvinfo['db']['outputs']['max-io-tx'] = MAX_IO_TX
         sqc.srvinfo['db']['blocks']['hdr-data'] = os.stat('/var/data/hdrs.dat').st_size 
