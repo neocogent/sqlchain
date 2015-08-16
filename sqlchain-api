@@ -94,6 +94,9 @@ def syncMonitor():
             block = cur.fetchone()[0]
         if block != sqc.cfg['block'] or new_orphans or len(txs) > 0:
             pass #do_Sync(block)
+        sqc.srvinfo['info']['ws-clients'] = len(clients)
+        if server.pool:
+            sqc.srvinfo['info']['connections'] = len(server.pool)
         if (datetime.now() - sqc.cfg['lastDBts']).total_seconds() > 3*60*60:
             with sqc.dbpool.get().cursor() as cur:
                 mkDBInfo(cur)
@@ -193,7 +196,7 @@ def run():
     logts("Starting on %s" % sqc.cfg['listen'])
     host,port = sqc.cfg['listen'].split(':')
     cert = {'certfile':sqc.cfg['ssl']} if ('ssl' in sqc.cfg) and (sqc.cfg['ssl'] != '') else {}   
-    server = WebSocketServer((host, int(port)), APIs, **cert)
+    server = WebSocketServer((host, int(port)), APIs, spawn=10000, **cert)
 
     syncd = threading.Thread(target = syncMonitor)
     syncd.daemon = True

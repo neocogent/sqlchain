@@ -118,6 +118,8 @@
             <li>/bci/unspent/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
             <li class='noargs'>/bci/latestblock</li>
             <li class='noargs'>/bci/q/getblockcount</li>
+            <li>ws://api-host<span><a href="/wstest.html" target="wstest">/ws</a></span></li>
+            <div class='info'>Blockchain.info compatible websocket interface</div>
         </ul>
         <legend>RPC</legend>
         This api also available via POST with [method,params] args.
@@ -151,7 +153,7 @@
             <div class='info'>Auto detect value and return appropriate data.<br>Supports 4 modes: block-index, block hash, address, tx hash.<br>
             Also available as POST method with 'data' parameter, as demonstrated above with "Find".</div>
             <li class='noargs'>/api/status</li>
-            <div class='info'>Brief server info: version and current block number.</div>
+            <div class='info'>Summary server info.</div>
             <li class='noargs'>/api/status/db</li>
             <div class='info'>Returns database information like row counts, disk space used.<br>Advanced info like multi-sig address count, 
             id collision counts, non-std and unspent output counts are updated periodically due to slow query time.</div>
