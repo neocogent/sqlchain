@@ -11,8 +11,20 @@ from sqlchain import *
 def do_API(env, send_resp):
     get,args,cur = urlparse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
     send_resp('200 OK', [('Content-Type', 'application/json')])
-    if env['REQUEST_METHOD'] == 'POST':
+    if args[0] == 'auto' or env['REQUEST_METHOD'] == 'POST':
         form = cgi.FieldStorage(fp=env['wsgi.input'], environ=env, keep_blank_values=True)
+        if args[0] == "auto":
+            param = form['data'].value if 'data' in form else args[1]
+            if param.isdigit() and int(param) <= sqc.cfg['block']:
+                blkhash = apiHeader(cur, param, args[2:])
+                return json.dumps(apiBlock(cur, blkhash['blockHash'])) if blkhash else None
+            elif len(param) == 64:
+                if param[:8] == '00000000':
+                    return json.dumps(apiBlock(cur, param))
+                else:
+                    return json.dumps(apiTx(cur, param, args))
+            elif is_address(param):
+                return json.dumps(apiAddr(cur, [ param ], args[2:], get))
         if args[0] == "addrs":
             return json.dumps(apiAddr(cur, form['addrs'].value.split(','), args[2:]))
         if args[0] == "tx" and args[1] == "send":

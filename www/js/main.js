@@ -27,8 +27,24 @@
                 }, "json");
             }
     }
+    function respClose(e) {
+        if ($(this).next().hasClass('resp'))
+            $(this).next().remove();
+        $(this).click();
+    }
     $(document).ready( function() {
         $('.apiClk li').click(apiClk);
         $('.apiClk span').click(apiClk);
+        $('#findform').submit( function( e ) {
+            if ($('#findform').next().hasClass('resp'))
+                $('#findform').next().remove();
+			$.post( '/api/auto', $(this).serialize(), function(data) {
+            var msg = $('#blank').clone().attr('id', '#d'+id).insertAfter($('#findform'));
+                msg.html("<pre>"+JSON.stringify(data, null, 2)+"</pre>");
+                $('#findform').click(respClose);
+                id += 1;
+                }, "json");   
+            e.preventDefault();
+            });
     });
 })(jQuery);

@@ -55,6 +55,10 @@ h3 {
 .rawtx tr td:first-child { width:150px; text-align: right; }
 .opcode { color:blue; }
 
+#findbox { margin-top:20px; }
+#finddata { width:600px; font-size:18px; font-weight:400; }
+.form-horizontal .find-label { padding-top:3px; font-size:21px; font-weight:400; }
+
 .apiClk li span { color:lightsteelblue; font-size:13px; }
 .apiClk li .opt { margin-left:5px; position:relative; font-size:13px; color:coral; }
 .apiClk li:hover, .apiClk li span:hover, .apiClk li .opt:hover { cursor: pointer; color:red; }

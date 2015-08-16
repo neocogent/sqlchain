@@ -53,12 +53,11 @@
             This demonstration server provides multiple API (compatible) interfaces:<br>
             <ul>
                 <li>Insight API</li> 
-                <li>Blockchain.info API</li> 
-                <li>WebSocket (Blockchain.info compatible)</li>
+                <li>Blockchain.info API (with WebSocket)</li> 
                 <li>RPC via POST, GET urls</li>
                 <li>Electrum server</li>  
             </ul>
-            The API page above documents the queries supported and differences to the original sites, as well as other technical details.<br><br>
+            The Demo API page above documents the queries supported and differences to the original sites.<br><br>
             Three daemon programs are provided:<br>
             <ul>
                 <li><strong>sqlchaind</strong> updates the mysql backend from bitcoind.</li>
@@ -68,12 +67,24 @@
             Using sqlChain over a pruning node as a compact alternative, a web socket interface, and other ideas, are currently under development.
             Status and blockchain analysis information below is updated periodically from this server. The open source Python code is 
             available in the <a href="https://github.com/neocogent/sqlchain">neocogent Github</a> and please check out 
-             the <a href="http://neocogent.com">neocogent blog</a>.
-        <legend>Server Status</legend>This information is provided by the /api/status call.
+             my <a href="http://neocogent.com">neocogent blog</a>.
+        <legend>Server Status</legend>This information is provided by the /api/status/html call.
             
         </div>
 <!-- API docs -->
         <div class="tab-pane fade" id="api">
+        <div id="findbox">
+            <form id="findform" class="form-horizontal">
+            <fieldset>
+                <div class="form-group">
+                    <label class="col-sm-1 control-label find-label" for="data">Find</label> 
+                    <div class="col-sm-10">
+                        <input id="finddata"  class="text" name="data" type="text">
+                    </div>
+                </div>
+            </fieldset>
+            </form>
+        </div>
         <legend>Insight</legend>
         <ul class='apiClk'>
             <li>/api/block/<span>0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
@@ -134,11 +145,18 @@
             <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/addrs</li>
             <li>/api/merkle/<span>2acba2c6916cdfdbf3584dfdd32534af5031ab076029ff275167fa5181dee0a8</span></li>
         </ul>
-        <legend>Extras</legend> Extensions for status / debugging.
+        <legend>Extras</legend> Extensions, and status / debugging.
         <ul class="apiClk">
+            <li>/api/auto/<span>123432</span></li>
+            <div class='info'>Auto detect value and return appropriate data.<br>Supports 4 modes: block-index, block hash, address, tx hash.<br>
+            Also available as POST method with 'data' parameter, as demonstrated above with "Find".</div>
             <li class='noargs'>/api/status</li>
+            <div class='info'>Brief server info: version and current block number.</div>
             <li class='noargs'>/api/status/db</li>
+            <div class='info'>Returns database information like row counts, disk space used.<br>Advanced info like multi-sig address count, 
+            id collision counts, non-std and unspent output counts are updated periodically due to slow query time.</div>
             <li class="raw">/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/html</li>
+            <div class='info'>An html table formatted version of raw transaction data with hex values and op codes.</div>
         </ul>
         <div id="blank" class="resp"></div>
         </div>   
