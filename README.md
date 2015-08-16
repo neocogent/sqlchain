@@ -10,7 +10,7 @@
 
 (at this time the demo server is being tested locally, but later will be hosted on a public server)
 
-**sqChain** currently consists of three daemon programs.
+**sqlChain** currently consists of three daemon programs.
 
 - **sqlchaind**             - monitors bitcoind and updates a mysql database
 - **sqlchain-api**          - provides multiple API interfaces over the mysql database

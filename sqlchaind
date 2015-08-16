@@ -30,9 +30,10 @@ def getBlocks(blk):
     while not done.isSet():
         blkinfo = rpc.getblockchaininfo()
         if 'pruned' in blkinfo and blkinfo['pruned'] and (blk - blkinfo['pruneheight']) < cfg['prunegap']: 
-            rpc.stop() # if pruning node, prevent it stoping us permanently
+            rpc.stop() # if pruning node, prevent it pruning what we still need
         if blk > blkinfo['blocks']:
             checkMemPool(cur, rpc)
+            time.sleep(10)
             continue
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(10)
