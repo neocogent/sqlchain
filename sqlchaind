@@ -68,11 +68,16 @@ def checkMemPool(cur, rpc):
         txx = tx.decode('hex')[:8] # uses 1/4 space, only for detecting changes in mempool
         if txx not in memPool:
             memPool.add(txx)
-            insertTxMemPool(cur, rpc.getrawtransaction(tx,1), sync_id+1)           
+            insertTxMemPool(cur, rpc.getrawtransaction(tx,1), sync_id+1)
 
-def checkReOrg(cur, data):
-    pass
-
+def addOrphan(cur, height):
+    cur.execute("select ifnull(max(sync_id),0) from mempool;")
+    sync_id = cur.fetchone()[0]
+    hdr = gethdr(height, 'raw')
+    cur.execute("select hash,coinbase from blocks where id=%s limit 1;", (height,))
+    for blkhash,coinbase in cur:
+        cur.execute("insert into orphans (sync_id,block_id,hash,hdr,coinbase) values(%s,%s,%s,%s,%s);", (sync_id,height,blkhash,hdr,coinbase))
+    
 def decodeBlock(data):
     hdr = ['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
     hv = unpack_from('<I32s32s3I', data)
@@ -125,11 +130,40 @@ def decodeTx(data):
     tx['size'] = off+4
     tx['txid'] = sha256(sha256(data[:tx['size']]).digest()).digest()
     return tx
+
+def checkReOrg(cur, data):
+    rpc = AuthServiceProxy(cfg['rpc'])
+    blkhash,height = data['previousblockhash'],data['height']-1
+    while True:
+        cur.execute("select id from blocks where hash=%s limit 1;", (blkhash,))
+        row = cur.fetchone()
+        if row and row[0] == height: # rewind until block in good chain
+            break
+        height -= 1
+        blkhash = rpc.getblockhash(height) 
+    height += 1
+    if height < data['height']:
+        cur.execute("update trxs set block_id=-1 where block_id >= %s;", (height*MAX_TX_BLK,)) # set bad chain txs uncfmd
+        logts("block %d ReOrg, %d orphan(s), %d txs affected" % (height, data['height']-height, cur.rowcount))
+        while height < data['height']:
+            blkhash = rpc.getblockhash(height)
+            if blkhash:
+                data = decodeBlock(rpc.getblock(blkhash, False).decode('hex')) # get good chain blocks
+                if data:
+                    for n,tx in enumerate(data['tx']):
+                        tx_id = findTx(cur, tx['txid'], mkNew=True)
+                        cur.execute("update trxs set block_id=% where id=%s limit 1;", (height*MAX_TX_BLK+n, tx_id))
+                        if cur.rowcount < 1:
+                            insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan
+                    addOrphan(cur, height)
+                    cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
+                    puthdr(data['height'], data['hdr'])
+            height += 1
        
 def insertTxMemPool(cur, tx, sync_id):
     tx_id = findTx(cur, tx['txid'], mkNew=True)
     if tx_id == None:
-        ins,outs = InsertTx(cur, tx, tx_id, 0)
+        ins,outs = InsertTx(cur, tx, tx_id, -1) # -1 means trx has no block
         cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
         cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
     cur.execute("insert ignore into mempool (id,sync_id) values(%s,%s);", (tx_id, sync_id))
@@ -165,6 +199,7 @@ def insertTx(cur, tx, tx_id, blk_id):
     return inlist,outlist
             
 def insertBlock(cur, data):
+    checkReOrg(cur, data)
     blkstart = time.time()
     blk_id = data['height']*MAX_TX_BLK
     ins,outs = [],[]

@@ -99,13 +99,13 @@ def addrTXs(cur, addr_id, addr, args, incTxs):
     sums = [[0,0],[0,0]]
     untxs = 0
     cur.execute("select value,t.id,tx_id,hash,block_id from trxs t left join outputs o on t.id=floor(o.id/{0}) or t.id=o.tx_id where addr_id=%s order by block_id;".format(MAX_IO_TX), (addr_id,))
-    for tx in cur:
-        uncfmd = 1 if tx[4] == 0 else 0
+    for value,tx_id,spent_id,txhash,blk in cur:
+        uncfmd = 1 if blk < 0 else 0
         untxs += uncfmd
-        spent = 1 if tx[1] == tx[2] else 0
-        sums[uncfmd][spent] += tx[0]
+        spent = 1 if tx_id == spent_id else 0
+        sums[uncfmd][spent] += value
         
-        txhash = tx[3][::-1].encode('hex')
+        txhash = txhash[::-1].encode('hex')
         if incTxs and txhash not in txs:
             txs.append(txhash)
             
@@ -126,9 +126,9 @@ def addrTXs(cur, addr_id, addr, args, incTxs):
 def addrUTXOs(cur, addr_id, addr):
     data = []
     cur.execute("select value,o.id,t.hash,block_id/{1} from outputs o, trxs t, blocks b where tx_id is null and addr_id=%s and t.id=floor(o.id/{0}) and b.id=t.block_id/{0};".format(MAX_IO_TX,MAX_TX_BLK), (addr_id,))
-    for tx in cur:
-        data.append({ 'address':addr, 'txid':tx[2][::-1].encode('hex'), 'vout':int(tx[1])%MAX_IO_TX, 'amount':float(tx[0])/1e8, 
-                      'confirmations':sqc.cfg['block']-int(tx[3])+1, 'ts':gethdr(int(tx[3]), 'time') })
+    for value,out_id,txhash,blk in cur:
+        data.append({ 'address':addr, 'txid':txhash[::-1].encode('hex'), 'vout':int(out_id)%MAX_IO_TX, 'amount':float(value)/1e8, 
+                      'confirmations':sqc.cfg['block']-int(blk)+1 if blk>=0 else 0, 'ts':gethdr(int(blk), 'time') if blk>=0 else 0 })
     return data
 
 def addrHistory(cur, addr, args):
@@ -136,18 +136,19 @@ def addrHistory(cur, addr, args):
     data = { 'cfmd':0, 'uncfmd':0 } if 'balance' in args else { 'txs':[] }
     addr_id = addr2id(addr, cur)
     if addr_id:
-        cur.execute("select value,t.id,o.tx_id,hash,block_id/{0},o.id%%{0} from outputs o, trxs t where addr_id=%s and (t.id=floor(o.id/{0}) or t.id=o.tx_id) order by block_id;".format(MAX_IO_TX), (addr_id,))
-        for tx in cur:
-            value = int(tx[0])
+        cur.execute("select value,t.id,o.tx_id,hash,block_id,o.id%%{0} from outputs o, trxs t where addr_id=%s and (t.id=floor(o.id/{0}) or t.id=o.tx_id) order by block_id;".format(MAX_IO_TX), (addr_id,))
+        for value,tx_id,spent_id,txhash,blk,n in cur:
+            value = int(value)
+            blk = blk/MAX_TX_BLK if blk >= 0 else 0
             if 'balance' in args:
-                if tx[4] == 0:
-                    data['uncfmd'] += value if tx[1] == tx[2] else -value
+                if blk == 0:
+                    data['uncfmd'] += value if tx_id == spent_id else -value
                 else:
-                    data['cfmd'] += value if tx[1] == tx[2] else -value
-            elif 'utxo' in args and not tx[2]:
-                tmp = { 'tx_hash':tx[3][::-1].encode('hex'), 'height':int(tx[4]), 'value':value, 'n':int(tx[5]) }
+                    data['cfmd'] += value if tx_id == spent_id else -value
+            elif 'utxo' in args and not spent_id:
+                tmp = { 'tx_hash':txhash[::-1].encode('hex'), 'height':int(blk), 'value':value, 'n':int(n) }
             else:
-                tmp = { 'tx_hash':tx[3][::-1].encode('hex'), 'height':int(tx[4]) }
+                tmp = { 'tx_hash':txhash[::-1].encode('hex'), 'height':int(blk) }
             if 'status' in args:
                 txt += tmp['tx_hash'] + ":%d:" % tmp['height']
             elif ('uncfmd' not in args or tmp['height'] == 0) and 'balance' not in args:
@@ -179,7 +180,7 @@ def apiTx(cur, txhash, args):
     for tid,txh,blob,blkid,ins,outs,txsize in cur:
         if [i for i in ['raw','html'] if i in args]:
             return mkRawTx(cur, args, tid, txh, blob, blkid, ins, outs)
-        data['confirmations'] = sqc.cfg['block'] - int(blkid)/MAX_TX_BLK + 1
+        data['confirmations'] = sqc.cfg['block'] - int(blkid)/MAX_TX_BLK + 1 if blkid >= 0 else 0
         data['version'],data['locktime'] = getBlobHdr(blob)[4:6]
         data['valueIn'],data['vin'] = apiInputs(cur, blkid/MAX_TX_BLK, int(blob), ins)
         data['valueOut'],data['vout'] = apiOutputs(cur, int(tid), int(blob))
