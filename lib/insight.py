@@ -4,6 +4,7 @@
 import urlparse, cgi, json
 
 from bitcoinrpc.authproxy import AuthServiceProxy
+from gevent import sleep
 from string import hexdigits
 from sqlchain import *
 
@@ -52,6 +53,8 @@ def do_API(env, send_resp):
         return json.dumps(apiRPC(args[1], get['nbBlocks'][0] if 'nbBlocks' in get else args[2] if len(args) > 2 else 2))
     if args[0] == "sync":
         return json.dumps(apiSync(cur, *[int(x) if x.isdigit() else 0 for x in args[1:]]))
+    if args[0] == "closure":
+        return json.dumps(apiClosure(cur, args[1].split(',') ))
     return None
 
 def apiHeader(cur, blk, args):
@@ -137,7 +140,8 @@ def addrTXs(cur, addr_id, addr, args, incTxs):
 
 def addrUTXOs(cur, addr_id, addr):
     data = []
-    cur.execute("select value,o.id,t.hash,block_id/{1} from outputs o, trxs t, blocks b where tx_id is null and addr_id=%s and t.id=floor(o.id/{0}) and b.id=t.block_id/{0};".format(MAX_IO_TX,MAX_TX_BLK), (addr_id,))
+    cur.execute("select value,o.id,hash,block_id/{1} from trxs t left join outputs o on t.id=floor(o.id/{0}) and o.tx_id is null where addr_id=%s order by block_id;".format(MAX_IO_TX,MAX_TX_BLK), (addr_id,))
+    #cur.execute("select value,o.id,t.hash,block_id/{1} from outputs o, trxs t, blocks b where tx_id is null and addr_id=%s and t.id=floor(o.id/{0}) and b.id=t.block_id/{0};".format(MAX_IO_TX,MAX_TX_BLK), (addr_id,))
     for value,out_id,txhash,blk in cur:
         data.append({ 'address':addr, 'txid':txhash[::-1].encode('hex'), 'vout':int(out_id)%MAX_IO_TX, 'amount':float(value)/1e8, 
                       'confirmations':sqc.cfg['block']-int(blk)+1 if blk>=0 else 0, 'ts':gethdr(int(blk), 'time') if blk>=0 else 0 })
@@ -247,8 +251,8 @@ def apiSpent(cur, txid, out_id):
     cur.execute("select txdata,hash,block_id/{0},ins from trxs where id=%s limit 1;".format(MAX_TX_BLK), (txid,))
     for blob,txh,blk,ins in cur:
         hdr = getBlobHdr(int(blob))
-        if ins >= 0xC0:
-            ins = (ins&0x3F)<<16 + hdr[1] 
+        if ins >= 192:
+            ins = (ins & 63)*256 + hdr[1]  
         buf = readBlob(int(blob)+hdr[0], ins*7)
         for n in range(ins):
             in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
@@ -380,6 +384,34 @@ def apiSync(cur, sync_req=0, timeout=30):
     orphan = cur.fetchone()[0]
     return { 'block':sqc.cfg['block'] if orphan == None else orphan, 'orphan':orphan != None, 'txs':utxs, 'sync_id':sqc.sync_id }
 
+# based on the closure code from
+# https://github.com/sharkcrayon/bitcoin-closure
+def apiClosure(cur, addrs):
+    closure,balance = [],0
+    txDone = []
+    while len(addrs) > 0:
+        sleep(0)
+        addr = addrs.pop(0)
+        closure.append(addr)
+        txs = apiTxs(cur, { 'address':[ addr ] })
+        for tx in txs:
+            if not tx['txid'] in txDone:
+                if len(tx['vin']) == 1:
+                    txDone.append(tx['txid'])
+                else:
+                    in_addrs = [ vin['addr'] for vin in tx['vin'] ]
+                    if addr in in_addrs:
+                        txDone.append(tx['txid'])
+                        for ain in in_addrs:
+                            if not ain in closure and not ain in addrs:
+                                addrs.append(ain)
+                            
+    utxos = apiAddr(cur, closure, 'utxo', {})
+    for addr in utxos:
+        for utxo in addr:
+            balance += utxo['amount']
+    return { 'closure':closure, 'balance':balance }
+    
 def apiStatus(cur, level='info', item=None):
     sqc.srvinfo['info']['block'] = sqc.cfg['block']
     if level == 'db':
