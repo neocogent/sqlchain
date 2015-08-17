@@ -13,6 +13,7 @@ from hashlib import sha256
 
 from lib.sqlchain import *
 
+version = '0.1.0'
 cfg = { 'log':sys.argv[0]+'.log', 'prunegap':10, 'queue':8, 
         'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
 
@@ -27,6 +28,8 @@ def getBlocks(blk):
         cur.execute('select ifnull(max(id), -1) from blocks')
         blk = int(cur.fetchone()[0] + 1)
     startblk = blk
+    if cfg['blkdat']:
+        blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     while not done.isSet():
         blkinfo = rpc.getblockchaininfo()
         if 'pruned' in blkinfo and blkinfo['pruned'] and (blk - blkinfo['pruneheight']) < cfg['prunegap']: 
@@ -51,6 +54,36 @@ def getBlocks(blk):
                 logts("No data decoded for block %d" % blk)
                 break
     return blk - startblk
+    
+def getBlocksDirect(cur, blk):
+    cur.execute("select 1 from blkdat limit 1;")
+    if not cur.fetchone():
+        print "You must run blkdat first to index blk*.dat files. Aborting direct mode."
+        return
+    logts("Using direct file access to catch up")
+    while not done.isSet():
+        if blockQ.qsize() >= cfg['queue']:
+            time.sleep(10)
+            continue
+        cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
+        for filenum,pos in cur:
+            started = time.time()
+            with open(cfg['blkdat']+'/blocks/blk%05d.dat' % filenum, 'rb') as fd:
+                fd.seek(pos)
+                magic,blksize = unpack('<II', fd.read(8))
+                if magic != 0xD9B4BEF9:
+                    logts("Error reading block %d - bad blkdat index. Aborting direct mode" % blk)
+                    return blk
+                data = decodeBlock(fd.read(blksize))
+                if data:
+                    data['height'] = blk
+                    data['rpc'] = time.time()-started
+                    blockQ.put(data)
+                    blk += 1
+                else: 
+                    logts("No data decoded for block %d. Aborting direct mode" % blk)
+                    return blk
+    return blk
         
 def BlockHandler():
     global done
@@ -224,8 +257,8 @@ def insertBlock(cur, data):
 
 def options(cfg):
     try:                                
-        opts,args = getopt.getopt(sys.argv[1:], "hvd:l:r:w:p:q:u:b:", 
-            ["help", "version", "debug", "db=", "log=", "rpc=", "prunegap=", "queue=", "user=", "block=", "defaults" ])
+        opts,args = getopt.getopt(sys.argv[1:], "hvd:l:r:w:p:q:u:b:f:", 
+            ["help", "version", "debug", "db=", "log=", "rpc=", "prunegap=", "queue=", "user=", "block=", "blkdat=", "defaults" ])
     except getopt.GetoptError:
         usage()
     for opt,arg in opts:
@@ -252,15 +285,18 @@ def options(cfg):
             cfg['block'] = int(arg)
         elif opt in ("--debug"):
             cfg['debug'] = True
+        elif opt in ("-f", "--blkdat"):
+            cfg['blkdat'] = arg
         
 def usage():
     print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
 --debug\t\tRun in foreground with logging to console
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
-\nThese options get saved in cfg file as default.
+\nThese options get saved in cfg file as defaults.
 -p,--prunegap\tSet min number blocks pruneable before stoping bitcoind (10)
 -q,--queue\tSet block queue size (8)\n-u,--user\tSet user to run as\n-d,--db  \tSet mysql db connection, "host:user:pwd:dbname"
--l,--log\tSet log file path\n-r,--rpc\tSet rpc connection, "http://user:pwd@host:port"\n-b,--block\tStart at block number""".format(sys.argv[0])
+-l,--log\tSet log file path\n-r,--rpc\tSet rpc connection, "http://user:pwd@host:port"\n-b,--block\tStart at block number
+-f,--blkdat\tSet path to bitcoin data to use direct file access to catch up""".format(sys.argv[0])
     sys.exit(2) 
     
 def sigterm_handler(_signo, _stack_frame):

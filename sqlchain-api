@@ -171,7 +171,7 @@ def usage():
     print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
 --debug\t\tRun in foreground with logging to console
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
-\nThese options get saved in cfg file as default.
+\nThese options get saved in cfg file as defaults.
 -p,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
 -d,--db  \tSet mysql db connection, "host:user:pwd:dbname"\n-l,--log\tSet log file path
 -r,--rpc\tSet rpc connection, "http://user:pwd@host:port" """.format(sys.argv[0])

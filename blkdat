@@ -1,0 +1,186 @@
+#!/usr/bin/env python
+#
+#  Scan blockchain file and build blkdat file index table.
+#  With the index, blocks can be read directly for processing.
+#
+import sys, signal, getopt
+import MySQLdb as db
+
+from bitcoinrpc.authproxy import AuthServiceProxy
+from struct import pack, unpack, unpack_from
+from time import sleep
+from hashlib import sha256
+
+from lib.sqlchain import *
+
+version = '0.1.0'
+cfg = { 'path':'.bitcoin', 'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
+        
+blockpath = "/blocks/blk%05d.dat"
+
+sqlmk='''
+CREATE TABLE IF NOT EXISTS `blkdat` (
+  `id` int(11) NOT NULL,
+  `hash` binary(32) NOT NULL,
+  `prevhash` binary(32) NOT NULL,
+  `filenum` int(11) NOT NULL,
+  `filepos` int(11) NOT NULL,
+  KEY (`id`),
+  KEY (`hash`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;'''
+
+def findBlocks():
+    cur.execute("select max(filenum) from blkdat;") # find any previous state
+    row = cur.fetchone()
+    filenum = row[0] if row else 0
+    cur.execute("select max(filepos) from blkdat where filenum=%s;", (filenum,))
+    row = cur.fetchone()
+    pos = row[0] if row else 0
+    cur.execute("delete from blkdat where filenum=%s and filepos=%s;", (filenum,pos)) 
+  
+    while not done:
+        try:
+            with open(blockpath % filenum, "rb") as fd:
+                while True:
+                    fd.seek(pos)
+                    buf = fd.read(8)
+                    if len(buf) < 8:
+                        break
+                    magic,blksize = unpack('<II', buf)
+                    if magic != 0xD9B4BEF9:
+                        pos += 1
+                        continue
+                    buf = fd.read(80)
+                    blkhash = sha256(sha256(buf).digest()).digest()
+                    prevhash = buf[4:36]
+                    if verbose:
+                        print "%05d:%d" % (filenum,pos), blkhash[::-1].encode('hex')[:32], prevhash[::-1].encode('hex')[:32]
+                    cur.execute("insert into blkdat (id,hash,prevhash,filenum,filepos) values(-1,%s,%s,%s,%s);", (blkhash,prevhash,filenum,pos))
+                    pos += blksize
+                    
+                filenum += 1
+                pos = 0
+                continue
+        except IOError:
+            break
+
+
+def linkMainChain(blk, blkhash):
+    global filenum
+    blkhash = blkhash.decode('hex')[::-1]
+    while not done:
+        if verbose:
+            print "%d - %s" % (blk, blkhash[::-1].encode('hex'))
+        cur.execute("select id from blkdat where id=%s and hash=%s limit 1;", (blk, blkhash))
+        row = cur.fetchone()
+        if row:
+            break
+        cur.execute("update blkdat set id=%s where hash=%s;", (blk, blkhash))
+        if cur.rowcount < 1:
+            print "Cannot update %d! Rewinding blkdat %d" % (blk, filenum)
+            cur.execute("delete from blkdat where id >= %s;", (blk,)) 
+            break
+        cur.execute("select prevhash from blkdat where id=%s limit 1;", (blk,))
+        row = cur.fetchone()
+        if row:
+            blkhash = row[0]
+            blk -= 1
+        if blk < 0:
+            break
+            
+def getLastBlock():
+    while not done:
+        try:
+            blkinfo = rpc.getblockchaininfo()
+            blk = blkinfo['blocks'] - 6
+            blkhash = rpc.getblockhash(blk) # get current block
+            return blk,blkhash
+        except socket.error:
+            sleep(5)   
+
+def options(cfg):
+    try:                                
+        opts,args = getopt.getopt(sys.argv[1:], "hvp:d:r:", 
+            ["help", "version", "path=", "db=", "rpc=", "defaults" ])
+    except getopt.GetoptError:
+        usage()
+    for opt,arg in opts:
+        if opt in ("-h", "--help"):
+            usage()
+        elif opt in ("-v", "--version"):
+            sys.exit(sys.argv[0]+': '+version)
+        elif opt in ("-p", "--path"):
+            cfg['path'] = arg
+        elif opt in ("-d", "--db"):
+            cfg['db'] = arg
+        elif opt in ("-r", "--rpc"):
+            cfg['rpc'] = arg
+        elif opt in ("--defaults"):
+            savecfg(cfg)
+            sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
+    
+def usage():
+    print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
+--defaults\tUpdate cfg and exit\nDefault cfg file is {0}.cfg
+\nThese options get saved in cfg file as defaults.
+-p,--path\tSet path to bitcoin directory
+-d,--db  \tSet mysql db connection, "host:user:pwd:dbname"
+-r,--rpc\tSet rpc connection, "http://user:pwd@host:port" """.format(sys.argv[0])
+    sys.exit(2) 
+    
+def sigterm_handler(_signo, _stack_frame):
+    global done
+    done = True
+    
+if __name__ == '__main__':
+    
+    loadcfg(cfg)
+    options(cfg)
+        
+    done = False
+    verbose = True
+    
+    signal.signal(signal.SIGINT, sigterm_handler)
+    
+    rpc = AuthServiceProxy(cfg['rpc'], timeout=120)
+    blockpath = cfg['path'] + blockpath
+    try:
+        open(blockpath % 0, 'rb')
+    except IOError:
+        print "Bad path to bitcoin directory: %s\n" % cfg['path']
+        usage()
+    print 'Using:', blockpath
+        
+    sql = db.connect(*cfg['db'].split(':'))
+    cur = sql.cursor()
+    cur.execute("select count(1) from information_schema.tables where table_name='blkdat';")
+    if not cur.fetchone():
+        cur.execute(sqlmk) # create table if not existing
+  
+    while not done:
+        print "Finding new blocks"
+        findBlocks()
+        
+        print "Getting last block from rpc"
+        blk,blkhash = getLastBlock()
+            
+        print "Linking main chain"
+        linkMainChain(blk, blkhash)
+        
+        if not done:
+            print "Waiting"
+            sleep(60)
+    
+    print "Shutting down."
+
+
+
+    
+    
+
+
+    
+
+
+
+    
