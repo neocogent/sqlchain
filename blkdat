@@ -3,6 +3,11 @@
 #  Scan blockchain blk*.dat files and build index table.
 #  With the index, blocks can be read directly for processing.
 #
+#  If you have a fully sync'd blockchain then this isn't useful as bitcoind 
+#  responds fast enough for sqlchaind with rpc calls. This is useful if you
+#  want to sync sqlchain while bitcoind is still syncing (to save time on 
+#  slow systems) and bitcoind is basically unresponsive via rpc.
+#
 #  How to use with sqlchaind:
 #
 #  Edit cfg var to suit. Run: ./blkdat -p /path/to/bitcoin
@@ -12,7 +17,7 @@
 #
 #  When it has completed that it will monitor any new blocks added and keep the 
 #  index updated. At this point you can start ./sqlchain --debug -f /path/to/bitcoin
-#  and is will use direct file mode to build the sql db. It will continue from where
+#  and it will use direct file mode to build the sql db. It will continue from where
 #  it left off and will wait on blkdat as it updates.
 #
 import sys, signal, getopt, socket
