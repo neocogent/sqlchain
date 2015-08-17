@@ -1,9 +1,21 @@
 #!/usr/bin/env python
 #
-#  Scan blockchain file and build blkdat file index table.
+#  Scan blockchain blk*.dat files and build index table.
 #  With the index, blocks can be read directly for processing.
 #
-import sys, signal, getopt
+#  How to use with sqlchaind:
+#
+#  Edit cfg var to suit. Run: ./blkdat -p /path/to/bitcoin
+#  It will scan blocks from blk00000.dat up to last available and add 
+#  db rows for each block. Then it will get the last block hash and scan
+#  backwards down to genesis (0) block linking them into "best chain".
+#
+#  When it has completed that it will monitor any new blocks added and keep the 
+#  index updated. At this point you can start ./sqlchain --debug -f /path/to/bitcoin
+#  and is will use direct file mode to build the sql db. It will continue from where
+#  it left off and will wait on blkdat as it updates.
+#
+import sys, signal, getopt, socket
 import MySQLdb as db
 
 from bitcoinrpc.authproxy import AuthServiceProxy
@@ -19,14 +31,15 @@ cfg = { 'path':'.bitcoin', 'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http:
 blockpath = "/blocks/blk%05d.dat"
 
 sqlmk='''
-CREATE TABLE IF NOT EXISTS `blkdat` (
+CREATE TABLE `blkdat` (
   `id` int(11) NOT NULL,
   `hash` binary(32) NOT NULL,
   `prevhash` binary(32) NOT NULL,
   `filenum` int(11) NOT NULL,
   `filepos` int(11) NOT NULL,
-  KEY (`id`),
-  KEY (`hash`)
+  UNIQUE KEY `filenum` (`filenum`,`filepos`),
+  KEY `id` (`id`),
+  KEY `hash` (`hash`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;'''
 
 def findBlocks():
@@ -35,9 +48,8 @@ def findBlocks():
     filenum = row[0] if row else 0
     cur.execute("select max(filepos) from blkdat where filenum=%s;", (filenum,))
     row = cur.fetchone()
-    pos = row[0] if row else 0
-    cur.execute("delete from blkdat where filenum=%s and filepos=%s;", (filenum,pos)) 
-  
+    startpos = pos = row[0] if row else 0
+
     while not done:
         try:
             with open(blockpath % filenum, "rb") as fd:
@@ -48,6 +60,8 @@ def findBlocks():
                         break
                     magic,blksize = unpack('<II', buf)
                     if magic != 0xD9B4BEF9:
+                        if pos-startpos > 1e6: # skip large end gaps
+                            break
                         pos += 1
                         continue
                     buf = fd.read(80)
@@ -55,12 +69,12 @@ def findBlocks():
                     prevhash = buf[4:36]
                     if verbose:
                         print "%05d:%d" % (filenum,pos), blkhash[::-1].encode('hex')[:32], prevhash[::-1].encode('hex')[:32]
-                    cur.execute("insert into blkdat (id,hash,prevhash,filenum,filepos) values(-1,%s,%s,%s,%s);", (blkhash,prevhash,filenum,pos))
+                    cur.execute("insert ignore into blkdat (id,hash,prevhash,filenum,filepos) values(-1,%s,%s,%s,%s);", (blkhash,prevhash,filenum,pos))
                     pos += blksize
+                    startpos = pos
                     
                 filenum += 1
                 pos = 0
-                continue
         except IOError:
             break
 
@@ -77,7 +91,7 @@ def linkMainChain(blk, blkhash):
             break
         cur.execute("update blkdat set id=%s where hash=%s;", (blk, blkhash))
         if cur.rowcount < 1:
-            print "Cannot update %d! Rewinding blkdat %d" % (blk, filenum)
+            print "Cannot update %d! Rewinding blkdat." % blk
             cur.execute("delete from blkdat where id >= %s;", (blk,)) 
             break
         cur.execute("select prevhash from blkdat where id=%s limit 1;", (blk,))
@@ -93,10 +107,11 @@ def getLastBlock():
         try:
             blkinfo = rpc.getblockchaininfo()
             blk = blkinfo['blocks'] - 6
-            blkhash = rpc.getblockhash(blk) # get current block
+            blkhash = rpc.getblockhash(blk) # get block trailing by 6 to avoid orphans
             return blk,blkhash
-        except socket.error:
-            sleep(5)   
+        except:
+            sleep(5) 
+    return 0,''
 
 def options(cfg):
     try:                                
