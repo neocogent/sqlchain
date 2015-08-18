@@ -52,3 +52,10 @@ CREATE TABLE `orphans` (
   KEY (`sync_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
+CREATE TABLE `info` (
+  `class` varchar(12) NOT NULL,
+  `key` varchar(32) NOT NULL,
+  `value` varchar(64) DEFAULT NULL,
+  PRIMARY KEY `class` (`class`,`key`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+

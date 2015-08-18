@@ -16,9 +16,9 @@ from lib.sqlchain import *
 
 __builtins__.sqc = dotdict()  # container for super globals 
 
+version = '0.1.0'
 sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0,
-            'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'lastDBts':datetime.now() }
-sqc.srvinfo = { 'info':{ 'version':"0.1.0" }, 'db':{'all':{}} }
+            'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'dbinfo-ts':datetime.now(), 'dbinfo':180 }
 
 sqc.sync = threading.Condition(); 
 sqc.sync_id = 0 
@@ -72,6 +72,7 @@ class BCIWebSocket(WebSocketApplication):
 
     def on_close(self, reason):
         logts("WS Client disconnected %s %s" % (self.remote, reason))
+        del clients[self.ws.handler.active_client]
 
 # monitor mempool, block, orphan changes - publish to websocket subscriptions, notify waiting sync connections
 def syncMonitor():
@@ -80,6 +81,8 @@ def syncMonitor():
         sqc.sync_id = cur.fetchone()[0]
         cur.execute("select ifnull(max(id),0) from blocks;")
         sqc.cfg['block'] = cur.fetchone()[0]
+        if sqc.cfg['dbinfo'] == 0:
+            threading.Thread(target = mkDBInfo).start()
     while True:
         with sqc.dbpool.get().cursor() as cur:
             txs = []
@@ -92,16 +95,13 @@ def syncMonitor():
             new_orphans = cur.fetchone()[0] > 0
             cur.execute("select max(id) from blocks;")
             block = cur.fetchone()[0]
+            cur.execute("replace into info (class,`key`,value) values('info','ws-clients',%s),('info','connections',%s);", (len(clients), len(server.pool) if server.pool else 0))
         if block != sqc.cfg['block'] or new_orphans or len(txs) > 0:
             pass #do_Sync(block)
-        sqc.srvinfo['info']['ws-clients'] = len(clients)
-        if server.pool:
-            sqc.srvinfo['info']['connections'] = len(server.pool)
-        if (datetime.now() - sqc.cfg['lastDBts']).total_seconds() > 3*60*60:
-            with sqc.dbpool.get().cursor() as cur:
-                mkDBInfo(cur)
+        if sqc.cfg['dbinfo'] > 0 and (datetime.now() - sqc.cfg['dbinfo-ts']).total_seconds() > sqc.cfg['dbinfo']*60:
+            threading.Thread(target = mkDBInfo).start()
         sleep(5) 
-            
+        
 def do_Sync(block):
     global lastBlk
     if block != sqc.cfg['block']:
@@ -121,34 +121,34 @@ def do_Sync(block):
                     client.ws.send(json.dumps({ 'op': 'utx', 'x': tx }))
                     clients[client]['lasttx'] = tx                     
 
-def mkDBInfo(cur):
-    logts("Updating server db info")
-    lib.insight.apiStatus(cur, 'db')
-    cur.execute("select count(*) from address where id%2=1;")
-    sqc.srvinfo['db']['address']['multi-sigs'] = cur.fetchone()[0]
-    cur.execute("select count(*) from address where  cast(conv(hex(reverse(unhex(substr(sha2(addr,0),1,10)))),16,10)*2 as unsigned) != id;")
-    sqc.srvinfo['db']['address']['id-collisions'] = cur.fetchone()[0]
-    cur.execute("select count(*) from trxs where  strcmp(reverse(unhex(hex(id*8))), left(hash,5)) > 0;")
-    sqc.srvinfo['db']['trxs']['id-collisions'] = cur.fetchone()[0] 
-    cur.execute("select count(*) from outputs where addr_id=0;")
-    sqc.srvinfo['db']['outputs']['non-std'] = cur.fetchone()[0] 
-    cur.execute("select count(*) from outputs where tx_id is null;")
-    sqc.srvinfo['db']['outputs']['unspent'] = cur.fetchone()[0]
-    sqc.srvinfo['.']['ts'] = datetime.now()
-    sqc.srvinfo['db']['all']['updated'] = sqc.cfg['lastDBts'].strftime('%d-%m-%Y %H:%M:%S')
-
+def mkDBInfo():
+    with sqc.dbpool.get().cursor() as cur:
+        logts("Updating server db info")
+        sqc.cfg['dbinfo-ts'] = datetime.now()
+        lib.insight.apiStatus(cur, 'db') 
+        cur.execute("select count(*) from address where id%2=1;")
+        cur.execute("replace into info (class,`key`,value) values('db','address:mult-sigs',%s);", (cur.fetchone()[0], ))
+        cur.execute("select count(*) from address where  cast(conv(hex(reverse(unhex(substr(sha2(addr,0),1,10)))),16,10)*2 as unsigned) != id;")
+        cur.execute("replace into info (class,`key`,value) values('db','address:id-collisions',%s);", (cur.fetchone()[0], ))
+        cur.execute("select count(*) from trxs where  strcmp(reverse(unhex(hex(id*8))), left(hash,5)) > 0;")
+        cur.execute("replace into info (class,`key`,value) values('db','trxs:id-collisions',%s);", (cur.fetchone()[0], ))
+        cur.execute("select count(*) from outputs where addr_id=0;")
+        cur.execute("replace into info (class,`key`,value) values('db','outputs:non-std',%s);", (cur.fetchone()[0], ))
+        cur.execute("select count(*) from outputs where tx_id is null;")
+        cur.execute("replace into info (class,`key`,value) values('db','outputs:unspent',%s);", (cur.fetchone()[0], ))
+        cur.execute("replace into info (class,`key`,value) values('db','all:updated',now());")
 
 def options():
     try:                         
-        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:b:r:u:", 
-            ["help", "version", "debug", "db=", "log=", "www=", "listen=", "rpc=", "user=", "defaults" ])
+        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:b:r:u:i:", 
+            ["help", "version", "debug", "db=", "log=", "www=", "listen=", "rpc=", "user=", "dbinfo=", "defaults" ])
     except getopt.GetoptError:
         usage()
     for opt,arg in opts:
         if opt in ("-h", "--help"):
             usage()
         elif opt in ("-v", "--version"):
-            sys.exit(sys.argv[0]+': '+sqc.srvinfo['info']['version'])
+            sys.exit(sys.argv[0]+': '+version)
         elif opt in ("-d", "--db"):
             sqc.cfg['db'] = arg
         elif opt in ("-l", "--log"):
@@ -161,6 +161,8 @@ def options():
             sqc.cfg['rpc'] = arg
         elif opt in ("-u", "--user"):
             sqc.cfg['user'] = arg
+        elif opt in ("-i","--dbinfo"):
+            sqc.cfg['dbinfo'] = int(arg)
         elif opt in ("--defaults"):
             savecfg(sqc.cfg)
             sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
@@ -174,7 +176,8 @@ def usage():
 \nThese options get saved in cfg file as defaults.
 -p,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
 -d,--db  \tSet mysql db connection, "host:user:pwd:dbname"\n-l,--log\tSet log file path
--r,--rpc\tSet rpc connection, "http://user:pwd@host:port" """.format(sys.argv[0])
+-r,--rpc\tSet rpc connection, "http://user:pwd@host:port" 
+-i,--dbinfo\tSet db info update period in minutes (default=180, 0=at start, -1=never) """.format(sys.argv[0])
     sys.exit(2) 
     
 def sigterm_handler(_signo, _stack_frame):

@@ -46,7 +46,7 @@ def do_API(env, send_resp):
     if args[0] == "history":
         return json.dumps(addrHistory(cur, args[1], args[2:]))
     if args[0] == "status":
-        return json.dumps(apiStatus(cur, *args[1:2]))
+        return json.dumps(apiStatus(cur, *args[1:]))
     if args[0] == "merkle":
         return json.dumps(apiMerkle(cur, args[1]))
     if args[0] == "utils":
@@ -412,27 +412,43 @@ def apiClosure(cur, addrs):
             balance += utxo['amount']
     return { 'closure':closure, 'balance':balance }
     
-def apiStatus(cur, level='info', item=None):
-    sqc.srvinfo['info']['block'] = sqc.cfg['block']
-    if level == 'db':
-        sqc.srvinfo['db']['all']['total-bytes'] = 0
-        cur.execute("show table status;")
-        for tbl in cur:
-            if tbl[6]+tbl[8] < 1e9:
-                sqc.srvinfo['db'].update({ tbl[0]:{ 'rows':tbl[4], 'data-MB':float("%.1f"%float(tbl[6]/1e6)), 'idx-MB':float("%.1f"%float(tbl[8]/1e6)), 'total-MB':float("%.1f"%float(tbl[6]/1e6+tbl[8]/1e6)), 'total-bytes':tbl[6]+tbl[8] }})
-            else:
-                sqc.srvinfo['db'].update({ tbl[0]:{ 'rows':tbl[4], 'data-GB':float("%.1f"%float(tbl[6]/1e9)), 'idx-GB':float("%.1f"%float(tbl[8]/1e9)), 'total-GB':float("%.1f"%float(tbl[6]/1e9+tbl[8]/1e9)), 'total-bytes':tbl[6]+tbl[8] }})
-            sqc.srvinfo['db']['all']['total-bytes'] += tbl[6]+tbl[8]
-        sqc.srvinfo['db']['outputs']['max-io-tx'] = MAX_IO_TX
-        sqc.srvinfo['db']['blocks']['hdr-data'] = os.stat('/var/data/hdrs.dat').st_size 
-        sqc.srvinfo['db']['trxs']['blob-data'] = os.stat('/var/data/blobs.dat').st_size 
-        sqc.srvinfo['db']['trxs']['max-tx-block'] = MAX_TX_BLK
-        sqc.srvinfo['db']['all']['total-bytes'] += sqc.srvinfo['db']['trxs']['blob-data'] + sqc.srvinfo['db']['blocks']['hdr-data']
-        sqc.srvinfo['db']['all']['total-GB'] = float("%.1f"%float(sqc.srvinfo['db']['all']['total-bytes']/1e9))
-    if level in sqc.srvinfo:
-        if item and item in sqc.srvinfo[level]:
-            return sqc.srvinfo[level][item]
-        return sqc.srvinfo[level]
-    return sqc.srvinfo['info']
+def apiStatus(cur, cls='info', item=None):
+    data = {}
+    cur.execute("select value from info where `class`='sys' and `key`='updated';")
+    row = cur.fetchone()
+    if not row or (datetime.now() - datetime.strptime(row[0],'%Y-%m-%d %H:%M:%S')).total_seconds() > 60:
+        cur.execute("replace into info (class,`key`,value) values('info','block',%s);", (sqc.cfg['block'], ))
+        cur.execute("replace into info (class,`key`,value) values('sys','updated',now());")
+        if cls == 'db':
+            total_bytes = 0
+            cur.execute("show table status;")
+            for tbl in cur:
+                if tbl[0] not in ['blocks','trxs','address','outputs']: continue
+                if tbl[6]+tbl[8] < 1e9:
+                    cur.execute("replace into info (class,`key`,value) values('db','{0}:rows',%s),('db','{0}:data-MB',%s),('db','{0}:idx-MB',%s),('db','{0}:total-MB',%s),('db','{0}:total-bytes',%s);".format(tbl[0]), 
+                        (tbl[4], float("%.1f"%float(tbl[6]/1e6)), float("%.1f"%float(tbl[8]/1e6)), float("%.1f"%float(tbl[6]/1e6+tbl[8]/1e6)), tbl[6]+tbl[8]))
+                else:
+                    cur.execute("replace into info (class,`key`,value) values('db','{0}:rows',%s),('db','{0}:data-GB',%s),('db','{0}:idx-GB',%s),('db','{0}:total-GB',%s),('db','{0}:total-bytes',%s);".format(tbl[0]), 
+                        (tbl[4], float("%.1f"%float(tbl[6]/1e9)), float("%.1f"%float(tbl[8]/1e9)), float("%.1f"%float(tbl[6]/1e9+tbl[8]/1e9)), tbl[6]+tbl[8]))
+                total_bytes += tbl[6]+tbl[8]
+            cur.execute("replace into info (class,`key`,value) values('db','outputs:max-io-tx',%s);", (MAX_IO_TX, ))
+            cur.execute("replace into info (class,`key`,value) values('db','blocks:hdr-data',%s);", (os.stat('/var/data/hdrs.dat').st_size, ))
+            cur.execute("replace into info (class,`key`,value) values('db','trxs:blob-data',%s);", (os.stat('/var/data/blobs.dat').st_size, ))
+            cur.execute("replace into info (class,`key`,value) values('db','trxs:max-tx-block',%s);", (MAX_TX_BLK, ))
+            cur.execute("replace into info (class,`key`,value) values('db','all:total-bytes',%s);", (total_bytes, ))
+            cur.execute("replace into info (class,`key`,value) values('db','all:total-GB',%s);", (float("%.1f"%float(total_bytes/1e9)), ))
+
+    cur.execute("select `key`,value from info where class=%s;", (cls, ))
+    for k,v in cur:
+        if ':' in k:
+            k1,k2 = k.split(':', 1)
+            if k1 in data:
+                data[k1].update({ k2:v })
+            else: 
+                data[k1] = { k2:v }
+        else:
+            data[k] = v
+    return data
+    
     
     
