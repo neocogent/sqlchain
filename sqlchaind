@@ -14,7 +14,7 @@ from hashlib import sha256
 from lib.sqlchain import *
 
 version = '0.1.0'
-cfg = { 'log':sys.argv[0]+'.log', 'prunegap':10, 'queue':8, 
+cfg = { 'log':sys.argv[0]+'.log', 'prunegap':10, 'queue':8, 'no-sigs':False,
         'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
 
 memPool = set()
@@ -217,7 +217,8 @@ def insertTx(cur, tx, tx_id, blk_id):
                 in_id = (in_id*MAX_IO_TX) + vin['vout']
                 inlist.append(( tx_id, in_id ))
                 in_ids += pack('<Q', in_id)[:7]
-                txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig']
+                if not cfg['no-sigs']:
+                    txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig']
                 if not stdSeq:
                     txdata += pack('<I', vin['sequence'])
                                        
@@ -227,7 +228,7 @@ def insertTx(cur, tx, tx_id, blk_id):
             outlist.append(( tx_id*MAX_IO_TX + vout['n'], addr_id, vout['value'] ))
             txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
             
-    ins,outs,sz,txhdr = mkBlobHdr(len(inlist), len(outlist), tx, stdSeq)
+    ins,outs,sz,txhdr = mkBlobHdr(len(inlist), len(outlist), tx, stdSeq, cfg['no-sigs'])
     cur.execute("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", 
         ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata), blk_id ))    
     return inlist,outlist
@@ -258,7 +259,7 @@ def insertBlock(cur, data):
 def options(cfg):
     try:                                
         opts,args = getopt.getopt(sys.argv[1:], "hvd:l:r:w:p:q:u:b:f:", 
-            ["help", "version", "debug", "db=", "log=", "rpc=", "prunegap=", "queue=", "user=", "block=", "blkdat=", "defaults" ])
+            ["help", "version", "debug", "db=", "log=", "rpc=", "prunegap=", "queue=", "user=", "block=", "blkdat=", "no-sigs", "defaults" ])
     except getopt.GetoptError:
         usage()
     for opt,arg in opts:
@@ -278,6 +279,8 @@ def options(cfg):
             cfg['queue'] = int(arg)
         elif opt in ("-u", "--user"):
             cfg['user'] = arg 
+        elif opt in ("--no-sigs"):
+            cfg['no-sigs'] = True 
         elif opt in ("--defaults"):
             savecfg(cfg)
             sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
@@ -296,7 +299,8 @@ def usage():
 -p,--prunegap\tSet min number blocks pruneable before stoping bitcoind (10)
 -q,--queue\tSet block queue size (8)\n-u,--user\tSet user to run as\n-d,--db  \tSet mysql db connection, "host:user:pwd:dbname"
 -l,--log\tSet log file path\n-r,--rpc\tSet rpc connection, "http://user:pwd@host:port"\n-b,--block\tStart at block number
--f,--blkdat\tSet path to bitcoin data to use direct file access to catch up""".format(sys.argv[0])
+-f,--blkdat\tSet path to bitcoin data to use direct file access to catch up
+--no-sigs\tDo not store input sigScript data """.format(sys.argv[0])
     sys.exit(2) 
     
 def sigterm_handler(_signo, _stack_frame):

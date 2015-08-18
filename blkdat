@@ -16,7 +16,7 @@
 #  backwards down to genesis (0) block linking them into "best chain".
 #
 #  When it has completed that it will monitor any new blocks added and keep the 
-#  index updated. At this point you can start ./sqlchain --debug -f /path/to/bitcoin
+#  index updated. At this point you can start ./sqlchaind --debug -f /path/to/bitcoin
 #  and it will use direct file mode to build the sql db. It will continue from where
 #  it left off and will wait on blkdat as it updates.
 #

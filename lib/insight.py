@@ -345,9 +345,9 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
             in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
             cur.execute("select hash from trxs where id=%s limit 1;", (in_id / MAX_IO_TX,))
             out += [ cur.fetchone()[0][:32], pack('<I', in_id % MAX_IO_TX) ]
-            vsz,off = decodeVarInt(readBlob(vpos, 9))
-            sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4))
-            out += [ sigbuf[:off], sigbuf[off:off+vsz], ('\xFF'*4 if hdr[6] else sigbuf[off+vsz:]) ]
+            vsz,off = decodeVarInt(readBlob(vpos, 9)) if not hdr[7] else (0,0) # no-sigs flag
+            sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4)) 
+            out += [ sigbuf[:off], sigbuf[off:off+vsz], ('\xFF'*4 if hdr[6] else sigbuf[off+vsz:]) ] 
             vpos += off+vsz+(0 if hdr[6] else 4)
     out += encodeVarInt(outs)
     for n in range(outs):

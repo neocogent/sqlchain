@@ -231,10 +231,11 @@ def getBlobHdr(pos):
         if ord(buf[0])&mask:
             out[0] += sz
         mask >>= 1
-    out.append( ord(buf[0])&mask == 0 )  # stdSeq
+    out.append( ord(buf[0])&0x04 == 0 )  # stdSeq
+    out.append( ord(buf[0])&0x02 != 0 )  # nosigs
     return out # out[0] is hdr size
 
-def mkBlobHdr(ins, outs, tx, stdSeq):
+def mkBlobHdr(ins, outs, tx, stdSeq, nosigs):
     flags,hdr = 0,''
     sz = tx['size']
     if ins >= 0xC0:
@@ -257,7 +258,8 @@ def mkBlobHdr(ins, outs, tx, stdSeq):
         hdr += pack('<I', tx['locktime'])
     if not stdSeq:
         flags |= 0x04  
-    # future use: 0x02 = sigs pruned, 0x01 = pks pruned
+    if nosigs:
+        flags |= 0x02
     # max hdr = 13 bytes but most will be only 1 flag byte
     return ins,outs,sz,pack('<B', flags) + hdr
     
