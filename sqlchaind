@@ -45,14 +45,10 @@ def getBlocks(blk):
         blkhash = rpc.getblockhash(blk)
         if blkhash:
             data = decodeBlock(rpc.getblock(blkhash, False).decode('hex'))
-            if data: 
-                data['height'] = blk
-                data['rpc'] = time.time()-rpcstart
-                blockQ.put(data)
-                blk += 1
-            else: 
-                logts("No data decoded for block %d" % blk)
-                break
+            data['height'] = blk
+            data['rpc'] = time.time()-rpcstart
+            blockQ.put(data)
+            blk += 1
     return blk - startblk
     
 def getBlocksDirect(cur, blk):
@@ -75,14 +71,10 @@ def getBlocksDirect(cur, blk):
                     logts("Error reading block %d - bad blkdat index. Aborting direct mode" % blk)
                     return blk
                 data = decodeBlock(fd.read(blksize))
-                if data:
-                    data['height'] = blk
-                    data['rpc'] = time.time()-started
-                    blockQ.put(data)
-                    blk += 1
-                else: 
-                    logts("No data decoded for block %d. Aborting direct mode" % blk)
-                    return blk
+                data['height'] = blk
+                data['rpc'] = time.time()-started
+                blockQ.put(data)
+                blk += 1
     return blk
         
 def BlockHandler():
@@ -293,13 +285,14 @@ def options(cfg):
         
 def usage():
     print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
+-b,--block\tStart at block number
+-f,--blkdat\tSet path to bitcoin data to use direct file access to catch up
 --debug\t\tRun in foreground with logging to console
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
 \nThese options get saved in cfg file as defaults.
 -p,--prunegap\tSet min number blocks pruneable before stoping bitcoind (10)
 -q,--queue\tSet block queue size (8)\n-u,--user\tSet user to run as\n-d,--db  \tSet mysql db connection, "host:user:pwd:dbname"
--l,--log\tSet log file path\n-r,--rpc\tSet rpc connection, "http://user:pwd@host:port"\n-b,--block\tStart at block number
--f,--blkdat\tSet path to bitcoin data to use direct file access to catch up
+-l,--log\tSet log file path\n-r,--rpc\tSet rpc connection, "http://user:pwd@host:port"
 --no-sigs\tDo not store input sigScript data """.format(sys.argv[0])
     sys.exit(2) 
     
