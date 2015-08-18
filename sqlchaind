@@ -249,11 +249,9 @@ def insertBlock(cur, data):
         len(data['tx']), datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime, len(data['tx'])/blktime)
         
     blksecs.append(blktime)
-    if len(blksecs) > 18:
-        blksecs.pop()
-    avg = 0
-    for t in blksecs: avg += t
-    cur.execute("replace into info (class,`key`,value) value('info','avg-block-sync',%s);", ("%2.1f"%(avg/len(blksecs)), ))
+    if len(blksecs) > 18: # ~3 hour moving avg
+        del blksecs[0]
+    cur.execute("replace into info (class,`key`,value) value('info','avg-block-sync',%s);", ("%2.1f"%(sum(blksecs)/len(blksecs)), ))
 
 def options(cfg):
     try:                                
