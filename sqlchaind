@@ -16,7 +16,7 @@ from lib.sqlchain import *
 version = '0.1.0'
 cfg = { 'log':sys.argv[0]+'.log', 'prunegap':10, 'queue':8, 'no-sigs':False,
         'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
-
+blksecs = []
 memPool = set()
 
 def getBlocks(blk):
@@ -247,6 +247,13 @@ def insertBlock(cur, data):
     blktime = time.time() - blkstart
     print "block %d [ Q:%d %4d txs - %s - %3.0fms %2.1fs %3.0f tx/s]" % ( data['height'], blockQ.qsize(), 
         len(data['tx']), datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime, len(data['tx'])/blktime)
+        
+    blksecs.append(blktime)
+    if len(blksecs) > 18:
+        blksecs.pop()
+    avg = 0
+    for t in blksecs: avg += t
+    cur.execute("replace into info (class,`key`,value) value('info','avg-block-sync',%s);", ("%2.1f"%(avg/len(blksecs)), ))
 
 def options(cfg):
     try:                                
