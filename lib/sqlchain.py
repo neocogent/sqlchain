@@ -317,5 +317,6 @@ def drop2user(cfg):
         os.setgid(uid)
         os.setuid(uid)
         os.umask(077) 
+
             
 

@@ -9,9 +9,11 @@
 #  slow systems) and bitcoind is basically unresponsive via rpc.
 #
 #  Can run standalone to build blkdat table, or be called by sqlchaind
-#  with less verbose logging info.
+#  with less verbose logging info. 
 #
-import sys, signal, getopt, socket, threading
+#  Trails the main chain tip by 60 blocks to avoid reorg problems 
+#
+import os, sys, signal, getopt, socket, threading
 import MySQLdb as db
 
 from bitcoinrpc.authproxy import AuthServiceProxy
@@ -49,7 +51,21 @@ def BlkDatHandler(cfg, done):
         for _ in range(12):
             if not done.isSet():
                 sleep(5)
-        
+
+def chkPruning(cfg, filenum):
+    blockpath = cfg['blkdat'] + "/blocks/blk%05d.dat"
+    if filenum > 0 and not os.path.isfile(blockpath % filenum-1):
+        rpcGate(cfg['rpc'], 'pause')
+    elif not os.path.isfile(blockpath % filenum+1):
+        rpcGate(cfg['rpc'], 'resume')
+
+def rpcGate(rpc, cmd):
+    host = rpc.split('@')[1].split(':')[0]
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((host, 8338))
+    s.send(cmd+"\n")
+    s.close()
+                
 def findBlocks(cur, blockpath):
     cur.execute("select max(filenum) from blkdat;") # find any previous state
     row = cur.fetchone()
@@ -117,11 +133,11 @@ def getLastBlock(cfg):
             rpc = AuthServiceProxy(cfg['rpc'], timeout=120)
             if blk == 0:
                 blkinfo = rpc.getblockchaininfo()
-                blk = blkinfo['blocks'] - 6
-            blkhash = rpc.getblockhash(blk) # trailing by 6 to avoid orphans
+                blk = blkinfo['blocks'] - 60
+            blkhash = rpc.getblockhash(blk) # trailing by 60 to avoid reorg problems
             return blk,blkhash
         except Exception, e:
-            log( e + ' trying again' )
+            log( 'Blkdat rpc ' + str(e) + ' trying again' )
             sleep(5) 
     return 0,''
 
@@ -175,13 +191,12 @@ if __name__ == '__main__':
     verbose = True
     signal.signal(signal.SIGINT, sigterm_handler)
     
-    blockpath = cfg['path'] + "/blocks/blk%05d.dat"
-    try:
-        open(blockpath % 0, 'rb')
-    except IOError:
+    
+    if not os.path.isdir(cfg['path']):
         log("Bad path to bitcoin directory: %s\n" % cfg['path'])
         usage()
-    log( 'Using: '+blockpath )
+    log( 'Using: '+cfg['path'] )
+    blockpath = cfg['path'] + "/blocks/blk%05d.dat"
         
     cur = initdb(cfg)
   

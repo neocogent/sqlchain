@@ -32,8 +32,6 @@ def getBlocks(blk):
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     while not done.isSet():
         blkinfo = rpc.getblockchaininfo()
-        if 'pruned' in blkinfo and blkinfo['pruned'] and (blk - blkinfo['pruneheight']) < cfg['prunegap']: 
-            rpc.stop() # if pruning node, prevent it pruning what we still need
         if blk > blkinfo['blocks']:
             checkMemPool(cur, rpc)
             time.sleep(10)
@@ -52,7 +50,7 @@ def getBlocks(blk):
     return blk - startblk
 
 def getBlocksDirect(cur, blk):
-    from lib.blkdat import BlkDatHandler
+    from lib.blkdat import BlkDatHandler, chkPruning
     blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done))
     blkscan.start()
     log("Using blkdat mode: %s" % cfg['blkdat'])
@@ -64,6 +62,7 @@ def getBlocksDirect(cur, blk):
         row = cur.fetchone()
         if row:
             filenum,pos = row
+            chkPruning(cfg, filenum)
             started = time.time()
             with open(cfg['blkdat'] + "/blocks/blk%05d.dat" % filenum, 'rb') as fd:
                 fd.seek(pos)
