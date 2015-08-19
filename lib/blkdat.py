@@ -8,19 +8,10 @@
 #  want to sync sqlchain while bitcoind is still syncing (to save time on 
 #  slow systems) and bitcoind is basically unresponsive via rpc.
 #
-#  How to use with sqlchaind:
+#  Can run standalone to build blkdat table, or be called by sqlchaind
+#  with less verbose logging info.
 #
-#  Edit cfg var or use cmd options. Run: ./blkdat -p /path/to/bitcoin
-#  It will scan blocks from blk00000.dat up to last available and add 
-#  db rows for each block. Then it will get the last block hash and scan
-#  backwards down to genesis (0) block linking them into "best chain".
-#
-#  When it has completed that it will monitor any new blocks added and keep the 
-#  index updated. At this point you can start ./sqlchaind --debug -f /path/to/bitcoin
-#  and it will use direct file mode to build the sql db. It will continue from where
-#  it left off and will wait on blkdat as it updates.
-#
-import sys, signal, getopt, socket
+import sys, signal, getopt, socket, threading
 import MySQLdb as db
 
 from bitcoinrpc.authproxy import AuthServiceProxy
@@ -28,12 +19,12 @@ from struct import pack, unpack, unpack_from
 from time import sleep
 from hashlib import sha256
 
-from lib.sqlchain import *
+from sqlchain import *
 
 version = '0.1.0'
-cfg = { 'path':'.bitcoin', 'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
-        
-blockpath = "/blocks/blk%05d.dat"
+verbose,done = False,False
+
+cfg = { 'path':'.bitcoin', 'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' }      
 
 sqlmk='''
 CREATE TABLE `blkdat` (
@@ -46,14 +37,27 @@ CREATE TABLE `blkdat` (
   KEY `id` (`id`),
   KEY `hash` (`hash`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;'''
-
-def findBlocks():
+   
+def BlkDatHandler(cfg, done):
+    cur = initdb(cfg)
+    blockpath = cfg['blkdat'] + "/blocks/blk%05d.dat"
+    while not done.isSet():
+        lastpos = findBlocks(cur, blockpath)
+        blk,blkhash = getLastBlock(cfg)
+        log("Blkdat at %05d:%d > %d" % (lastpos+(blk,)) )
+        linkMainChain(cur, blk, blkhash)
+        for _ in range(12):
+            if not done.isSet():
+                sleep(5)
+        
+def findBlocks(cur, blockpath):
     cur.execute("select max(filenum) from blkdat;") # find any previous state
     row = cur.fetchone()
     filenum = row[0] if row else 0
     cur.execute("select max(filepos) from blkdat where filenum=%s;", (filenum,))
     row = cur.fetchone()
     startpos = pos = row[0] if row else 0
+    lastfound = 0,0
 
     while not done:
         try:
@@ -72,8 +76,9 @@ def findBlocks():
                     buf = fd.read(80)
                     blkhash = sha256(sha256(buf).digest()).digest()
                     prevhash = buf[4:36]
+                    lastfound = filenum,pos
                     if verbose:
-                        print "%05d:%d" % (filenum,pos), blkhash[::-1].encode('hex')[:32], prevhash[::-1].encode('hex')[:32]
+                        log("%05d:%d %s %s" % (filenum, pos, blkhash[::-1].encode('hex')[:32], prevhash[::-1].encode('hex')[:32]) )
                     cur.execute("insert ignore into blkdat (id,hash,prevhash,filenum,filepos) values(-1,%s,%s,%s,%s);", (blkhash,prevhash,filenum,pos))
                     pos += blksize
                     startpos = pos
@@ -81,22 +86,20 @@ def findBlocks():
                 filenum += 1
                 pos = 0
         except IOError:
-            break
+            return lastfound
 
-
-def linkMainChain(blk, blkhash):
-    global filenum
+def linkMainChain(cur, blk, blkhash):
     blkhash = blkhash.decode('hex')[::-1]
     while not done:
         if verbose:
-            print "%d - %s" % (blk, blkhash[::-1].encode('hex'))
+            log("%d - %s" % (blk, blkhash[::-1].encode('hex')) )
         cur.execute("select id from blkdat where id=%s and hash=%s limit 1;", (blk, blkhash))
         row = cur.fetchone()
         if row:
             break
         cur.execute("update blkdat set id=%s where hash=%s;", (blk, blkhash))
         if cur.rowcount < 1:
-            print "Cannot update %d! Rewinding blkdat." % blk
+            log("Cannot update %d! Rewinding blkdat." % blk)
             cur.execute("delete from blkdat where id >= %s;", (blk,)) 
             break
         cur.execute("select prevhash from blkdat where id=%s limit 1;", (blk,))
@@ -107,18 +110,28 @@ def linkMainChain(blk, blkhash):
         if blk < 0:
             break
             
-def getLastBlock():
+def getLastBlock(cfg):
+    blk = 0
     while not done:
-        try:
+        try: # this tries to talk to bitcoind despite it being comatose
             rpc = AuthServiceProxy(cfg['rpc'], timeout=120)
-            blkinfo = rpc.getblockchaininfo()
-            blk = blkinfo['blocks'] - 6
-            blkhash = rpc.getblockhash(blk) # get block trailing by 6 to avoid orphans
+            if blk == 0:
+                blkinfo = rpc.getblockchaininfo()
+                blk = blkinfo['blocks'] - 6
+            blkhash = rpc.getblockhash(blk) # trailing by 6 to avoid orphans
             return blk,blkhash
         except Exception, e:
-            print e
+            log( e + ' trying again' )
             sleep(5) 
     return 0,''
+
+def initdb(cfg):
+    sql = db.connect(*cfg['db'].split(':'))
+    cur = sql.cursor()
+    cur.execute("select count(1) from information_schema.tables where table_name='blkdat';")
+    if not cur.fetchone():
+        cur.execute(sqlmk) # create table if not existing
+    return cur
 
 def options(cfg):
     try:                                
@@ -158,41 +171,35 @@ if __name__ == '__main__':
     
     loadcfg(cfg)
     options(cfg)
-        
-    done = False
-    verbose = True
     
+    verbose = True
     signal.signal(signal.SIGINT, sigterm_handler)
     
-    blockpath = cfg['path'] + blockpath
+    blockpath = cfg['path'] + "/blocks/blk%05d.dat"
     try:
         open(blockpath % 0, 'rb')
     except IOError:
-        print "Bad path to bitcoin directory: %s\n" % cfg['path']
+        log("Bad path to bitcoin directory: %s\n" % cfg['path'])
         usage()
-    print 'Using:', blockpath
+    log( 'Using: '+blockpath )
         
-    sql = db.connect(*cfg['db'].split(':'))
-    cur = sql.cursor()
-    cur.execute("select count(1) from information_schema.tables where table_name='blkdat';")
-    if not cur.fetchone():
-        cur.execute(sqlmk) # create table if not existing
+    cur = initdb(cfg)
   
     while not done:
-        print "Finding new blocks"
-        findBlocks()
+        log( "Finding new blocks" )
+        findBlocks(cur, blockpath)
         
-        print "Getting last block from rpc"
-        blk,blkhash = getLastBlock()
+        log( "Getting last block from rpc" )
+        blk,blkhash = getLastBlock(cfg)
             
-        print "Linking main chain"
-        linkMainChain(blk, blkhash)
+        log( "Linking main chain" )
+        linkMainChain(cur, blk, blkhash)
         
         if not done:
-            print "Waiting"
+            log( "Waiting" )
             sleep(60)
     
-    print "Shutting down."
+    log( "Shutting down." )
 
 
 

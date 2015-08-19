@@ -50,23 +50,22 @@ def getBlocks(blk):
             blockQ.put(data)
             blk += 1
     return blk - startblk
-    
+
 def getBlocksDirect(cur, blk):
-    cur.execute("select 1 from blkdat limit 1;")
-    if not cur.fetchone():
-        print "You must run blkdat first to index blk*.dat files. Aborting direct mode."
-        return
-    logts("Using direct file access to catch up")
+    from lib.blkdat import BlkDatHandler
+    blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done))
+    blkscan.start()
+    log("Using blkdat mode: %s" % cfg['blkdat'])
     while not done.isSet():
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(5)
-            continue
+            continue           
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
         row = cur.fetchone()
         if row:
             filenum,pos = row
             started = time.time()
-            with open(cfg['blkdat']+'/blocks/blk%05d.dat' % filenum, 'rb') as fd:
+            with open(cfg['blkdat'] + "/blocks/blk%05d.dat" % filenum, 'rb') as fd:
                 fd.seek(pos)
                 magic,blksize = unpack('<II', fd.read(8))
                 if magic != 0xD9B4BEF9:
@@ -79,8 +78,10 @@ def getBlocksDirect(cur, blk):
                 blk += 1
         else:
             time.sleep(5)
+    log("Waiting for blkscan to finish")
+    blkscan.join()
     return blk
-        
+            
 def BlockHandler():
     global done
     sql = db.connect(*cfg['db'].split(':'))
@@ -128,7 +129,6 @@ def decodeBlock(data):
     block['coinbase'] = block['tx'][0]['vin'][0]['coinbase']
     if block['version'] > 1 and block['height'] >= 227836 and block['coinbase'][0] == '\x03':
         block['height'] = unpack('<I', block['coinbase'][1:4]+'\0')[0]
-        #print 'coinbase height', block['height'], block['tx'][0]['vin'][0]['coinbase'][1:4].encode('hex')
     return block
 
 def decodeTx(data):
@@ -250,8 +250,8 @@ def insertBlock(cur, data):
     puthdr(data['height'], data['hdr'])
     
     blktime = time.time() - blkstart
-    print "block %d [ Q:%d %4d txs - %s - %3.0fms %2.1fs %3.0f tx/s]" % ( data['height'], blockQ.qsize(), 
-        len(data['tx']), datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime, len(data['tx'])/blktime)
+    log("Block %d [ Q:%d %4d txs - %s - %3.0fms %2.1fs %3.0f tx/s]" % ( data['height'], blockQ.qsize(), 
+        len(data['tx']), datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime, len(data['tx'])/blktime) )
         
     blksecs.append(blktime)
     if len(blksecs) > 18: # ~3 hour moving avg
@@ -328,14 +328,14 @@ def run():
             blksdone = getBlocks(cfg['block'] if 'block' in cfg else 0)
             break
         except socket.error:
-            print "Cannot connect to rpc"
+            log("Cannot connect to rpc")
             time.sleep(5) 
             pass  
         
     done.set()
     blkwrk.join()
     if blksdone:
-        print "Session %.2f blks/s" % float(blksdone / (time.time() - workstart))
+        log("Session %.2f blks/s" % float(blksdone / (time.time() - workstart)) )
     
 if __name__ == '__main__':
 

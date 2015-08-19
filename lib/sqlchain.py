@@ -1,11 +1,13 @@
 #
 # Common sqlchain support utils 
 #
-import os, sys, hashlib, json
+import os, sys, hashlib, json, threading
 
 from struct import pack, unpack, unpack_from
 from datetime import datetime
 from hashlib import sha256
+
+tidylog = threading.Lock()
 
 # cannot change these without first updating existing table schema and data
 # these are set to reasonable values for now - to increase, alter trxs.block_id or outputs.id column widths
@@ -297,8 +299,16 @@ def savecfg(cfg):
         logts('Cannot save cfg file')
 
 def logts(msg):
+    tidylog.acquire()
     print datetime.now().strftime('%d-%m-%Y %H:%M:%S'), msg
     sys.stdout.flush() 
+    tidylog.release()
+    
+def log(msg):
+    tidylog.acquire()
+    print msg
+    sys.stdout.flush()
+    tidylog.release()
 
 def drop2user(cfg):
     if ('user' in cfg) and (cfg['user'] != '') and (os.getuid() == 0):
