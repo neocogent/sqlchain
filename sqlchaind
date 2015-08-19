@@ -5,7 +5,7 @@
 import os, sys, socket, getopt, time, signal, threading
 import MySQLdb as db
 
-from Queue import Queue
+from Queue import Queue, Empty
 from datetime import datetime
 from bitcoinrpc.authproxy import AuthServiceProxy
 from struct import pack, unpack, unpack_from
@@ -59,10 +59,12 @@ def getBlocksDirect(cur, blk):
     logts("Using direct file access to catch up")
     while not done.isSet():
         if blockQ.qsize() >= cfg['queue']:
-            time.sleep(10)
+            time.sleep(5)
             continue
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
-        for filenum,pos in cur:
+        row = cur.fetchone()
+        if row:
+            filenum,pos = row
             started = time.time()
             with open(cfg['blkdat']+'/blocks/blk%05d.dat' % filenum, 'rb') as fd:
                 fd.seek(pos)
@@ -75,6 +77,8 @@ def getBlocksDirect(cur, blk):
                 data['rpc'] = time.time()-started
                 blockQ.put(data)
                 blk += 1
+        else:
+            time.sleep(5)
     return blk
         
 def BlockHandler():
@@ -82,7 +86,8 @@ def BlockHandler():
     sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
     while not done.isSet():
-        insertBlock(cur, blockQ.get())
+        try: insertBlock(cur, blockQ.get(True, 5))
+        except Empty: pass
 
 def checkMemPool(cur, rpc):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")

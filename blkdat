@@ -10,7 +10,7 @@
 #
 #  How to use with sqlchaind:
 #
-#  Edit cfg var to suit. Run: ./blkdat -p /path/to/bitcoin
+#  Edit cfg var or use cmd options. Run: ./blkdat -p /path/to/bitcoin
 #  It will scan blocks from blk00000.dat up to last available and add 
 #  db rows for each block. Then it will get the last block hash and scan
 #  backwards down to genesis (0) block linking them into "best chain".
@@ -110,11 +110,13 @@ def linkMainChain(blk, blkhash):
 def getLastBlock():
     while not done:
         try:
+            rpc = AuthServiceProxy(cfg['rpc'], timeout=120)
             blkinfo = rpc.getblockchaininfo()
             blk = blkinfo['blocks'] - 6
             blkhash = rpc.getblockhash(blk) # get block trailing by 6 to avoid orphans
             return blk,blkhash
-        except:
+        except Exception, e:
+            print e
             sleep(5) 
     return 0,''
 
@@ -162,7 +164,6 @@ if __name__ == '__main__':
     
     signal.signal(signal.SIGINT, sigterm_handler)
     
-    rpc = AuthServiceProxy(cfg['rpc'], timeout=120)
     blockpath = cfg['path'] + blockpath
     try:
         open(blockpath % 0, 'rb')
