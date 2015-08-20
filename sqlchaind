@@ -62,7 +62,7 @@ def getBlocksDirect(cur, blk):
         row = cur.fetchone()
         if row:
             filenum,pos = row
-            chkPruning(cfg, filenum)
+            chkPruning(cfg, int(filenum))
             started = time.time()
             with open(cfg['blkdat'] + "/blocks/blk%05d.dat" % filenum, 'rb') as fd:
                 fd.seek(pos)

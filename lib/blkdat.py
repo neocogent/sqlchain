@@ -54,9 +54,9 @@ def BlkDatHandler(cfg, done):
 
 def chkPruning(cfg, filenum):
     blockpath = cfg['blkdat'] + "/blocks/blk%05d.dat"
-    if filenum > 0 and not os.path.isfile(blockpath % filenum-1):
+    if filenum > 0 and not os.path.isfile(blockpath % (filenum-1,)):
         rpcGate(cfg['rpc'], 'pause')
-    elif not os.path.isfile(blockpath % filenum+1):
+    elif not os.path.isfile(blockpath % (filenum+1,)):
         rpcGate(cfg['rpc'], 'resume')
 
 def rpcGate(rpc, cmd):
@@ -116,7 +116,7 @@ def linkMainChain(cur, blk, blkhash):
         cur.execute("update blkdat set id=%s where hash=%s;", (blk, blkhash))
         if cur.rowcount < 1:
             log("Cannot update %d! Rewinding blkdat." % blk)
-            cur.execute("delete from blkdat where id >= %s;", (blk,)) 
+            cur.execute("delete from blkdat where filenum >= (select filenum from blkdat where prevhash=%s);", (blkhash,)) 
             break
         cur.execute("select prevhash from blkdat where id=%s limit 1;", (blk,))
         row = cur.fetchone()
