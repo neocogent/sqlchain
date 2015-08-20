@@ -20,7 +20,7 @@ The API layers are using **gevent** to support fast, low overhead, highly concur
 
 sqlchain-api now uses the gevent.websocket module to provide a WSGI based server. In theory, thousands of connections could use either the websocket, or more simply, the long polling *sync* api. Yay, C10k!
 
-I've now added the **blkdat** module that allows syncing directly from block files. This allows sync to sql even as bitcoind syncs itself, saving a lot of time on low-end systems. This module includes support for "throttling" a pruning node. It can pause/resume as needed to ensure data isn;t pruned before being sync'd.
+I've now added the **blkdat** module that allows syncing directly from block files. This allows syncing to sql even as bitcoind syncs itself, saving a lot of time on low-end systems. This module includes support for "throttling" a pruning node. It can pause/resume as needed to ensure data isn't pruned before being sync'd to mysql.
 
 Testing and development is under way to run sqlChain (optionally) on top of a pruning bitcoind node, providing full querying with much lower storage demands compared to other API stacks. I expect that a full Electrum server can be run in ~28 GB, and sync each block in 5-10 seconds. The blockchain is currently close to 51GB and the regular Electrum server adds another 20GB - so this is quite a savings for users who want to run on a VPS where SSD space costs money every month. Also, with sqlChain you do not need to trust a utxo download - it is built from bitcoind (even from a pruning node).
 
