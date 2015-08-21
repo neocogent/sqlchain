@@ -368,6 +368,7 @@ def apiRPC(cmd, arg):
         return rpc.sendrawtransaction(arg)
     
 def apiSync(cur, sync_req=0, timeout=30):
+    from bci import bciTxWS
     if sync_req >= sqc.sync_id:
         with sqc.sync:
             sqc.sync.wait(timeout) # long polling support for sync connections
@@ -378,8 +379,8 @@ def apiSync(cur, sync_req=0, timeout=30):
     else:
         utxs = []
         cur.execute("select hash from mempool m, trxs t where m.sync_id > %s and t.id=m.id;", (sync_req,))
-        for tx in cur:
-            utxs.append(lib.bci.bciTxWS(cur, tx))
+        for txhash, in cur:
+            utxs.append(bciTxWS(cur, txhash[::-1].encode('hex')))
     cur.execute("select min(block_id) from orphans where sync_id > %s;", (sync_req if sync_req > 0 else sqc.sync_id,))
     orphan = cur.fetchone()[0]
     return { 'block':sqc.cfg['block'] if orphan == None else orphan, 'orphan':orphan != None, 'txs':utxs, 'sync_id':sqc.sync_id }

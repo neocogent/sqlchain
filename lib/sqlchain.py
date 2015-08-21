@@ -195,7 +195,7 @@ def findTx(cur, txhash, mkNew=False, limit=32):
                 #    print '#', # collision
                 return tx_id
             return None
-        if str(row[0][:32]) == txhash:
+        if str(row[0]) == str(txhash):
             return tx_id
         if tx_id > limit_id:
             return None

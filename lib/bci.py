@@ -130,11 +130,11 @@ def bciTxWS(cur, txhash): # reduced data for websocket subs
 def bciTx(cur, txhash):
     data = { 'hash':txhash }
     txh = txhash.decode('hex')[::-1]
-    cur.execute("select id,txdata,block_id,ins,txsize from trxs where id>=%s and hash=%s limit 1;", (txh2id(txh), txh))
+    cur.execute("select id,txdata,block_id/{0},ins,txsize from trxs where id>=%s and hash=%s limit 1;".format(MAX_TX_BLK), (txh2id(txh), txh))
     for txid,blob,blkid,ins,txsize in cur:
-        hdr = getBlobHdr(blkid)
+        hdr = getBlobHdr(int(blkid))
         data['tx_index'] = int(txid)
-        data['block_height'] = int(blkid)/MAX_TX_BLK
+        data['block_height'] = int(blkid)
         data['ver'],data['lock_time'] = hdr[4:6]
         data['inputs'],data['vin_sz'] = bciInputs(cur, blkid, int(blob), ins)
         data['out'],data['vout_sz'] = bciOutputs(cur, int(txid), int(blob))

@@ -52,7 +52,7 @@ def BlkDatHandler(cfg, done):
             if not done.isSet():
                 sleep(5)
 
-def chkPruning(cfg, filenum):
+def chkPruning(cfg, filenum): # probably a temp solution until rpc provides better control over pruning
     blockpath = cfg['blkdat'] + "/blocks/blk%05d.dat"
     if filenum > 0 and not os.path.isfile(blockpath % (filenum-1,)):
         rpcGate(cfg['rpc'], 'pause')

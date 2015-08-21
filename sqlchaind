@@ -14,8 +14,7 @@ from hashlib import sha256
 from lib.sqlchain import *
 
 version = '0.1.0'
-cfg = { 'log':sys.argv[0]+'.log', 'prunegap':10, 'queue':8, 'no-sigs':False,
-        'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' } 
+cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'' } 
 blksecs = []
 memPool = set()
 
@@ -28,8 +27,9 @@ def getBlocks(blk):
         cur.execute('select ifnull(max(id), -1) from blocks')
         blk = int(cur.fetchone()[0] + 1)
     startblk = blk
-    if cfg['blkdat']:
+    if 'blkdat' in cfg:
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
+    logts("Using rpc mode. Monitoring blocks / mempool.")
     while not done.isSet():
         blkinfo = rpc.getblockchaininfo()
         if blk > blkinfo['blocks']:
@@ -53,7 +53,7 @@ def getBlocksDirect(cur, blk):
     from lib.blkdat import BlkDatHandler, chkPruning
     blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done))
     blkscan.start()
-    log("Using blkdat mode: %s" % cfg['blkdat'])
+    logts("Using blkdat mode: %s" % cfg['blkdat'])
     while not done.isSet():
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(5)
@@ -96,10 +96,10 @@ def checkMemPool(cur, rpc):
         cur.execute("delete from mempool;")
     trxs = rpc.getrawmempool()
     for tx in trxs:
-        txx = tx.decode('hex')[:8] # uses 1/4 space, only for detecting changes in mempool
+        txx = tx.decode('hex')[::-1][:8] # uses 1/4 space, only for detecting changes in mempool
         if txx not in memPool:
             memPool.add(txx)
-            insertTxMemPool(cur, rpc.getrawtransaction(tx,1), sync_id+1)
+            insertTxMemPool(cur, decodeTx(rpc.getrawtransaction(tx,0).decode('hex')), sync_id+1)
 
 def addOrphan(cur, height):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
@@ -174,7 +174,7 @@ def checkReOrg(cur, data):
     height += 1
     if height < data['height']:
         cur.execute("update trxs set block_id=-1 where block_id >= %s;", (height*MAX_TX_BLK,)) # set bad chain txs uncfmd
-        logts("block %d ReOrg, %d orphan(s), %d txs affected" % (height, data['height']-height, cur.rowcount))
+        logts("Block %d *** ReOrg: %d orphan(s), %d txs affected" % (height, data['height']-height, cur.rowcount))
         while height < data['height']:
             blkhash = rpc.getblockhash(height)
             if blkhash:
@@ -192,8 +192,8 @@ def checkReOrg(cur, data):
        
 def insertTxMemPool(cur, tx, sync_id):
     tx_id = findTx(cur, tx['txid'], mkNew=True)
-    if tx_id == None:
-        ins,outs = InsertTx(cur, tx, tx_id, -1) # -1 means trx has no block
+    if tx_id != None:
+        ins,outs = insertTx(cur, tx, tx_id, -1) # -1 means trx has no block
         cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
         cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
     cur.execute("insert ignore into mempool (id,sync_id) values(%s,%s);", (tx_id, sync_id))
@@ -236,9 +236,12 @@ def insertBlock(cur, data):
     ins,outs = [],[]
     for n,tx in enumerate(data['tx']):
         tx_id = findTx(cur, tx['txid'], mkNew=True)
-        if tx_id in memPool:
-            memPool.remove(tx['txid'].decode('hex')[:8])
+        if tx['txid'][:8] in memPool:
+            memPool.remove(tx['txid'][:8])
             cur.execute("delete from mempool where id=%s limit 1;", (tx_id,))
+        cur.execute("update trxs set block_id=%s where id=%s limit 1;", (blk_id + n, tx_id))
+        if cur.rowcount > 0:
+            continue
         xi,xo = insertTx(cur, tx, tx_id, blk_id + n)
         ins.extend(xi)
         outs.extend(xo)
@@ -251,7 +254,7 @@ def insertBlock(cur, data):
     blktime = time.time() - blkstart
     log("Block %d [ Q:%d %4d txs - %s - %3.0fms %2.1fs %3.0f tx/s]" % ( data['height'], blockQ.qsize(), 
         len(data['tx']), datetime.fromtimestamp(data['time']).strftime('%d-%m-%Y'), data['rpc']*1000, blktime, len(data['tx'])/blktime) )
-        
+
     blksecs.append(blktime)
     if len(blksecs) > 18: # ~3 hour moving avg
         del blksecs[0]
