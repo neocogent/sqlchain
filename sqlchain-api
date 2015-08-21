@@ -18,7 +18,7 @@ __builtins__.sqc = dotdict()  # container for super globals
 
 version = '0.1.0'
 sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0,
-            'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'dbinfo-ts':datetime.now().strftime('%s'), 'dbinfo':180 }
+            'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'dbinfo-ts':datetime.now().strftime('%s'), 'dbinfo':-1 }
 
 sqc.sync = threading.Condition(); 
 sqc.sync_id = 0 
@@ -138,6 +138,7 @@ def mkDBInfo():
         cur.execute("select count(*) from outputs where tx_id is null;")
         cur.execute("replace into info (class,`key`,value) values('db','outputs:unspent',%s);", (cur.fetchone()[0], ))
         cur.execute("replace into info (class,`key`,value) values('db','all:updated',now());")
+        logts("DB info update complete")
 
 def options():
     try:                         

@@ -224,14 +224,15 @@ def bits2diff(bits):
     return (0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))))
     
 def getBlobHdr(pos):
-    buf = readBlob(int(pos), 13)
+    buf = readBlob(int(pos), 13) 
     bits = [ (1,'B',0), (1,'B',0), (2,'H',0), (4,'I',1), (4,'I',0) ]  # ins,outs,size,version,locktime
     out,mask = [1],0x80 
     for sz,typ,default in bits:
-        v, = unpack('<'+typ, buf[out[0]:out[0]+sz])
-        out.append(v if ord(buf[0])&mask else default)
         if ord(buf[0])&mask:
+            out.append(unpack('<'+typ, buf[out[0]:out[0]+sz])[0])
             out[0] += sz
+        else:
+            out.append(default)
         mask >>= 1
     out.append( ord(buf[0])&0x04 == 0 )  # stdSeq
     out.append( ord(buf[0])&0x02 != 0 )  # nosigs
