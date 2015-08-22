@@ -5,8 +5,8 @@ import urlparse, cgi, json
 
 from bitcoinrpc.authproxy import AuthServiceProxy
 from string import hexdigits
-from sqlchain import *
 
+from util import *
 from insight import apiHeader, apiTx
 from rpc import do_RPC
 

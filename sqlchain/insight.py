@@ -6,7 +6,7 @@ import urlparse, cgi, json
 from bitcoinrpc.authproxy import AuthServiceProxy
 from gevent import sleep
 from string import hexdigits
-from sqlchain import *
+from util import *
 
 #main entry point for api calls
 def do_API(env, send_resp):

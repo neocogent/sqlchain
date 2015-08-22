@@ -21,12 +21,12 @@ from struct import pack, unpack, unpack_from
 from time import sleep
 from hashlib import sha256
 
-from sqlchain import *
+from util import *
 
 version = '0.1.0'
 verbose,done = False,False
 
-cfg = { 'path':'.bitcoin', 'db':'localhost:btc:test623btc:bitcoin', 'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332' }      
+cfg = { 'path':'.bitcoin', 'db':'', 'rpc':'' }      
 
 sqlmk='''
 CREATE TABLE `blkdat` (
@@ -188,9 +188,15 @@ if __name__ == '__main__':
     loadcfg(cfg)
     options(cfg)
     
+    if cfg['db'] == '':
+        print "No db connection provided."
+        usage()
+    if cfg['rpc'] == '':
+        print "No rpc connection provided."
+        usage()
+    
     verbose = True
     signal.signal(signal.SIGINT, sigterm_handler)
-    
     
     if not os.path.isdir(cfg['path']):
         log("Bad path to bitcoin directory: %s\n" % cfg['path'])

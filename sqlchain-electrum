@@ -10,9 +10,9 @@ from gevent.server import StreamServer
 from gevent.queue import Queue
 from urllib2 import urlopen, URLError
 
-from lib.sqlchain import *
+from sqlchain.util import *
 
-cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api' }
+cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api', 'banner':'docs/electrum.banner' }
 
 srvinfo = { 'version':"1.0", 'banner':'', 'block':0, 'header':{} }
 subs = { 'numblocks':{}, 'headers':{}, 'address':{}, '_ip_':{} }
@@ -79,7 +79,7 @@ def pubSubs(sub, msg=None, addrs=[]):
     for addr in addrs:
         fps = getSubs(sub, addr)
         if len(fps) > 0:
-            data = apicall('/history/'+v+'/status')
+            data = apicall('/history/'+addr+'/status')
             for fp in fps:
                 respQ.put((fp, None, data)) 
     if msg:
@@ -173,8 +173,8 @@ def getAddrs(tx):
     
 def options(cfg):
     try:                                
-        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:a:u:", 
-            ["help", "version", "debug", "db=", "log=", "listen=", "www=", "user=", "defaults" ])
+        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:a:u:b:", 
+            ["help", "version", "debug", "db=", "log=", "listen=", "www=", "user=", "banner=", "defaults" ])
     except getopt.GetoptError:
         usage()
     for opt,arg in opts:
@@ -194,6 +194,8 @@ def options(cfg):
             cfg['api'] = arg
         elif opt in ("-u", "--user"):
             cfg['user'] = arg
+        elif opt in ("-b", "--banner"):
+            cfg['banner'] = arg
         elif opt in ("--defaults"):
             savecfg(cfg)
             sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
@@ -206,7 +208,7 @@ def usage():
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log 
 \nThese options get saved in cfg file as defaults.
 -p,--listen\tSet host:port for Electrum server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
--a,--api\tSet host:port for API connection\n-l,--log\tSet log file path""".format(sys.argv[0])
+-b,--banner\tSet file path for banner text\n-a,--api\tSet host:port for API connection\n-l,--log\tSet log file path""".format(sys.argv[0])
     sys.exit(2) 
 
 def apicall(url, post=None):
@@ -227,7 +229,7 @@ def run():
     global reqQ,respQ
     from gevent import monkey; monkey.patch_socket()
 
-    with open('electrum.banner') as f:
+    with open(cfg['banner']) as f:
         srvinfo['banner'] = f.read()
     
     hdr = apicall('/block-index/latest/electrum')

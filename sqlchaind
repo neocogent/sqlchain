@@ -11,7 +11,7 @@ from bitcoinrpc.authproxy import AuthServiceProxy
 from struct import pack, unpack, unpack_from
 from hashlib import sha256
 
-from lib.sqlchain import *
+from sqlchain.util import *
 
 version = '0.1.0'
 cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'' } 
@@ -50,7 +50,7 @@ def getBlocks(blk):
     return blk - startblk
 
 def getBlocksDirect(cur, blk):
-    from lib.blkdat import BlkDatHandler, chkPruning
+    from sqlchain.blkdat import BlkDatHandler, chkPruning
     blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done))
     blkscan.start()
     logts("Using blkdat mode: %s" % cfg['blkdat'])

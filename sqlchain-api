@@ -11,8 +11,8 @@ from string import hexdigits
 from hashlib import sha256
 from struct import pack, unpack, unpack_from
 
-from lib.dbpool import *
-from lib.sqlchain import *
+from sqlchain.dbpool import *
+from sqlchain.util import *
 
 __builtins__.sqc = dotdict()  # container for super globals 
 
@@ -88,7 +88,7 @@ def syncMonitor():
             txs = []
             cur.execute("select hash from mempool m, trxs t where m.sync_id > %s and t.id=m.id;", (sqc.sync_id,))
             for txhash, in cur:
-                txs.append(lib.bci.bciTxWS(cur, txhash[::-1].encode('hex')))
+                txs.append(sqlchain.bci.bciTxWS(cur, txhash[::-1].encode('hex')))
             if len(txs) > 0:
                 sqc.syncTxs = txs
             cur.execute("select count(*) from orphans where sync_id > %s;", (sqc.sync_id,))
@@ -107,7 +107,7 @@ def do_Sync(block):
     if block != sqc.cfg['block']:
         sqc.cfg['block'] = min(block, sqc.cfg['block']+1)
         with sqc.dbpool.get().cursor() as cur:
-            lastBlk = lib.bci.bciBlockWS(cur, block)
+            lastBlk = sqlchain.bci.bciBlockWS(cur, block)
         for client in server.clients.values():
             if 'blocks_sub' in clients[client]['subs']:
                 client.ws.send(json.dumps({ 'op': 'block', 'x': lastBlk })) 
@@ -126,7 +126,7 @@ def mkDBInfo():
         logts("Updating server db info")
         sqc.cfg['dbinfo-ts'] = datetime.now().strftime('%s')
         savecfg(sqc.cfg)
-        lib.insight.apiStatus(cur, 'db') 
+        sqlchain.insight.apiStatus(cur, 'db') 
         cur.execute("select count(*) from address where id%2=1;")
         cur.execute("replace into info (class,`key`,value) values('db','address:multi-sigs',%s);", (cur.fetchone()[0], ))
         cur.execute("select count(*) from address where  cast(conv(hex(reverse(unhex(substr(sha2(addr,0),1,10)))),16,10) as unsigned) != floor(id/2);")
@@ -216,12 +216,12 @@ if __name__ == '__main__':
     loadcfg(sqc.cfg)
     options()
 
-    import lib.insight, lib.bci, lib.rpc
+    import sqlchain.insight, sqlchain.bci, sqlchain.rpc
     
     APIs = Resource(OrderedDict(( 
-        ('/api', lib.insight.do_API),
-        ('/bci', lib.bci.do_BCI),
-        ('/rpc', lib.rpc.do_RPC),
+        ('/api', sqlchain.insight.do_API),
+        ('/bci', sqlchain.bci.do_BCI),
+        ('/rpc', sqlchain.rpc.do_RPC),
         ('/ws',  BCIWebSocket),
         ('/',    do_Root) ))) # order important
 

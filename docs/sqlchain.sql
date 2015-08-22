@@ -1,4 +1,8 @@
-DROP DATABASE IF EXISTS bitcoin;
+-- create new database during install
+
+-- disabled for safety
+-- DROP DATABASE IF EXISTS bitcoin;
+
 CREATE DATABASE bitcoin;
 USE bitcoin;
 

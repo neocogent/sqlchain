@@ -3,7 +3,7 @@
   ,P"                     "Y,            ,P"                     "Y,
  d'    ,aaaaaaaaaaaaaaa,    `b          d'    ,aaaaaaaaaaaaaaa,    `b
 d'   ,d"            ,aaabaaaa8aaaaaaaaaa8aaaadaaa,            "b,   `b
-I    I              I                            I      ,adba,  I    I
+I    I              I          Electrum          I      ,adba,  I    I
 Y,   `Y,            `aaaaaaaaaaaaaaaaaaaaaaaaaaaa'      I    I,P'   ,P
  Y,   `baaaaaaaaaaaaaaad'   ,P          Y,   `baaaaaaaaaI    Id'   ,P
   `b,                     ,d'            `b,            I    I   ,d'
@@ -15,7 +15,7 @@ Y,   `Y,            `aaaaaaaaaaaaaaaaaaaaaaaaaaaa'      I    I,P'   ,P
   ,P"                     "Y,            ,P"            I    I   "Y,
  d'    ,aaaaaaaaaaaaaaa,    `b          d'    ,aaaaaaaaaI    I,    `b
 d'   ,d"            ,aaabaaaa8aaaaaaaaaa8aaaadaaa,      I    I"b,   `b
-I    I  ,adba,      I                            I      `"YP"'  I    I
+I    I  ,adba,      I          sqlChain          I      `"YP"'  I    I
 Y,   `Y,I    I      `aaaaaaaaaaaaaaaaaaaaaaaaaaaa'            ,P'   ,P
  Y,   `bI    Iaaaaaaaaad'   ,P          Y,   `baaaaaaaaaaaaaaad'   ,P
   `b,   I    I            ,d'            `b,                     ,d'

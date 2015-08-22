@@ -4,7 +4,7 @@
 import urlparse, cgi, json, decimal
 
 from bitcoinrpc.authproxy import AuthServiceProxy
-from sqlchain import *
+from util import *
 
 # encode json btc values as satoshi integer
 class btcEncoder(json.JSONEncoder):
