@@ -1,5 +1,11 @@
 from distutils.core import setup
 
+try:
+   import pypandoc
+   long_description = pypandoc.convert('README.md', 'rst')
+except (IOError, ImportError):
+   long_description = open('README.md').read()
+   
 setup(
     name='sqlchain',
     packages=['sqlchain'],
@@ -24,7 +30,7 @@ setup(
     ],
     keywords='bitcoin sql blockchain api websocket rpc server',
     description='Compact SQL layer for Bitcoin blockchain.',
-    long_description=open('README.md').read(),
+    long_description=long_description,
     scripts=['sqlchaind','sqlchain-api','sqlchain-electrum'],
     install_requires=[
         "gevent >= 1.0.2",
