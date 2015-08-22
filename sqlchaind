@@ -170,7 +170,7 @@ def checkReOrg(cur, data):
         if row and row[0] == height: # rewind until block in good chain
             break
         height -= 1
-        blkhash = rpc.getblockhash(height) 
+        blkhash = rpc.getblockhash(height).decode('hex')[::-1] 
     height += 1
     if height < data['height']:
         cur.execute("update trxs set block_id=-1 where block_id >= %s;", (height*MAX_TX_BLK,)) # set bad chain txs uncfmd
@@ -182,9 +182,9 @@ def checkReOrg(cur, data):
                 if data:
                     for n,tx in enumerate(data['tx']):
                         tx_id = findTx(cur, tx['txid'], mkNew=True)
-                        cur.execute("update trxs set block_id=% where id=%s limit 1;", (height*MAX_TX_BLK+n, tx_id))
+                        cur.execute("update trxs set block_id=%s where id=%s limit 1;", (height*MAX_TX_BLK+n, tx_id))
                         if cur.rowcount < 1:
-                            insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan
+                            insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan block
                     addOrphan(cur, height)
                     cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
                     puthdr(data['height'], data['hdr'])

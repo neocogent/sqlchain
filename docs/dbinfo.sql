@@ -18,4 +18,7 @@ select count(*) from outputs where addr_id=0;
 select count(*) from outputs where tx_id is null;
 
 -- Find missing blocks (gaps) in blkdat sequence.
--- SELECT t1.id-1 FROM blkdat t1 LEFT OUTER JOIN blkdat t2 ON t2.id=t1.id-1 WHERE t2.id IS NULL AND t1.id > 0 ORDER BY t1.id;
+-- select t1.id-1 from blkdat t1 left outer join blkdat t2 on t2.id=t1.id-1 where t2.id is null and t1.id > 0 order by t1.id;
+
+-- Find txs not in mempool but remaining unconfirmed in trxs table - usually rejects or double spend attempts
+-- select id,hex(reverse(hash)) from trxs where block_id=-1 and id not in (select id from mempool);
