@@ -7,6 +7,7 @@ setup(
     author='neoCogent.com',
     author_email='info@neocogent.com',
     url='https://github.com/neocogent/sqlchain',
+    download_url='https://github.com/neocogent/sqlchain/tarball/0.1.0',
     license='MIT',
     classifiers=[
     'Development Status :: 3 - Alpha',
