@@ -46,7 +46,7 @@ h3 {
 .container { width: 800px; }
 
 #overview { width:750px; text-align:justify; }
-#overview legend { margin: 20px 0 10px; }
+legend { margin: 20px 0 10px; }
 #overview ul, #api ul, #extend ol { margin-top:10px; line-height:180%; }
 
 .resp { margin: 5px 40px 5px 20px; }
