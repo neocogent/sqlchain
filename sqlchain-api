@@ -11,12 +11,12 @@ from string import hexdigits
 from hashlib import sha256
 from struct import pack, unpack, unpack_from
 
+from sqlchain.version import *
 from sqlchain.dbpool import *
 from sqlchain.util import *
 
 __builtins__.sqc = dotdict()  # container for super globals 
 
-version = '0.1.0'
 sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0,
             'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'dbinfo-ts':datetime.now().strftime('%s'), 'dbinfo':-1 }
 

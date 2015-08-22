@@ -6,6 +6,8 @@ import urlparse, cgi, json
 from bitcoinrpc.authproxy import AuthServiceProxy
 from gevent import sleep
 from string import hexdigits
+
+from version import *
 from util import *
 
 #main entry point for api calls
@@ -419,6 +421,7 @@ def apiStatus(cur, cls='info', item=None):
     row = cur.fetchone()
     if not row or (datetime.now() - datetime.strptime(row[0],'%Y-%m-%d %H:%M:%S')).total_seconds() > 60:
         cur.execute("replace into info (class,`key`,value) values('info','block',%s);", (sqc.cfg['block'], ))
+        cur.execute("replace into info (class,`key`,value) values('info','version',%s);", (version, ))
         cur.execute("replace into info (class,`key`,value) values('sys','updated',now());")
         if cls == 'db':
             total_bytes = 0

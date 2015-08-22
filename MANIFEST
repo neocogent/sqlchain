@@ -11,3 +11,4 @@ sqlchain/dbpool.py
 sqlchain/insight.py
 sqlchain/rpc.py
 sqlchain/util.py
+sqlchain/version.py

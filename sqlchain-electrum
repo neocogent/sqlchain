@@ -10,11 +10,12 @@ from gevent.server import StreamServer
 from gevent.queue import Queue
 from urllib2 import urlopen, URLError
 
+from sqlchain.version import *
 from sqlchain.util import *
 
 cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api', 'banner':'docs/electrum.banner' }
 
-srvinfo = { 'version':"1.0", 'banner':'', 'block':0, 'header':{} }
+srvinfo = { 'version':version, 'banner':'', 'block':0, 'header':{} }
 subs = { 'numblocks':{}, 'headers':{}, 'address':{}, '_ip_':{} }
 
 def ReqHandler():

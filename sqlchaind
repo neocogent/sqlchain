@@ -11,9 +11,9 @@ from bitcoinrpc.authproxy import AuthServiceProxy
 from struct import pack, unpack, unpack_from
 from hashlib import sha256
 
+from sqlchain.version import *
 from sqlchain.util import *
 
-version = '0.1.0'
 cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'' } 
 blksecs = []
 memPool = set()

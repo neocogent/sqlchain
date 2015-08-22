@@ -1,5 +1,7 @@
 from distutils.core import setup
 
+from sqlchain.version import *
+
 try:
    import pypandoc
    long_description = pypandoc.convert('README.md', 'rst')
@@ -9,7 +11,7 @@ except (IOError, ImportError):
 setup(
     name='sqlchain',
     packages=['sqlchain'],
-    version='0.1.0',
+    version=version,
     author='neoCogent.com',
     author_email='info@neocogent.com',
     url='https://github.com/neocogent/sqlchain',
