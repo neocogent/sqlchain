@@ -4,10 +4,10 @@ from sqlchain.version import *
 
 try:
    import pypandoc
-   long_description = pypandoc.convert('README.md', 'rst')
+   readme_md = pypandoc.convert('README.md', 'rst')
 except (IOError, ImportError):
-   long_description = open('README.md').read()
-   
+   readme_md = open('README.md').read()
+  
 setup(
     name='sqlchain',
     packages=['sqlchain'],
@@ -32,7 +32,7 @@ setup(
     ],
     keywords='bitcoin sql blockchain api websocket rpc server',
     description='Compact SQL layer for Bitcoin blockchain.',
-    long_description=long_description,
+    long_description=readme_md,
     scripts=['sqlchaind','sqlchain-api','sqlchain-electrum'],
     install_requires=[
         "gevent >= 1.0.2",
@@ -41,4 +41,6 @@ setup(
         "MySQL-python >= 1.2.5",
         "python-bitcoinrpc >= 0.1"
     ],
+    data_files=[('/var/lib/data', ['docs/sqlchain.sql'])]
+
 )
