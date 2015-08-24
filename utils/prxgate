@@ -1,0 +1,43 @@
+#!/bin/bash
+# script to start/stop an ssh local socks proxy
+# and accept pause/resume cmds from port 8338 or via cmd args
+# for gating bitcoind add "proxy=127.0.0.1:9050" to bitcoin.conf
+
+port=${2:-22}
+prxgate=`basename "$0"`
+
+if [ -e "$prxgate.pid" ]; then
+    if [ "$1" == "stop" ]; then
+        kill -SIGTERM `cat "$prxgate.pid"`
+        rm "$prxgate.pid"
+        bgrp=`pgrep -o $prxgate`
+        kill -15 -`ps h -o pgid $bgrp`
+    elif [ "$1" == "pause" ]; then
+        kill -SIGTERM `cat "$prxgate.pid"`
+        rm "$prxgate.pid"
+    fi
+    exit 0
+fi
+
+ssh -fqND 9050 -p $port localhost
+echo $(lsof -t -i @localhost:9050 -sTCP:listen) >"$prxgate.pid"
+
+bgrp=`pgrep -o $prxgate`
+if [ "$bgrp" == "$$" ]; then
+    {
+    while true
+    do
+        nc -lp 8338 |  while read  cmd
+        do
+            if [ "$cmd" == "resume" ] && [ ! -e "$prxgate.pid" ]; then
+                ssh -fqND 9050 -p $port localhost
+                echo $(lsof -t -i @localhost:9050 -sTCP:listen) >"$prxgate.pid"
+            elif [ "$cmd" == "pause" ] && [ -e "$prxgate.pid" ]; then
+                kill -SIGTERM `cat "$prxgate.pid"`
+                rm "$prxgate.pid"
+            fi
+        done
+    done
+    } &
+fi
+    
