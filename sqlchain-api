@@ -18,7 +18,8 @@ from sqlchain.util import *
 __builtins__.sqc = dotdict()  # container for super globals 
 
 sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0,
-            'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'dbinfo-ts':datetime.now().strftime('%s'), 'dbinfo':-1 }
+            'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'dbinfo-ts':datetime.now().strftime('%s'), 
+            'dbinfo':-1, 'path':'/var/data' }
 
 sqc.sync = threading.Condition(); 
 sqc.sync_id = 0 
@@ -142,8 +143,8 @@ def mkDBInfo():
 
 def options():
     try:                         
-        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:b:r:u:i:", 
-            ["help", "version", "debug", "db=", "log=", "www=", "listen=", "rpc=", "user=", "dbinfo=", "defaults" ])
+        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:h:p:r:u:i:", 
+            ["help", "version", "debug", "db=", "log=", "www=", "listen=", "path=", "rpc=", "user=", "dbinfo=", "defaults" ])
     except getopt.GetoptError:
         usage()
     for opt,arg in opts:
@@ -156,8 +157,10 @@ def options():
         elif opt in ("-l", "--log"):
             sqc.cfg['log'] = arg
         elif opt in ("-w", "--www"):
-            sqc.cfg['www'] = arg            
-        elif opt in ("-p", "--listen"):
+            sqc.cfg['www'] = arg
+        elif opt in ("-p", "--path"):
+            sqc.cfg['path'] = arg
+        elif opt in ("-h", "--listen"):
             sqc.cfg['listen'] = arg
         elif opt in ("-r", "--rpc"):
             sqc.cfg['rpc'] = arg
@@ -176,7 +179,8 @@ def usage():
 --debug\t\tRun in foreground with logging to console
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
 \nThese options get saved in cfg file as defaults.
--p,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
+-p,--path\tSet path for blob and header data files (/var/data)
+-h,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
 -d,--db  \tSet mysql db connection, "host:user:pwd:dbname"\n-l,--log\tSet log file path
 -r,--rpc\tSet rpc connection, "http://user:pwd@host:port" 
 -i,--dbinfo\tSet db info update period in minutes (default=180, 0=at start, -1=never) """.format(sys.argv[0])

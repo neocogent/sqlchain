@@ -1,0 +1,39 @@
+#!/bin/bash
+
+port=22
+
+if [ -e 'btcGate.pid' ]; then
+    if [ "$1" == "stop" ]; then
+        kill -SIGTERM `cat btcGate.pid`
+        rm btcGate.pid
+        bgrp=`pgrep -o btcGate`
+        kill -15 -`ps h -o pgid $bgrp`
+    elif [ "$1" == "pause" ]; then
+        kill -SIGTERM `cat btcGate.pid`
+        rm btcGate.pid
+    fi
+    exit 0
+fi
+
+ssh -fqND 9050 -p $port localhost
+echo $(lsof -t -i @localhost:9050 -sTCP:listen) >btcGate.pid
+
+bgrp=`pgrep -o btcGate`
+if [ "$bgrp" == "$$" ]; then
+    {
+    while true
+    do
+        nc -lp 8338 |  while read  cmd
+        do
+            if [ "$cmd" == "resume" ] && [ ! -e btcGate.pid ]; then
+                ssh -fqND 9050 -p $port localhost
+                echo $(lsof -t -i @localhost:9050 -sTCP:listen) >btcGate.pid
+            elif [ "$cmd" == "pause" ] && [ -e btcGate.pid ]; then
+                kill -SIGTERM `cat btcGate.pid`
+                rm btcGate.pid
+            fi
+        done
+    done
+    } &
+fi
+    

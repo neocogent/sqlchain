@@ -202,29 +202,29 @@ def findTx(cur, txhash, mkNew=False, limit=32):
         tx_id += 1
 
 # blob and header file support stuff 
-def puthdr(blk, hdr):
-    with open('/var/data/hdrs.dat', 'r+b') as f:
+def puthdr(blk, hdr, path='/var/data'):
+    with open(path+'/hdrs.dat', 'r+b') as f:
         f.seek(blk*80)
         f.write(hdr)
         f.flush()
         
-def gethdr(blk, var=None):
-    with open('/var/data/hdrs.dat', 'rb') as f:
+def gethdr(blk, var=None, path='/var/data'):
+    with open(path+'/hdrs.dat', 'rb') as f:
         f.seek(blk*80)
         data = f.read(80)
     hdr = dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
     return hdr if var == None else hdr[var] if var != 'raw' else data
 
-def getChunk(chunk):
-    with open('/var/data/hdrs.dat', 'rb') as f:
+def getChunk(chunk, path='/var/data'):
+    with open(path+'/hdrs.dat', 'rb') as f:
         f.seek(chunk*80*2016)
         return f.read(80*2016)
         
 def bits2diff(bits):
     return (0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))))
     
-def getBlobHdr(pos):
-    buf = readBlob(int(pos), 13) 
+def getBlobHdr(pos, path='/var/data'):
+    buf = readBlob(int(pos), 13, path) 
     bits = [ (1,'B',0), (1,'B',0), (2,'H',0), (4,'I',1), (4,'I',0) ]  # ins,outs,size,version,locktime
     out,mask = [1],0x80 
     for sz,typ,default in bits:
@@ -266,26 +266,27 @@ def mkBlobHdr(ins, outs, tx, stdSeq, nosigs):
     # max hdr = 13 bytes but most will be only 1 flag byte
     return ins,outs,sz,pack('<B', flags) + hdr
     
-def insertBlob(data):
+def insertBlob(data, path='/var/data'):
     if len(data) == 0:
         return 0
-    with open('/var/data/blobs.dat', 'r+b') as blob:
+    with open(path+'/blobs.dat', 'r+b') as blob:
         blob.seek(0,2)
         pos = blob.tell()
         blob.write(data)
     return pos
 
-def readBlob(pos, sz):
+def readBlob(pos, sz, path='/var/data'):
     if sz != 0:
-        with open('/var/data/blobs.dat', 'rb') as blob:
+        with open(path+'/blobs.dat', 'rb') as blob:
             blob.seek(pos)
             return blob.read(sz)
     return ''
         
 # cfg file handling stuff
 def loadcfg(cfg):
+    cfgpath = sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else os.path.basename(sys.argv[0])+'.cfg'
     try:
-        with open(sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else sys.argv[0]+'.cfg') as json_file:
+        with open(cfgpath) as json_file:
             cfg.update(json.load(json_file))
     except IOError:
         logts('No cfg file.')
@@ -293,8 +294,9 @@ def loadcfg(cfg):
         cfg['debug'] = False
 
 def savecfg(cfg):
+    cfgpath = sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else os.path.basename(sys.argv[0])+'.cfg'
     try:
-        with open(sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else sys.argv[0]+'.cfg', 'w') as json_file:
+        with open(cfgpath, 'w') as json_file:
             json.dump(cfg, json_file, indent=2)
     except IOError:
         logts('Cannot save cfg file')

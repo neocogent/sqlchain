@@ -65,7 +65,7 @@ def apiHeader(cur, blk, args):
     else:
         cur.execute("select id,hash from blocks order by id desc limit 1;")
     for blkid,blkhash in cur:
-        hdr = gethdr(int(blkid))
+        hdr = gethdr(int(blkid), sqc.cfg['path'])
         if 'electrum' in args:
             return { 'block_height':int(blkid), 'version':hdr['version'], 'time':hdr['time'], 'bits':hdr['bits'], 'nonce':hdr['nonce'],
                      'merkle_root':hdr['merkleroot'][::-1].encode('hex'), 'prev_block_hash':hdr['previousblockhash'][::-1].encode('hex') }
@@ -82,7 +82,7 @@ def apiBlock(cur, blkhash):
     for blk, in cur:
         data['height'] = int(blk)
         data['confirmations'] = sqc.cfg['block'] - data['height'] + 1
-        data.update(gethdr(data['height']))
+        data.update(gethdr(data['height'], sqc.cfg['path']))
         data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
         data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
         data['difficulty'] = bits2diff(data['bits'])
@@ -146,7 +146,7 @@ def addrUTXOs(cur, addr_id, addr):
     #cur.execute("select value,o.id,t.hash,block_id/{1} from outputs o, trxs t, blocks b where tx_id is null and addr_id=%s and t.id=floor(o.id/{0}) and b.id=t.block_id/{0};".format(MAX_IO_TX,MAX_TX_BLK), (addr_id,))
     for value,out_id,txhash,blk in cur:
         data.append({ 'address':addr, 'txid':txhash[::-1].encode('hex'), 'vout':int(out_id)%MAX_IO_TX, 'amount':float(value)/1e8, 
-                      'confirmations':sqc.cfg['block']-int(blk)+1 if blk>=0 else 0, 'ts':gethdr(int(blk), 'time') if blk>=0 else 0 })
+                      'confirmations':sqc.cfg['block']-int(blk)+1 if blk>=0 else 0, 'ts':gethdr(int(blk), 'time', sqc.cfg['path']) if blk>=0 else 0 })
     return data
 
 def addrHistory(cur, addr, args):
@@ -199,15 +199,15 @@ def apiTx(cur, txhash, args):
         if [i for i in ['raw','html'] if i in args]:
             return mkRawTx(cur, args, tid, txh, blob, blkid, ins, outs)
         data['confirmations'] = sqc.cfg['block'] - int(blkid)/MAX_TX_BLK + 1 if blkid >= 0 else 0
-        data['version'],data['locktime'] = getBlobHdr(blob)[4:6]
+        data['version'],data['locktime'] = getBlobHdr(blob, sqc.cfg['path'])[4:6]
         data['valueIn'],data['vin'] = apiInputs(cur, blkid/MAX_TX_BLK, int(blob), ins)
         data['valueOut'],data['vout'] = apiOutputs(cur, int(tid), int(blob))
         data['fees'] = round(data['valueIn'] - data['valueOut'],8)
-        data['size'] = txsize if txsize < 0xFF00 else (txsize&0xFF)<<16 + getBlobHdr(blob)[3]
+        data['size'] = txsize if txsize < 0xFF00 else (txsize&0xFF)<<16 + getBlobHdr(blob, sqc.cfg['path'])[3]
         cur.execute("select hash from blocks where id=%s limit 1;", (int(blkid)/MAX_TX_BLK,))
         for txhash, in cur:
             data['blockhash'] = txhash[::-1].encode('hex')
-            data['time'] = data['blocktime'] = gethdr(int(blkid/MAX_TX_BLK), 'time')
+            data['time'] = data['blocktime'] = gethdr(int(blkid/MAX_TX_BLK), 'time', sqc.cfg['path'])
         if 'coinbase' in data['vin'][0]:
             del data['valueIn']
             del data['fees']
@@ -218,14 +218,14 @@ def apiTx(cur, txhash, args):
 def apiInputs(cur, height, blob, ins):
     total = 0
     data = []
-    hdr = getBlobHdr(blob)
+    hdr = getBlobHdr(blob, sqc.cfg['path'])
     if ins >= 192:
         ins = (ins & 63)*256 + hdr[1]  
     if ins == 0:
         cur.execute("select coinbase from blocks where id=%s;", (height,))
         data.append({ 'n':0, 'coinbase':cur.fetchone()[0].encode('hex') })
     else:
-        buf = readBlob(blob+hdr[0], ins*7)
+        buf = readBlob(blob+hdr[0], ins*7, sqc.cfg['path'])
         for n in range(ins):
             in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
             cur.execute("select value,addr,addr_id,hash from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id, in_id/MAX_IO_TX))
@@ -252,14 +252,14 @@ def apiOutputs(cur, txid, blob):
 def apiSpent(cur, txid, out_id):
     cur.execute("select txdata,hash,block_id/{0},ins from trxs where id=%s limit 1;".format(MAX_TX_BLK), (txid,))
     for blob,txh,blk,ins in cur:
-        hdr = getBlobHdr(int(blob))
+        hdr = getBlobHdr(int(blob), sqc.cfg['path'])
         if ins >= 192:
             ins = (ins & 63)*256 + hdr[1]  
-        buf = readBlob(int(blob)+hdr[0], ins*7)
+        buf = readBlob(int(blob)+hdr[0], ins*7, sqc.cfg['path'])
         for n in range(ins):
             in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
             if in_id == out_id:
-                return { 'spentTxId':txh[::-1].encode('hex'), 'spentIndex':n, 'spentTs':gethdr(int(blk),'time') }
+                return { 'spentTxId':txh[::-1].encode('hex'), 'spentIndex':n, 'spentTs':gethdr(int(blk),'time', sqc.cfg['path']) }
     return {}
 
 def txoAddr(cur, txhash, n):
@@ -276,11 +276,11 @@ def txAddrs(cur, txhash):
         data.append(mkaddr(pkh,aid))
     cur.execute("select txdata,ins from trxs where id=%s limit 1;", (txid,))
     for blob,ins in cur:
-        hdr = getBlobHdr(int(blob))
+        hdr = getBlobHdr(int(blob), sqc.cfg['path'])
         if ins > 0:
             if ins >= 0xC0:
                 ins = (ins&0x3F)<<8 + hdr[1] 
-            buf = readBlob(int(blob)+hdr[0], ins*7)
+            buf = readBlob(int(blob)+hdr[0], ins*7, sqc.cfg['path'])
             for n in range(ins):
                 in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
                 cur.execute("select addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (in_id,))
@@ -302,7 +302,7 @@ def apiMerkle(cur, txhash):
             mkb.append(mkt[t-1][::-1].encode('hex') if t % 2 == 1 else mkt[t+1][::-1].encode('hex'))
             mkt = [ sha256(sha256(mkt[i]+mkt[i+1]).digest()).digest() for i in range(0,len(mkt),2) ]
             t //= 2
-        if mkt[0] != gethdr(blk, 'merkleroot'):
+        if mkt[0] != gethdr(blk, 'merkleroot', sqc.cfg['path']):
             logts("Panic! Merkle tree failure, tx %s" % txhash )
         return { "block_height": blk, "merkle": mkb, "pos": pos }
     return None
@@ -327,7 +327,7 @@ def rawHTML(out, vi, vo):
     return "<table class='rawtx'><tr>"+"</tr><tr>".join(['<td>%s</td><td>%s</td>' % (k,v) for k,v in zip(tags,outhex) ])+"</tr></table>"
     
 def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
-    hdr = getBlobHdr(txdata)
+    hdr = getBlobHdr(txdata, sqc.cfg['path'])
     out = [ pack('<I', hdr[4]) ]
     if ins >= 0xC0:
         ins = (ins&0x3F)<<8 + hdr[1] 
@@ -341,14 +341,14 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
     else:
         out += encodeVarInt(ins)
         vpos = int(txdata) + hdr[0]
-        buf = readBlob(vpos, ins*7)
+        buf = readBlob(vpos, ins*7, sqc.cfg['path'])
         vpos += ins*7
         for n in range(ins):
             in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
             cur.execute("select hash from trxs where id=%s limit 1;", (in_id / MAX_IO_TX,))
             out += [ cur.fetchone()[0][:32], pack('<I', in_id % MAX_IO_TX) ]
-            vsz,off = decodeVarInt(readBlob(vpos, 9)) if not hdr[7] else (0,0) # no-sigs flag
-            sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4)) 
+            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path'])) if not hdr[7] else (0,0) # no-sigs flag
+            sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4), sqc.cfg['path']) 
             out += [ sigbuf[:off], sigbuf[off:off+vsz], ('\xFF'*4 if hdr[6] else sigbuf[off+vsz:]) ] 
             vpos += off+vsz+(0 if hdr[6] else 4)
     out += encodeVarInt(outs)
@@ -356,8 +356,8 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
         cur.execute("select value,addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (txid*MAX_IO_TX + n,))
         value,addr,addr_id = cur.fetchone()
         out += [ pack('<Q', int(value)) ]
-        vsz,off = decodeVarInt(readBlob(vpos, 9))
-        pkbuf = readBlob(vpos, off+vsz)
+        vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path']))
+        pkbuf = readBlob(vpos, off+vsz, sqc.cfg['path'])
         out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, addr_id)
     out += [ pack('<I', hdr[5]) ]
     return rawHTML(out, ins, outs) if 'html' in args else ''.join(out).encode('hex') 

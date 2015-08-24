@@ -36,7 +36,7 @@ def bciBlockWS(cur, block): # inconsistent websocket sub has different labels
     cur.execute("select hash from blocks where id=%s limit 1;", (block,))
     for data['hash'], in cur:
         data['hash'] = data['hash'][::-1].encode('hex')
-        hdr = gethdr(data['height'])
+        hdr = gethdr(data['height'], sqc.cfg['path'])
         data['blockIndex'] = data['height']
         data['version'] = hdr['version']
         data['time'] = hdr['time']
@@ -65,7 +65,7 @@ def bciBlock(cur, blkhash):
     cur.execute("select id from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
     for blkid, in cur:
         data['height'] = data['block_index'] = int(blkid)
-        hdr = gethdr(data['height'])
+        hdr = gethdr(data['height'], sqc.cfg['path'])
         data['ver'] = hdr['version']
         data['time'] = hdr['time']
         data['prev_block'] = hdr['previousblockhash'][::-1].encode('hex')
@@ -132,26 +132,26 @@ def bciTx(cur, txhash):
     txh = txhash.decode('hex')[::-1]
     cur.execute("select id,txdata,block_id/{0},ins,txsize from trxs where id>=%s and hash=%s limit 1;".format(MAX_TX_BLK), (txh2id(txh), txh))
     for txid,blob,blkid,ins,txsize in cur:
-        hdr = getBlobHdr(int(blkid))
+        hdr = getBlobHdr(int(blkid), sqc.cfg['path'])
         data['tx_index'] = int(txid)
         data['block_height'] = int(blkid)
         data['ver'],data['lock_time'] = hdr[4:6]
         data['inputs'],data['vin_sz'] = bciInputs(cur, blkid, int(blob), ins)
         data['out'],data['vout_sz'] = bciOutputs(cur, int(txid), int(blob))
-        data['time'] = gethdr(data['block_height'], 'time')
+        data['time'] = gethdr(data['block_height'], 'time', sqc.cfg['path'])
         data['size'] = txsize if txsize < 0xFF00 else (txsize&0xFF)<<16 + hdr[3]
         return data
     return None
 
 def bciInputs(cur, height, blob, ins):
     data = []
-    hdr = getBlobHdr(blob)
+    hdr = getBlobHdr(blob, sqc.cfg['path'])
     if ins >= 192:
         ins = (ins & 63)*256 + hdr[1] 
     if ins == 0:
         data.append({ }) # only sequence and script here 
     else:
-        buf = readBlob(blob+hdr[0], ins*7)
+        buf = readBlob(blob+hdr[0], ins*7, sqc.cfg['path'])
         for n in range(ins):
             in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
             cur.execute("select value,addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (in_id,))

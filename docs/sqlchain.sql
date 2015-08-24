@@ -6,6 +6,10 @@
 CREATE DATABASE bitcoin;
 USE bitcoin;
 
+--CREATE USER 'btc'@'localhost' IDENTIFIED BY 'sqlpwd';
+--GRANT ALL PRIVILEGES ON bitcoin.* TO 'btc'@'localhost';
+--FLUSH PRIVILEGES;
+
 CREATE TABLE `blocks` (
   `id` int(11) NOT NULL,
   `hash` binary(32) NOT NULL,

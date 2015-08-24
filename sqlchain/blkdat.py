@@ -21,9 +21,9 @@ from struct import pack, unpack, unpack_from
 from time import sleep
 from hashlib import sha256
 
+from version import *
 from util import *
 
-version = '0.1.0'
 verbose,done = False,False
 
 cfg = { 'path':'.bitcoin', 'db':'', 'rpc':'' }      
@@ -67,14 +67,15 @@ def rpcGate(rpc, cmd):
     s.close()
                 
 def findBlocks(cur, blockpath):
+    global verbose
     cur.execute("select max(filenum) from blkdat;") # find any previous state
     row = cur.fetchone()
-    filenum = row[0] if row else 0
+    filenum = int(row[0]) if row and row[0] else 0
     cur.execute("select max(filepos) from blkdat where filenum=%s;", (filenum,))
     row = cur.fetchone()
-    startpos = pos = row[0] if row else 0
+    startpos = pos = row[0] if row and row[0] else 0
     lastfound = 0,0
-
+    verbose = ( pos == 0 )
     while not done:
         try:
             with open(blockpath % filenum, "rb") as fd:
@@ -116,7 +117,8 @@ def linkMainChain(cur, blk, blkhash):
         cur.execute("update blkdat set id=%s where hash=%s;", (blk, blkhash))
         if cur.rowcount < 1:
             log("Cannot update %d! Rewinding blkdat." % blk)
-            cur.execute("delete from blkdat where filenum >= (select filenum from blkdat where prevhash=%s);", (blkhash,)) 
+            cur.execute("select filenum from blkdat where prevhash=%s limit 1;", (blkhash,))
+            cur.execute("delete from blkdat where filenum >= %s;", cur.fetchone()) 
             break
         cur.execute("select prevhash from blkdat where id=%s limit 1;", (blk,))
         row = cur.fetchone()
@@ -145,7 +147,7 @@ def initdb(cfg):
     sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
     cur.execute("select count(1) from information_schema.tables where table_name='blkdat';")
-    if not cur.fetchone():
+    if not cur.fetchone()[0]:
         cur.execute(sqlmk) # create table if not existing
     return cur
 
