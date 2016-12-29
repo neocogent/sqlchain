@@ -18,6 +18,10 @@
 
 #### Recent Updates
 
+Added pruning support using "manual pruning", prune=1 in bitcoin.conf. This currently requires a custom build with PR$7871 but it's fairly painless and a better way of dealing with pruning blocks once they've been processed into MySQL. With the current blockchain size of 101 GB I'm hopeful this will cut down total storage to about half, maybe.
+
+Also, now testing sqlchain-init - this script asks setup questions and creates the MySQL DB and config files, system user, boot init scripts. I've given it some basic run through but will be testing soon on a fresh pip install to an EC2 server.
+
 **sqlchain-api** now uses the gevent.websocket module to provide a low overhead, highly concurrent, WSGI based server. In theory, thousands of connections could use either the websocket, or more simply, the long polling *sync* api.
 
 A new **blkdat** module enables syncing directly from block files. Now sqlchain can build sql data even as bitcoind syncs itself, saving a lot of time on low-end systems. This module includes **btcGate** support for "throttling" a pruning node. It can pause/resume bitcoind to ensure data isn't pruned before being sync'd to mysql (still to be fully tested).
