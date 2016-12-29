@@ -1,7 +1,7 @@
 #
 # Common sqlchain support utils 
 #
-import os, sys, hashlib, json, threading
+import os, sys, pwd, hashlib, json, threading
 
 from struct import pack, unpack, unpack_from
 from datetime import datetime

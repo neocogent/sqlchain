@@ -2,7 +2,7 @@
 #
 #   sqlchaind - daemon to update sql blockchain db
 #
-import os, sys, socket, getopt, time, signal, threading
+import os, sys, socket, getopt, time, signal, threading, daemon
 import MySQLdb as db
 
 from Queue import Queue, Empty
@@ -13,8 +13,9 @@ from hashlib import sha256
 
 from sqlchain.version import *
 from sqlchain.util import *
+from sqlchain.blkdat import BlkDatHandler
 
-cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data' } 
+cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain' } 
 blksecs = []
 memPool = set()
 
@@ -28,8 +29,9 @@ def getBlocks(blk):
         blk = int(cur.fetchone()[0] + 1)
     startblk = blk
     if 'blkdat' in cfg:
-        blk = getBlocksDirect(cur, blk) # use direct file access for catch up
-    logts("Using rpc mode. Monitoring blocks / mempool.")
+        blk = getBlocksDirect(cur, rpc, blk) # use direct file access for catch up
+    if not done.isSet():
+        logts("Using rpc mode. Monitoring blocks / mempool.")
     while not done.isSet():
         blkinfo = rpc.getblockchaininfo()
         if blk > blkinfo['blocks']:
@@ -39,6 +41,8 @@ def getBlocks(blk):
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(10)
             continue
+        if blkinfo['pruned'] and blk % 100 == 0:
+            rpc.pruneblockchain(blk - blockQ.qsize())
         rpcstart = time.time()
         blkhash = rpc.getblockhash(blk)
         if blkhash:
@@ -49,20 +53,21 @@ def getBlocks(blk):
             blk += 1
     return blk - startblk
 
-def getBlocksDirect(cur, blk):
-    from sqlchain.blkdat import BlkDatHandler, chkPruning
+def getBlocksDirect(cur, rpc, blk):
     blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done))
     blkscan.start()
+    blkinfo = rpc.getblockchaininfo()
     logts("Using blkdat mode: %s" % cfg['blkdat'])
     while not done.isSet():
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(0.01)
-            continue           
+            continue
+        if blkinfo['pruned'] and blk % 100 == 0:
+            rpc.pruneblockchain(blk - blockQ.qsize())
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
         row = cur.fetchone()
         if row:
             filenum,pos = row
-            chkPruning(cfg, int(filenum))
             started = time.time()
             with open(cfg['blkdat'] + "/blocks/blk%05d.dat" % filenum, 'rb') as fd:
                 fd.seek(pos)
@@ -351,9 +356,11 @@ if __name__ == '__main__':
         signal.signal(signal.SIGINT, sigterm_handler)
         run()
     else:
-        with daemon.DaemonContext(working_directory='.', stdout=open(sys.argv[0]+'.log','a'), stderr=open(sys.argv[0]+'.log','a'), 
+        logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
+        pidpath = cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid'
+        with daemon.DaemonContext(working_directory='.', stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
                 signal_map={signal.SIGTERM:sigterm_handler } ):
-            with file(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid','w') as f: 
+            with file(pidpath,'w') as f: 
                 f.write(str(os.getpid()))
             run()
 

@@ -15,7 +15,7 @@ setup(
     author='neoCogent.com',
     author_email='info@neocogent.com',
     url='https://github.com/neocogent/sqlchain',
-    download_url='https://github.com/neocogent/sqlchain/tarball/0.1.0',
+    download_url='https://github.com/neocogent/sqlchain/tarball/'+version,
     license='MIT',
     classifiers=[
     'Development Status :: 3 - Alpha',
@@ -33,7 +33,7 @@ setup(
     keywords='bitcoin sql blockchain api websocket rpc server',
     description='Compact SQL layer for Bitcoin blockchain.',
     long_description=readme_md,
-    scripts=['sqlchaind','sqlchain-api','sqlchain-electrum','utils/prxgate'],
+    scripts=['sqlchaind','sqlchain-api','sqlchain-electrum','sqlchain-init'],
     install_requires=[
         "gevent >= 1.0.2",
         "gevent-websocket >= 0.9.5",
@@ -41,6 +41,6 @@ setup(
         "MySQL-python >= 1.2.5",
         "python-bitcoinrpc >= 0.1"
     ],
-    data_files=[('/var/lib/data', ['docs/sqlchain.sql'])]
+    package_data={'sqlchain', ['docs/sqlchain.sql']},
 
 )

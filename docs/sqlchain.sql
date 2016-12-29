@@ -1,29 +1,30 @@
--- create new database during install
+-- create new database after install
+-- need to do these from mysql root user
+
+--CREATE USER 'btc'@'localhost' IDENTIFIED BY 'sqlpwd';
+--GRANT ALL PRIVILEGES ON bitcoin.* TO 'btc'@'localhost';
+--FLUSH PRIVILEGES;
 
 -- disabled for safety
 -- DROP DATABASE IF EXISTS bitcoin;
 
-CREATE DATABASE bitcoin;
+CREATE DATABASE IF NOT EXISTS bitcoin;
 USE bitcoin;
 
-CREATE USER 'btc'@'localhost' IDENTIFIED BY 'sqlpwd';
-GRANT ALL PRIVILEGES ON bitcoin.* TO 'btc'@'localhost';
-FLUSH PRIVILEGES;
-
-CREATE TABLE `blocks` (
+CREATE TABLE IF NOT EXISTS `blocks` (
   `id` int(11) NOT NULL,
   `hash` binary(32) NOT NULL,
   `coinbase` varbinary(100) NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
-CREATE TABLE `address` (
+CREATE TABLE IF NOT EXISTS `address` (
   `id` decimal(13) NOT NULL,
   `addr` binary(20) NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
-CREATE TABLE `trxs` (
+CREATE TABLE IF NOT EXISTS `trxs` (
   `id` decimal(13) NOT NULL,
   `hash` binary(32) NOT NULL,
   `ins` tinyint unsigned NOT NULL,
@@ -35,7 +36,7 @@ CREATE TABLE `trxs` (
   KEY `block` (`block_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
-CREATE TABLE `outputs` (
+CREATE TABLE IF NOT EXISTS `outputs` (
   `id` decimal(16) NOT NULL,
   `value` decimal(16) DEFAULT NULL,
   `addr_id` decimal(13) DEFAULT NULL,
@@ -44,14 +45,14 @@ CREATE TABLE `outputs` (
   KEY `addr` (`addr_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
-CREATE TABLE `mempool` (
+CREATE TABLE IF NOT EXISTS `mempool` (
   `id` decimal(13) NOT NULL,
   `sync_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `sync` (`sync_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
-CREATE TABLE `orphans` (
+CREATE TABLE IF NOT EXISTS `orphans` (
   `sync_id` int(11) NOT NULL,
   `block_id` int(11) NOT NULL,
   `hash` binary(32) NOT NULL,
@@ -60,7 +61,7 @@ CREATE TABLE `orphans` (
   KEY (`sync_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
-CREATE TABLE `info` (
+CREATE TABLE IF NOT EXISTS `info` (
   `class` varchar(12) NOT NULL,
   `key` varchar(32) NOT NULL,
   `value` varchar(64) DEFAULT NULL,

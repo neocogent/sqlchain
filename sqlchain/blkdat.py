@@ -51,20 +51,6 @@ def BlkDatHandler(cfg, done):
         for _ in range(12):
             if not done.isSet():
                 sleep(5)
-
-def chkPruning(cfg, filenum): # probably a temp solution until rpc provides better control over pruning
-    blockpath = cfg['blkdat'] + "/blocks/blk%05d.dat"
-    if filenum > 0 and not os.path.isfile(blockpath % (filenum-1,)):
-        rpcGate(cfg['rpc'], 'pause')
-    elif not os.path.isfile(blockpath % (filenum+1,)):
-        rpcGate(cfg['rpc'], 'resume')
-
-def rpcGate(rpc, cmd):
-    host = rpc.split('@')[1].split(':')[0]
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((host, 8338))
-    s.send(cmd+"\n")
-    s.close()
                 
 def findBlocks(cur, blockpath):
     global verbose
@@ -103,6 +89,7 @@ def findBlocks(cur, blockpath):
                 filenum += 1
                 pos = 0
         except IOError:
+            #print "Cannot open ", blockpath % filenum
             return lastfound
 
 def linkMainChain(cur, blk, blkhash):

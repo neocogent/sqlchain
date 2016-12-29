@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import os, sys, pwd, getopt, time, cgi, urlparse, signal, daemon
+import os, sys, getopt, time, cgi, urlparse, signal, daemon
 import threading, mimetypes, json, gevent
 
 from geventwebsocket import WebSocketServer, WebSocketApplication, Resource
@@ -19,7 +19,7 @@ __builtins__.sqc = dotdict()  # container for super globals
 
 sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0,
             'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'dbinfo-ts':datetime.now().strftime('%s'), 
-            'dbinfo':-1, 'path':'/var/data' }
+            'dbinfo':-1, 'path':'/var/data/sqlchain' }
 
 sqc.sync = threading.Condition(); 
 sqc.sync_id = 0 
@@ -233,9 +233,11 @@ if __name__ == '__main__':
         signal.signal(signal.SIGINT, sigterm_handler)
         run()
     else:
-        with daemon.DaemonContext(working_directory='.', stdout=open(sys.argv[0]+'.log','a'), stderr=open(sys.argv[0]+'.log','a'), 
+        logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
+        pidpath = cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid'
+        with daemon.DaemonContext(working_directory='.', stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
                 signal_map={signal.SIGTERM:sigterm_handler } ):
-            with file(sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid','w') as f: 
+            with file(pidpath,'w') as f: 
                 f.write(str(os.getpid()))
             run()
 
