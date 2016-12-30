@@ -5,8 +5,10 @@ import MySQLdb as db
 
 #from sqlchain.util import *
 
-print "This program will initialize the MySQL database, configure sqlChain and bitcoind for your system."
-print "It will ask a series of questions and then create the database, user, init and cfg files."
+print """\nThis program will configure bitcoind and sqlChain for your system. 
+It can optionally create and initialize the MySQL database. It will ask a series of questions 
+and then create the database, user, init and cfg files. Re-running this will overwrite options
+including passwords but does not remove old files.\n"""
 if os.geteuid() != 0:
     print "You need to run with root/sudo privileges - try again."
     sys.exit(0)
@@ -33,10 +35,8 @@ sqldir = raw_input( "Directory for sqlchain blob and header data files [/var/dat
 dbname = raw_input( "MySQL database name [bitcoin]:" ) or "bitcoin"
 dbuser = raw_input( "MySQL database user (will grant privileges) [btc]:" ) or "btc"
 dbpwd = raw_input( "MySQL %s user password [create random]:" % dbuser )
-rootpwd = raw_input( "To create the MySQL database and grant privileges we need the mysql root password:" )
-
-print "\n"
-
+rootpwd = raw_input( "MySQL root password (needed to create database and user):" )
+    
 if btcpwd == '':
     btcpwd = ''.join(random.sample(string.ascii_letters+string.digits,20))
 if dbpwd == '':
@@ -71,30 +71,34 @@ for f in ['/blobs.dat','/hdrs.dat']:
     except:
         print "Creating data file:", sqldir+f
         open(sqldir+f, 'a').close()
-    os.chown(sqldir+f, pwd.pw_uid, pwd.pw_gid)
+        os.chown(sqldir+f, pwd.pw_uid, pwd.pw_gid)
 
 ### Create MySql database and tables   
 print "Creating MySQL database:", dbname 
 try:
     sqlsrc = open('docs/sqlchain.sql').read()
+    sqlcode = ''
+    for k,v in [('--CREATE','CREATE'),('--GRANT','GRANT'),('--FLUSH','FLUSH'),('bitcoin',dbname),('sqlpwd',dbpwd),('btc',dbuser)]:
+        sqlsrc = sqlsrc.replace(k, v)
+    for line in sqlsrc.splitlines():
+        if line != '' and line[:2] != '--':
+            sqlcode += line
+    
+    sql = db.connect(user='root', passwd=rootpwd)
+    cur = sql.cursor()
+    for stmnt in sqlcode.split(';'):
+        if stmnt:
+            cur.execute(stmnt)
 except (IOError, ImportError):
     print "Cannot open docs/sqlchain.sql script"
-    sys.exit(1) 
+    print "Skipping further MySQL DB setup\n"
+    pass
+except db.Error, e:
+    print "MySQL Error: %s" % str(e)
+    print "Skipping further MySQL DB setup\n"
+    pass
 
-sqlcode = ''
-for k,v in [('--CREATE','CREATE'),('--GRANT','GRANT'),('--FLUSH','FLUSH'),('bitcoin',dbname),('sqlpwd',dbpwd),('btc',dbuser)]:
-    sqlsrc = sqlsrc.replace(k, v)
-for line in sqlsrc.splitlines():
-    if line != '' and line[:2] != '--':
-        sqlcode += line
-
-sql = db.connect(user='root', passwd=rootpwd)
-cur = sql.cursor()
-for stmnt in sqlcode.split(';'):
-    if stmnt:
-        cur.execute(stmnt)
-
-### Create init script for system boot
+### Create init scripts for system boot
 initsrc = """
 description "sqlChain - Bitcoin SQL layer and API"
 
@@ -105,22 +109,22 @@ expect fork
 respawn limit 5 120
 kill timeout 60
 
-script
 """
-if btcboot.upper() != 'Y':
-    initsrc += "#"
-initsrc +=  "exec start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s: --exec /usr/local/bin/bitcoind -- -conf=%s/bitcoin.conf\n" % (sqldir,btcuser,cfgdir)
-if sqlboot.upper() != 'Y':
-    initsrc += "#"
-initsrc += "exec /usr/local/bin/sqlchaind %s/sqlchaind.cfg\n" % cfgdir
-if apiboot.upper() != 'Y':
-    initsrc += "#"
-initsrc += "exec /usr/local/bin/sqlchain-api %s/sqlchain-api.cfg\n" % cfgdir
-initsrc += "end script\n"
-
-print "Creating system init script: /etc/init/sqlchain.conf"    
-with open('/etc/init/sqlchain.conf', 'w') as f:
-    f.write(initsrc)
+initfile = '/etc/init/bitcoin.conf' + ('.disabled' if btcboot.upper() != 'Y' else '')
+print "Creating system init file: %s" % initfile
+with open(initfile, 'w') as f:
+    s = "exec start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s: --exec /usr/local/bin/bitcoind -- -conf=%s/bitcoin.conf\n" % (sqldir,btcuser,cfgdir)
+    f.write(initsrc+s)
+initfile = '/etc/init/sqlchain.conf' + ('.disabled' if sqlboot.upper() != 'Y' else '')
+print "Creating system init file: %s" % initfile 
+with open(initfile, 'w') as f:
+    s = "exec start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
+    f.write(initsrc.replace('expect fork','')+s)
+initfile = '/etc/init/sqlchain-api.conf' + ('.disabled' if apiboot.upper() != 'Y' else '')
+print "Creating system init file: %s" % initfile 
+with open(initfile, 'w') as f:
+    s = "exec start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
+    f.write(initsrc.replace('expect fork','')+s)
     
 ### Create sqlchaind.cfg 
 sqlcfg = """
@@ -128,14 +132,15 @@ sqlcfg = """
   "log": "datapath/daemon.log",
   "pid": "datapath/daemon.pid",
   "path": "datapath",
-  "db": "localhost:dbuser:sqlpwd:dbname",
+  "db": "localhost:dbuser:dbpwd:dbname",
   "queue": 8,
   "rpc": "http://btcuser:rpcpwd@localhost:8332",
   "debug": false,
+  "user": "btcuser",
   "no-sigs": false
 }"""
 print "Creating config file:", cfgdir+'/sqlchaind.cfg'
-for k,v in [('datapath',sqldir),('dbuser',dbuser),('btcuser',btcuser),('rpcpwd',btcpwd),('sqlpwd',dbpwd),('dbname',dbname)]:
+for k,v in [('datapath',sqldir),('dbuser',dbuser),('btcuser',btcuser),('rpcpwd',btcpwd),('dbpwd',dbpwd),('dbname',dbname)]:
     sqlcfg = sqlcfg.replace(k, v)
 with open(cfgdir+'/sqlchaind.cfg', 'w') as f:
     f.write(sqlcfg)
@@ -145,7 +150,8 @@ os.chown(cfgdir+'/sqlchaind.cfg', pwd.pw_uid, pwd.pw_gid)
 apicfg = """
 {
   "www": "www", 
-  "db": "localhost:dbuser:sqlpwd:dbname", 
+  "user": "btcuser",
+  "db": "localhost:dbuser:dbpwd:dbname", 
   "dbinfo": -1, 
   "dbinfo-ts": "0", 
   "rpc": "http://btcuser:rpcpwd@localhost:8332", 
@@ -158,7 +164,7 @@ apicfg = """
   "listen": "localhost:8085"
 }"""
 print "Creating config file:", cfgdir+'/sqlchain-api.cfg'
-for k,v in [('datapath',sqldir),('dbuser',dbuser),('btcuser',btcuser),('rpcpwd',btcpwd),('sqlpwd',dbpwd),('dbname',dbname)]:
+for k,v in [('datapath',sqldir),('dbuser',dbuser),('btcuser',btcuser),('rpcpwd',btcpwd),('dbpwd',dbpwd),('dbname',dbname)]:
     apicfg = apicfg.replace(k, v)
 with open(cfgdir+'/sqlchain-api.cfg', 'w') as f:
     f.write(apicfg)

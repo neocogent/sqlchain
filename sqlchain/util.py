@@ -315,10 +315,10 @@ def log(msg):
 
 def drop2user(cfg):
     if ('user' in cfg) and (cfg['user'] != '') and (os.getuid() == 0):
-        uid = pwd.getpwnam(cfg['user']).pw_uid
+        pw = pwd.getpwnam(cfg['user'])
         os.setgroups([])
-        os.setgid(uid)
-        os.setuid(uid)
+        os.setgid(pw.pw_gid)
+        os.setuid(pw.pw_uid)
         os.umask(077) 
 
             
