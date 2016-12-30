@@ -1,3 +1,4 @@
+import setuptools
 from distutils.core import setup
 
 from sqlchain.version import *
@@ -41,6 +42,6 @@ setup(
         "MySQL-python >= 1.2.5",
         "python-bitcoinrpc >= 0.1"
     ],
-    package_data={'sqlchain', ['docs/sqlchain.sql']},
+    package_data={'sqlchain': ['docs/sqlchain.sql']},
 
 )

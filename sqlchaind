@@ -15,6 +15,11 @@ from sqlchain.version import *
 from sqlchain.util import *
 from sqlchain.blkdat import BlkDatHandler
 
+#import logging
+
+#logging.basicConfig()
+#logging.getLogger("BitcoinRPC").setLevel(logging.DEBUG)
+
 cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain' } 
 blksecs = []
 memPool = set()
@@ -29,7 +34,7 @@ def getBlocks(blk):
         blk = int(cur.fetchone()[0] + 1)
     startblk = blk
     if 'blkdat' in cfg:
-        blk = getBlocksDirect(cur, rpc, blk) # use direct file access for catch up
+        blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     if not done.isSet():
         logts("Using rpc mode. Monitoring blocks / mempool.")
     while not done.isSet():
@@ -41,8 +46,8 @@ def getBlocks(blk):
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(10)
             continue
-        if blkinfo['pruned'] and blk % 100 == 0:
-            rpc.pruneblockchain(blk - blockQ.qsize())
+        if blkinfo['pruned']:
+            chkPruning(blk - blockQ.qsize())
         rpcstart = time.time()
         blkhash = rpc.getblockhash(blk)
         if blkhash:
@@ -53,17 +58,15 @@ def getBlocks(blk):
             blk += 1
     return blk - startblk
 
-def getBlocksDirect(cur, rpc, blk):
+def getBlocksDirect(cur, blk):
     blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done))
     blkscan.start()
-    blkinfo = rpc.getblockchaininfo()
     logts("Using blkdat mode: %s" % cfg['blkdat'])
     while not done.isSet():
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(0.01)
             continue
-        if blkinfo['pruned'] and blk % 100 == 0:
-            rpc.pruneblockchain(blk - blockQ.qsize())
+        chkPruning(blk - blockQ.qsize())
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
         row = cur.fetchone()
         if row:
@@ -85,7 +88,15 @@ def getBlocksDirect(cur, rpc, blk):
     log("Waiting for blkscan to finish")
     blkscan.join()
     return blk
-            
+    
+def chkPruning(blk):
+    if blk % 100 == 0:
+        try:
+            rpc = AuthServiceProxy(cfg['rpc'])
+            rpc.pruneblockchain(blk)
+        except Exception, e:
+            log( 'Prune rpc ' + str(e) + ' ignoring' )
+    
 def BlockHandler():
     global done
     sql = db.connect(*cfg['db'].split(':'))
@@ -318,8 +329,6 @@ def usage():
 def sigterm_handler(_signo, _stack_frame):
     global done
     done.set()
-    if not cfg['debug']:
-        os.unlink(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid')
     
 def run():
     global blockQ,done 
@@ -359,11 +368,11 @@ if __name__ == '__main__':
         logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
         pidpath = cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid'
         with daemon.DaemonContext(working_directory='.', stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
-                signal_map={signal.SIGTERM:sigterm_handler } ):
+                signal_map={signal.SIGTERM:sigterm_handler} ):
             with file(pidpath,'w') as f: 
                 f.write(str(os.getpid()))
             run()
-
+            os.unlink(pidpath)
     
 
     

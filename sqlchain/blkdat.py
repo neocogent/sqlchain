@@ -24,7 +24,8 @@ from hashlib import sha256
 from version import *
 from util import *
 
-verbose,done = False,False
+verbose = False
+done = threading.Event()
 
 cfg = { 'path':'.bitcoin', 'db':'', 'rpc':'' }      
 
@@ -40,7 +41,9 @@ CREATE TABLE `blkdat` (
   KEY `hash` (`hash`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;'''
    
-def BlkDatHandler(cfg, done):
+def BlkDatHandler(cfg, owner_done):
+    global done
+    done = owner_done
     cur = initdb(cfg)
     blockpath = cfg['blkdat'] + "/blocks/blk%05d.dat"
     while not done.isSet():
@@ -62,7 +65,7 @@ def findBlocks(cur, blockpath):
     startpos = pos = row[0] if row and row[0] else 0
     lastfound = 0,0
     verbose = ( pos == 0 )
-    while not done:
+    while not done.isSet():
         try:
             with open(blockpath % filenum, "rb") as fd:
                 while True:
@@ -94,7 +97,7 @@ def findBlocks(cur, blockpath):
 
 def linkMainChain(cur, blk, blkhash):
     blkhash = blkhash.decode('hex')[::-1]
-    while not done:
+    while not done.isSet():
         if verbose:
             log("%d - %s" % (blk, blkhash[::-1].encode('hex')) )
         cur.execute("select id from blkdat where id=%s and hash=%s limit 1;", (blk, blkhash))
@@ -117,7 +120,7 @@ def linkMainChain(cur, blk, blkhash):
             
 def getLastBlock(cfg):
     blk = 0
-    while not done:
+    while not done.isSet():
         try: # this tries to talk to bitcoind despite it being comatose
             rpc = AuthServiceProxy(cfg['rpc'], timeout=120)
             if blk == 0:
@@ -170,7 +173,7 @@ def usage():
     
 def sigterm_handler(_signo, _stack_frame):
     global done
-    done = True
+    done.set()
     
 if __name__ == '__main__':
     
@@ -195,7 +198,7 @@ if __name__ == '__main__':
         
     cur = initdb(cfg)
   
-    while not done:
+    while not done.isSet():
         log( "Finding new blocks" )
         findBlocks(cur, blockpath)
         
@@ -205,7 +208,7 @@ if __name__ == '__main__':
         log( "Linking main chain" )
         linkMainChain(cur, blk, blkhash)
         
-        if not done:
+        if not done.isSet():
             log( "Waiting" )
             sleep(60)
     
