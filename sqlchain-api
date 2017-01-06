@@ -32,7 +32,7 @@ def do_Root(env, send_resp):
                 form = cgi.FieldStorage(fp=env['wsgi.input'], environ=env, keep_blank_values=True)
                 env['PATH_INFO'] = "/rpc/%s/%s" % (form['method'].value, "/".join(form.getlist('params')))
                 return lib.rpc.do_RPC(env, send_resp)
-        else: # GET static website files
+        else if sqc.cfg['www']: # GET static website files, if path configured
             path = '/main.html' if path in ['', '/'] else path
             if os.path.isfile(sqc.cfg['www']+path):
                 _,ext = os.path.splitext(path)
