@@ -188,6 +188,8 @@ def usage():
     
 def sigterm_handler(_signo, _stack_frame):
     logts("Shutting down.")
+    if not sqc.cfg['debug']:
+        os.unlink(sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid')
     sys.exit(0)
     
 def run():
@@ -238,7 +240,7 @@ if __name__ == '__main__':
             with file(pidpath,'w') as f: 
                 f.write(str(os.getpid()))
             run()
-            os.unlink(pidpath)
+            
 
     
         
