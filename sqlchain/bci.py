@@ -36,7 +36,7 @@ def bciBlockWS(cur, block): # inconsistent websocket sub has different labels
     cur.execute("select hash from blocks where id=%s limit 1;", (block,))
     for data['hash'], in cur:
         data['hash'] = data['hash'][::-1].encode('hex')
-        hdr = gethdr(data['height'], sqc.cfg['path'])
+        hdr = gethdr(data['height'], None, sqc.cfg['path'])
         data['blockIndex'] = data['height']
         data['version'] = hdr['version']
         data['time'] = hdr['time']
@@ -65,7 +65,7 @@ def bciBlock(cur, blkhash):
     cur.execute("select id from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
     for blkid, in cur:
         data['height'] = data['block_index'] = int(blkid)
-        hdr = gethdr(data['height'], sqc.cfg['path'])
+        hdr = gethdr(data['height'], None, sqc.cfg['path'])
         data['ver'] = hdr['version']
         data['time'] = hdr['time']
         data['prev_block'] = hdr['previousblockhash'][::-1].encode('hex')

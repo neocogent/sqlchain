@@ -65,7 +65,7 @@ def apiHeader(cur, blk, args):
     else:
         cur.execute("select id,hash from blocks order by id desc limit 1;")
     for blkid,blkhash in cur:
-        hdr = gethdr(int(blkid), sqc.cfg['path'])
+        hdr = gethdr(int(blkid), None, sqc.cfg['path'])
         if 'electrum' in args:
             return { 'block_height':int(blkid), 'version':hdr['version'], 'time':hdr['time'], 'bits':hdr['bits'], 'nonce':hdr['nonce'],
                      'merkle_root':hdr['merkleroot'][::-1].encode('hex'), 'prev_block_hash':hdr['previousblockhash'][::-1].encode('hex') }
@@ -82,7 +82,7 @@ def apiBlock(cur, blkhash):
     for blk, in cur:
         data['height'] = int(blk)
         data['confirmations'] = sqc.cfg['block'] - data['height'] + 1
-        data.update(gethdr(data['height'], sqc.cfg['path']))
+        data.update(gethdr(data['height'], None, sqc.cfg['path']))
         data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
         data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
         data['difficulty'] = bits2diff(data['bits'])

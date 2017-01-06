@@ -49,7 +49,8 @@ def BlkDatHandler(cfg, owner_done):
     while not done.isSet():
         lastpos = findBlocks(cur, blockpath)
         blk,blkhash = getLastBlock(cfg)
-        log("Blkdat at %05d:%d > %d" % (lastpos+(blk,)) )
+        if blk:
+            log("Blkdat at %05d:%d > %d" % (lastpos+(blk,)) )
         linkMainChain(cur, blk, blkhash)
         for _ in range(12):
             if not done.isSet():

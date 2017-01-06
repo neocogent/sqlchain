@@ -17,9 +17,10 @@ legend {
 .navbar .beta {
 	position: relative;
 	float: left;
-	left: -40px;
-	top: 22px;
-	font-size:9px;
+	left: -65px;
+	top: 32px;
+	font-size: 9px;
+    font-weight: 700;
 	color: red;
 }
 

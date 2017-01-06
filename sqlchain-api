@@ -17,8 +17,8 @@ from sqlchain.util import *
 
 __builtins__.sqc = dotdict()  # container for super globals 
 
-sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'db':'localhost:btc:test623btc:bitcoin', 'block':0,
-            'rpc':'http://chris:cZ9k7ca22UIwPobTGQUm@cubian:8332', 'pool':4, 'dbinfo-ts':datetime.now().strftime('%s'), 
+sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'block':0,
+            'pool':4, 'dbinfo-ts':datetime.now().strftime('%s'), 
             'dbinfo':-1, 'path':'/var/data/sqlchain' }
 
 sqc.sync = threading.Condition(); 
@@ -36,7 +36,7 @@ def do_Root(env, send_resp):
             path = '/main.html' if path in ['', '/'] else path
             if os.path.isfile(sqc.cfg['www']+path):
                 _,ext = os.path.splitext(path)
-                filesize = os.path.getsize(sqc.cfg['www']+path)
+                filesize = str(os.path.getsize(sqc.cfg['www']+path))
                 with open(sqc.cfg['www']+path) as fd:
                     send_resp('200 OK', [('Content-Type', mimetypes.types_map[ext]), ('Content-Length', filesize), 
                                          ('Expires', datetime.utcfromtimestamp(time.time()+3600).strftime("%a, %d %b %Y %H:%M:%S %ZGMT"))])
@@ -188,8 +188,6 @@ def usage():
     
 def sigterm_handler(_signo, _stack_frame):
     logts("Shutting down.")
-    if not sqc.cfg['debug']:
-        os.unlink(sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid')
     sys.exit(0)
     
 def run():
@@ -233,13 +231,14 @@ if __name__ == '__main__':
         signal.signal(signal.SIGINT, sigterm_handler)
         run()
     else:
-        logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
-        pidpath = cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid'
+        logpath = sqc.cfg['log'] if 'log' in sqc.cfg else sys.argv[0]+'.log'
+        pidpath = sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid'
         with daemon.DaemonContext(working_directory='.', stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
                 signal_map={signal.SIGTERM:sigterm_handler } ):
             with file(pidpath,'w') as f: 
                 f.write(str(os.getpid()))
             run()
+            os.unlink(pidpath)
 
     
         
