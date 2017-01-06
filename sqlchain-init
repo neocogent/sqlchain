@@ -1,14 +1,19 @@
 #!/usr/bin/env python
 
-import os, sys, pwd, random, string, shutil
+import os, sys, signal, pwd, random, string, shutil, json
 import MySQLdb as db
 
-#from sqlchain.util import *
+def sigterm_handler(_signo, _stack_frame):
+    print "\nClean shutdown"
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, sigterm_handler)
 
 print """\nThis program will configure bitcoind and sqlChain for your system. 
 It can optionally create and initialize the MySQL database. It will ask a series of questions 
 and then create the database, user, init and cfg files. Re-running this will overwrite options
-including passwords but does not remove old files.\n"""
+including passwords but does not clear the DB or remove old files.\n\n
+Defaults are shown in [brackets]. Just hit enter to accept the default.\n"""
 if os.geteuid() != 0:
     print "You need to run with root/sudo privileges - try again."
     sys.exit(0)
@@ -16,7 +21,7 @@ go = raw_input( "Continue [Y]/N:" ) or 'Y'
 if go.upper() != 'Y':
     sys.exit(0)
 
-btcdir = raw_input( "Enter the bitcoin data directory [ /var/data/bitcoin ]:" ) or "/var/data/bitcoin"
+btcdir = raw_input( "\nEnter the bitcoin data directory [/var/data/bitcoin]:" ) or "/var/data/bitcoin"
 btcboot = raw_input( "Start bitcoind at system boot [Y]/N:" ) or 'Y'
 btcuser = raw_input( "User to run bitcoind and sqlchain daemons (will create if not existing) [btc]:" ) or 'btc'
 btcpwd = raw_input( "Bitcoin RPC password [create random]:" ) 
@@ -29,7 +34,7 @@ btcprune = raw_input( "Run bitcoind in pruning mode Y/[N]:" ) or 'N'
 
 sqlboot = raw_input( "Start sqlchaind at system boot [Y]/N:" ) or 'Y'
 apiboot = raw_input( "Start sqlchain-api at system boot [Y]/N:" ) or 'Y'   
-cfgdir = raw_input( "Directory for config files [ /etc/bitcoin ]:" ) or "/etc/bitcoin"
+cfgdir = raw_input( "Directory for config files [/etc/bitcoin]:" ) or "/etc/bitcoin"
 sqldir = raw_input( "Directory for sqlchain blob and header data files [/var/data/sqlchain]:") or "/var/data/sqlchain"
 wwwdir = raw_input( "Root web directory for sqlchain-api [/var/www]:") or "/var/www"
 
@@ -42,6 +47,8 @@ if btcpwd == '':
     btcpwd = ''.join(random.sample(string.ascii_letters+string.digits,20))
 if dbpwd == '':
     dbpwd = ''.join(random.sample(string.ascii_letters+string.digits,20))
+
+print ""
 
 ## Create user for running bitcoin and sqlchain daemons
 try:
@@ -140,47 +147,20 @@ with open(initfile, 'w') as f:
     f.write(initsrc.replace('expect fork','')+s)
     
 ### Create sqlchaind.cfg 
-sqlcfg = """
-{
-  "log": "datapath/daemon.log",
-  "pid": "datapath/daemon.pid",
-  "path": "datapath",
-  "db": "localhost:dbuser:dbpwd:dbname",
-  "queue": 8,
-  "rpc": "http://btcuser:rpcpwd@localhost:8332",
-  "debug": false,
-  "user": "btcuser",
-  "no-sigs": false
-}"""
+sqlcfg = { "log": sqldir+"/daemon.log", "pid": sqldir+"/daemon.pid", "path": sqldir, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), \
+           "queue": 8, "rpc": "http://%s:%s@localhost:8332" % (btcuser,btcpwd), "debug": False, "user": btcuser, "no-sigs": False }
 print "Creating config file:", cfgdir+'/sqlchaind.cfg'
-for k,v in [('datapath',sqldir),('dbuser',dbuser),('btcuser',btcuser),('rpcpwd',btcpwd),('dbpwd',dbpwd),('dbname',dbname)]:
-    sqlcfg = sqlcfg.replace(k, v)
 with open(cfgdir+'/sqlchaind.cfg', 'w') as f:
-    f.write(sqlcfg)
+    json.dump(sqlcfg, f, indent=2)
 os.chown(cfgdir+'/sqlchaind.cfg', pwd.pw_uid, pwd.pw_gid)
 
 ### Create sqlchain-api.cfg 
-apicfg = """
-{
-  "www": "wwwpath", 
-  "user": "btcuser",
-  "db": "localhost:dbuser:dbpwd:dbname", 
-  "dbinfo": -1, 
-  "dbinfo-ts": "0", 
-  "rpc": "http://btcuser:rpcpwd@localhost:8332", 
-  "pool": 4, 
-  "log": "datapath/api.log", 
-  "pid": "datapath/api.pid",
-  "path": "datapath",
-  "debug": false, 
-  "block": 0, 
-  "listen": "localhost:8085"
-}"""
+apicfg = { "www": wwwdir, "user": btcuser, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), "dbinfo": -1, "dbinfo-ts": "0", \
+           "rpc": "http://%s:%s@localhost:8332" % (btcuser,btcpwd), "pool": 4, "log": sqldir+"/api.log", "pid": sqldir+"/api.pid", \
+           "path": sqldir, "debug": False, "block": 0, "listen": "localhost:8085" }
 print "Creating config file:", cfgdir+'/sqlchain-api.cfg'
-for k,v in [('datapath',sqldir),('wwwpath',wwwdir),('dbuser',dbuser),('btcuser',btcuser),('rpcpwd',btcpwd),('dbpwd',dbpwd),('dbname',dbname)]:
-    apicfg = apicfg.replace(k, v)
 with open(cfgdir+'/sqlchain-api.cfg', 'w') as f:
-    f.write(apicfg)
+    json.dump(apicfg, f, indent=2)
 os.chown(cfgdir+'/sqlchain-api.cfg', pwd.pw_uid, pwd.pw_gid)
     
 ### Create or update the bitcoin.conf
@@ -193,14 +173,9 @@ try:
         btcfg[k] = v
 except (IOError, ImportError):
     print "Creating file: %s/bitcoin.conf" % cfgdir
-btcfg['server'] = 1
-btcfg['daemon'] = 1
-btcfg['prune'] = 1 if btcprune.upper() == 'Y' else 0
-btcfg['rpcuser'] = btcuser
-btcfg['rpcpassword'] = btcpwd
-btcfg['datadir'] = btcdir
-btcfg['pid'] = sqldir+'/bitcoind.pid'
-
+    
+btcfg.update({'server':1, 'daemon':1, 'prune':1 if btcprune.upper() == 'Y' else 0, 'rpcuser':btcuser, 'rpcpassword':btcpwd, \
+              'datadir':btcdir, 'pid':sqldir+'/bitcoind.pid' })
 with open(cfgdir+'/bitcoin.conf', 'w') as f:
     for k in btcfg:
         f.write("%s=%s\n" % (k,btcfg[k]))
