@@ -43,5 +43,6 @@ setup(
         "python-bitcoinrpc >= 0.1"
     ],
     package_data={'sqlchain': ['docs/sqlchain.sql','www']},
+    include_package_data=True
 
 )
