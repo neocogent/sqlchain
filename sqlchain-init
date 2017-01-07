@@ -50,6 +50,8 @@ if dbpwd == '':
 
 print ""
 
+os.chdir('/usr/local/share/sqlchain')
+
 ## Create user for running bitcoin and sqlchain daemons
 try:
     pwd = pwd.getpwnam(btcuser)
@@ -77,7 +79,7 @@ elif not os.path.exists(wwwdir):
     print "Creating directory:", wwwdir
     os.makedirs(wwwdir)
     os.chown(wwwdir, pwd.pw_uid, pwd.pw_gid)
-    for root, dirs, files in os.walk(sys.prefix+'share/sqlchain/www'):  
+    for root, dirs, files in os.walk('www'):  
         dst = root[root.index('/'):] if '/'  in root else '/'
         for d in dirs:  
             os.mkdir(os.path.join(wwwdir+dst, d))
@@ -98,7 +100,7 @@ for f in ['/blobs.dat','/hdrs.dat']:
 ### Create MySql database and tables   
 print "Creating MySQL database:", dbname 
 try:
-    sqlsrc = open(sys.prefix+'share/sqlchain/docs/sqlchain.sql').read()
+    sqlsrc = open('docs/sqlchain.sql').read()
     sqlcode = ''
     for k,v in [('--CREATE','CREATE'),('--GRANT','GRANT'),('--FLUSH','FLUSH'),('bitcoin',dbname),('sqlpwd',dbpwd),('btc',dbuser)]:
         sqlsrc = sqlsrc.replace(k, v)
@@ -112,7 +114,7 @@ try:
         if stmnt:
             cur.execute(stmnt)
 except (IOError, ImportError):
-    print "Cannot open docs/sqlchain.sql script"
+    print "Cannot open ", '/usr/local/share/sqlchain/docs/sqlchain.sql'
     print "Skipping further MySQL DB setup\n"
     pass
 except db.Error, e:
@@ -135,7 +137,7 @@ kill timeout 60
 initfile = '/etc/init/bitcoin.conf' + ('.disabled' if btcboot.upper() != 'Y' else '')
 print "Creating system init file: %s" % initfile
 with open(initfile, 'w') as f:
-    s = "exec start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s: --exec /usr/local/bin/bitcoind -- -conf=%s/bitcoin.conf\n" % (sqldir,btcuser,cfgdir)
+    s = "exec start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s: --exec /usr/bin/bitcoind -- -conf=%s/bitcoin.conf -datadir=%s\n" % (sqldir,btcuser,cfgdir,btcdir)
     f.write(initsrc+s)
 initfile = '/etc/init/sqlchain.conf' + ('.disabled' if sqlboot.upper() != 'Y' else '')
 print "Creating system init file: %s" % initfile 
@@ -177,7 +179,7 @@ except (IOError, ImportError):
     print "Creating file: %s/bitcoin.conf" % cfgdir
     
 btcfg.update({'server':1, 'daemon':1, 'prune':1 if btcprune.upper() == 'Y' else 0, 'rpcuser':btcuser, 'rpcpassword':btcpwd, \
-              'datadir':btcdir, 'pid':sqldir+'/bitcoind.pid' })
+              'datadir':btcdir, 'pid':sqldir+'/bitcoind.pid', 'disablewallet':1 })
 with open(cfgdir+'/bitcoin.conf', 'w') as f:
     for k in btcfg:
         f.write("%s=%s\n" % (k,btcfg[k]))
