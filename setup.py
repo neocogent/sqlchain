@@ -1,4 +1,4 @@
-import setuptools
+import setuptools, os
 from distutils.core import setup
 
 from sqlchain.version import *
@@ -8,7 +8,11 @@ try:
    readme_md = pypandoc.convert('README.md', 'rst')
 except (IOError, ImportError):
    readme_md = open('README.md').read()
-  
+
+destdir = os.path.join('share','sqlchain')
+datafiles = [(os.path.join(destdir,d), [os.path.join(d,f) for f in files]) for d, folders, files in os.walk('www')]
+datafiles.extend([(os.path.join(destdir,d), [os.path.join(d,f) for f in files]) for d, folders, files in os.walk('docs')])
+   
 setup(
     name='sqlchain',
     packages=['sqlchain'],
@@ -42,7 +46,6 @@ setup(
         "MySQL-python >= 1.2.5",
         "python-bitcoinrpc >= 0.1"
     ],
-    package_data={'sqlchain': ['docs/sqlchain.sql','www']},
-    include_package_data=True
+    data_files=datafiles
 
 )

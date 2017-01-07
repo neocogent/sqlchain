@@ -77,7 +77,7 @@ elif not os.path.exists(wwwdir):
     print "Creating directory:", wwwdir
     os.makedirs(wwwdir)
     os.chown(wwwdir, pwd.pw_uid, pwd.pw_gid)
-    for root, dirs, files in os.walk('www'):  
+    for root, dirs, files in os.walk(sys.prefix+'share/sqlchain/www'):  
         dst = root[root.index('/'):] if '/'  in root else '/'
         for d in dirs:  
             os.mkdir(os.path.join(wwwdir+dst, d))
@@ -98,7 +98,7 @@ for f in ['/blobs.dat','/hdrs.dat']:
 ### Create MySql database and tables   
 print "Creating MySQL database:", dbname 
 try:
-    sqlsrc = open('docs/sqlchain.sql').read()
+    sqlsrc = open(sys.prefix+'share/sqlchain/docs/sqlchain.sql').read()
     sqlcode = ''
     for k,v in [('--CREATE','CREATE'),('--GRANT','GRANT'),('--FLUSH','FLUSH'),('bitcoin',dbname),('sqlpwd',dbpwd),('btc',dbuser)]:
         sqlsrc = sqlsrc.replace(k, v)
