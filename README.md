@@ -32,8 +32,6 @@ sqlChain is still *Alpha level* software under active development (not ready for
 
 #### TODO
 
-- create boot init scripts and better install scripting 
-- test pruning full sync on an EC2 instance, from scratch, and write an **install guide**
 - open server for demo purposes as public api
 - more testing on Electrum server operation
 - look further into pruning spent trxs for a wallet api with even lower storage needs
