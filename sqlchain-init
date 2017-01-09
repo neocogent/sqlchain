@@ -32,6 +32,10 @@ available as PR #7871, which can be pulled and merged for a custom build. If you
 available then do not enable pruning as blocks could be pruned before being processed by sqlchaind.\n"""
 btcprune = raw_input( "Run bitcoind in pruning mode Y/[N]:" ) or 'N'
 
+print """\nsqlchaind can parse block files directly, bypassing RPC calls. This is faster when bitcoind is busy
+and not responding to RPC calls. Direct mode is currently experimnetal and may not be as safe.\n"""
+blkdat = raw_input( "Run sqlchaind in direct mode Y/[N]:" ) or 'N'
+
 sqlboot = raw_input( "Start sqlchaind at system boot [Y]/N:" ) or 'Y'
 apiboot = raw_input( "Start sqlchain-api at system boot [Y]/N:" ) or 'Y'   
 cfgdir = raw_input( "Directory for config files [/etc/bitcoin]:" ) or "/etc/bitcoin"
@@ -134,10 +138,13 @@ respawn limit 5 120
 kill timeout 60
 
 """
+btcbin = '/usr/local/bin/bitcoind'
+if not os.path.exists(btcbin):
+    btcbin = '/usr/bin/bitcoind'
 initfile = '/etc/init/bitcoin.conf' + ('.disabled' if btcboot.upper() != 'Y' else '')
 print "Creating system init file: %s" % initfile
 with open(initfile, 'w') as f:
-    s = "exec start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s: --exec /usr/bin/bitcoind -- -conf=%s/bitcoin.conf -datadir=%s\n" % (sqldir,btcuser,cfgdir,btcdir)
+    s = "exec start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s: --exec %s -- -conf=%s/bitcoin.conf -datadir=%s\n" % (sqldir,btcuser,btcbin,cfgdir,btcdir)
     f.write(initsrc+s)
 initfile = '/etc/init/sqlchain.conf' + ('.disabled' if sqlboot.upper() != 'Y' else '')
 print "Creating system init file: %s" % initfile 
@@ -153,10 +160,13 @@ with open(initfile, 'w') as f:
 ### Create sqlchaind.cfg 
 sqlcfg = { "log": sqldir+"/daemon.log", "pid": sqldir+"/daemon.pid", "path": sqldir, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), \
            "queue": 8, "rpc": "http://%s:%s@localhost:8332" % (btcuser,btcpwd), "debug": False, "user": btcuser, "no-sigs": False }
+if blkdat.upper() == 'Y':
+    sqlcfg["blkdat"] = btcdir
 print "Creating config file:", cfgdir+'/sqlchaind.cfg'
 with open(cfgdir+'/sqlchaind.cfg', 'w') as f:
     json.dump(sqlcfg, f, indent=2)
 os.chown(cfgdir+'/sqlchaind.cfg', pwd.pw_uid, pwd.pw_gid)
+os.chmod(cfgdir+'/sqlchaind.cfg', 0660)
 
 ### Create sqlchain-api.cfg 
 apicfg = { "www": wwwdir, "user": btcuser, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), "dbinfo": -1, "dbinfo-ts": "0", \
@@ -166,6 +176,7 @@ print "Creating config file:", cfgdir+'/sqlchain-api.cfg'
 with open(cfgdir+'/sqlchain-api.cfg', 'w') as f:
     json.dump(apicfg, f, indent=2)
 os.chown(cfgdir+'/sqlchain-api.cfg', pwd.pw_uid, pwd.pw_gid)
+os.chmod(cfgdir+'/sqlchain-api.cfg', 0660)
     
 ### Create or update the bitcoin.conf
 btcfg = {}
@@ -184,5 +195,6 @@ with open(cfgdir+'/bitcoin.conf', 'w') as f:
     for k in btcfg:
         f.write("%s=%s\n" % (k,btcfg[k]))
 os.chown(cfgdir+'/bitcoin.conf', pwd.pw_uid, pwd.pw_gid)
+os.chmod(cfgdir+'/bitcoin.conf', 0660)
     
     
