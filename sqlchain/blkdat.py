@@ -24,8 +24,9 @@ from hashlib import sha256
 from version import *
 from util import *
 
-verbose = False
 done = threading.Event()
+todo = {}
+lastpos = (0,0)
 
 cfg = { 'path':'.bitcoin', 'db':'', 'rpc':'' }      
 
@@ -40,106 +41,112 @@ CREATE TABLE `blkdat` (
   KEY `id` (`id`),
   KEY `hash` (`hash`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;'''
-   
-def BlkDatHandler(cfg, owner_done):
+  
+def BlkDatHandler(cfg, owner_done, verbose = False):
     global done
     done = owner_done
     cur = initdb(cfg)
     blockpath = cfg['blkdat'] + "/blocks/blk%05d.dat"
     while not done.isSet():
-        lastpos = findBlocks(cur, blockpath)
-        blk,blkhash = getLastBlock(cfg)
-        if blk:
-            log("Blkdat at %05d:%d > %d" % (lastpos+(blk,)) )
-        linkMainChain(cur, blk, blkhash)
-        for _ in range(12):
-            if not done.isSet():
-                sleep(5)
+        blkhash = findBlocks(cur, blockpath, verbose)
+        if blkhash:
+            blk,blkhash = getBlk(cfg, blkhash)
+            if blk:
+                log("Blkdat %d - %s" % (blk,blkhash[::-1].encode('hex')) )
+                linkMainChain(cfg, cur, blk, blkhash, verbose)
                 
-def findBlocks(cur, blockpath):
-    global verbose
-    cur.execute("select max(filenum) from blkdat;") # find any previous state
-    row = cur.fetchone()
-    filenum = int(row[0]) if row and row[0] else 0
-    cur.execute("select max(filepos) from blkdat where filenum=%s;", (filenum,))
-    row = cur.fetchone()
-    startpos = pos = row[0] if row and row[0] else 0
-    lastfound = 0,0
-    verbose = ( pos == 0 )
-    while not done.isSet():
-        try:
-            with open(blockpath % filenum, "rb") as fd:
-                while True:
-                    fd.seek(pos)
-                    buf = fd.read(8)
-                    if len(buf) < 8:
+def findBlocks(cur, blockpath, verbose):
+    global lastpos
+    filenum,pos = lastpos
+    startpos = pos
+    while not os.path.exists(blockpath % (filenum+1,)): # we trail by one blk file otherwise not reliable
+        sleep(5)
+        if done.isSet():
+            return None
+    try:
+        with open(blockpath % filenum, "rb") as fd:
+            while not done.isSet():
+                fd.seek(pos)
+                buf = fd.read(8)
+                if len(buf) < 8:
+                    break
+                magic,blksize = unpack('<II', buf)
+                if magic != 0xD9B4BEF9:
+                    if pos-startpos > 1e6: # skip large end gaps
                         break
-                    magic,blksize = unpack('<II', buf)
-                    if magic != 0xD9B4BEF9:
-                        if pos-startpos > 1e6: # skip large end gaps
-                            break
-                        pos += 1
-                        continue
-                    buf = fd.read(80)
-                    blkhash = sha256(sha256(buf).digest()).digest()
-                    prevhash = buf[4:36]
-                    lastfound = filenum,pos
-                    if verbose:
-                        log("%05d:%d %s %s" % (filenum, pos, blkhash[::-1].encode('hex')[:32], prevhash[::-1].encode('hex')[:32]) )
-                    cur.execute("insert ignore into blkdat (id,hash,prevhash,filenum,filepos) values(-1,%s,%s,%s,%s);", (blkhash,prevhash,filenum,pos))
-                    pos += blksize
-                    startpos = pos
-                    
-                filenum += 1
-                pos = 0
-        except IOError:
-            #print "Cannot open ", blockpath % filenum
-            return lastfound
+                    pos += 1
+                    continue
+                buf = fd.read(80)
+                blkhash = sha256(sha256(buf).digest()).digest()
+                prevhash = buf[4:36]
+                if verbose:
+                    log("%05d:%d %s %s" % (filenum, pos, blkhash[::-1].encode('hex')[:32], prevhash[::-1].encode('hex')[:32]) )
+                cur.execute("insert ignore into blkdat (id,hash,prevhash,filenum,filepos) values(-1,%s,%s,%s,%s);", (blkhash,prevhash,filenum,pos))
+                pos += blksize
+                startpos = pos
+            lastpos = filenum+1,0
+            return blkhash
+    except IOError:
+        lastpos = filenum,pos
+        return None
 
-def linkMainChain(cur, blk, blkhash):
-    blkhash = blkhash.decode('hex')[::-1]
-    while not done.isSet():
-        if verbose:
-            log("%d - %s" % (blk, blkhash[::-1].encode('hex')) )
-        cur.execute("select id from blkdat where id=%s and hash=%s limit 1;", (blk, blkhash))
-        row = cur.fetchone()
-        if row:
-            break
-        cur.execute("update blkdat set id=%s where hash=%s;", (blk, blkhash))
-        if cur.rowcount < 1:
-            log("Cannot update %d! Rewinding blkdat." % blk)
-            cur.execute("select filenum from blkdat where prevhash=%s limit 1;", (blkhash,))
-            cur.execute("delete from blkdat where filenum >= %s;", cur.fetchone()) 
-            break
-        cur.execute("select prevhash from blkdat where id=%s limit 1;", (blk,))
-        row = cur.fetchone()
-        if row:
-            blkhash = row[0]
-            blk -= 1
-        if blk < 0:
-            break
+def linkMainChain(cfg, cur, blk, blkhash, verbose):
+    global todo
+    todo[blk] = blkhash
+    if verbose:
+        print "TODO", [ (blk,todo[blk][::-1].encode('hex')) for blk in todo ]
+    tmp = {}
+    for blk in todo:
+        blkhash = todo[blk]
+        while not done.isSet():
+            if verbose:
+                log("%d - %s" % (blk, blkhash[::-1].encode('hex')) )
+            cur.execute("select id from blkdat where id=%s and hash=%s limit 1;", (blk, blkhash))
+            row = cur.fetchone()
+            if row:
+                break
+            cur.execute("update blkdat set id=%s where hash=%s;", (blk, blkhash))
+            if cur.rowcount < 1:
+                log("Blkdat hash miss for %d, requeued" % blk)
+                tmp[blk] = blkhash
+                break
+            cur.execute("select prevhash from blkdat where id=%s limit 1;", (blk,))
+            row = cur.fetchone()
+            if row:
+                blkhash = row[0]
+                blk -= 1
+            if blk < 0:
+                break
+    todo = tmp
             
-def getLastBlock(cfg):
-    blk = 0
+def getBlk(cfg, blkhash):
     while not done.isSet():
         try: # this tries to talk to bitcoind despite it being comatose
             rpc = AuthServiceProxy(cfg['rpc'], timeout=120)
-            if blk == 0:
-                blkinfo = rpc.getblockchaininfo()
-                blk = blkinfo['blocks'] - 60
-            blkhash = rpc.getblockhash(blk) # trailing by 60 to avoid reorg problems
-            return blk,blkhash
+            blk = rpc.getblock(blkhash[::-1].encode('hex'))
+            blkhash = rpc.getblockhash(blk['height']-120) # offset to avoid reorg, order problems
+            return ( blk['height']-120,blkhash.decode('hex')[::-1] )
         except Exception, e:
-            log( 'Blkdat rpc ' + str(e) + ' trying again' )
-            sleep(5) 
+            log( 'Blkdat rpc %s, trying again' % str(e) )
+            sleep(3) 
     return 0,''
 
 def initdb(cfg):
+    global todo,lastpos
     sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
     cur.execute("select count(1) from information_schema.tables where table_name='blkdat';")
     if not cur.fetchone()[0]:
         cur.execute(sqlmk) # create table if not existing
+    cur.execute("select filenum,max(filepos) from blkdat where filenum=(select max(filenum) from blkdat);") # find any previous position
+    row = cur.fetchone()
+    if row != (None,None):
+        lastpos = row
+    cur.execute("""select (select min(t3.id)-1 from blkdat t3 where t3.id > t1.id) as blk,
+                          (select prevhash from blkdat t4 where t4.id=blk+1) as blkhash from blkdat t1 where not exists 
+                          (select t2.id from blkdat t2 where t2.id = t1.id + 1) having blk is not null;""") # scan for id gaps, set todo
+    for (blk,blkhash) in cur:
+        todo[blk] = blkhash    
     return cur
 
 def options(cfg):
@@ -201,13 +208,13 @@ if __name__ == '__main__':
   
     while not done.isSet():
         log( "Finding new blocks" )
-        findBlocks(cur, blockpath)
+        findBlocks(cur, blockpath, verbose)
         
         log( "Getting last block from rpc" )
         blk,blkhash = getLastBlock(cfg)
             
         log( "Linking main chain" )
-        linkMainChain(cur, blk, blkhash)
+        linkMainChain(cur, blk, blkhash, verbose)
         
         if not done.isSet():
             log( "Waiting" )

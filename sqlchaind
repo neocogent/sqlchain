@@ -15,11 +15,6 @@ from sqlchain.version import *
 from sqlchain.util import *
 from sqlchain.blkdat import BlkDatHandler
 
-#import logging
-
-#logging.basicConfig()
-#logging.getLogger("BitcoinRPC").setLevel(logging.DEBUG)
-
 cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain' } 
 blksecs = []
 memPool = set()
@@ -59,14 +54,22 @@ def getBlocks(blk):
     return blk - startblk
 
 def getBlocksDirect(cur, blk):
-    blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done))
+    blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done,True))
     blkscan.start()
     logts("Using blkdat mode: %s" % cfg['blkdat'])
+    while not done.isSet():
+        cur.execute("select count(1) from information_schema.tables where table_name='blkdat';")
+        if cur.fetchone()[0]:
+            break
+        time.sleep(5)
+        logts("Waiting for blkdat to be ready")
     while not done.isSet():
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(0.01)
             continue
-        chkPruning(blk - blockQ.qsize())
+        if chkPruning(blk - blockQ.qsize()) - blk < 288:
+            logts("Near sync %d. Aborting direct mode" % blk)
+            return blk
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
         row = cur.fetchone()
         if row:
@@ -84,18 +87,22 @@ def getBlocksDirect(cur, blk):
                 blockQ.put(data)
                 blk += 1
         else:
-            time.sleep(5)
+            time.sleep(3)
     log("Waiting for blkscan to finish")
     blkscan.join()
     return blk
     
 def chkPruning(blk):
-    if blk % 100 == 0:
+    if blk > 120000 and blk % 100 == 0:
         try:
             rpc = AuthServiceProxy(cfg['rpc'])
-            rpc.pruneblockchain(blk)
+            blkinfo = rpc.getblockchaininfo()
+            if blkinfo['pruned']:
+                rpc.pruneblockchain(blk)
+            return blkinfo['headers']
         except Exception, e:
-            log( 'Prune rpc ' + str(e) + ' ignoring' )
+            log( 'Prune rpc ' + str(e) + ' (ignoring)' )
+    return blk + 500 # faked to prevent aborting early
     
 def BlockHandler():
     global done
