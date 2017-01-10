@@ -46,7 +46,7 @@ If the process doesn't seem to start you can check in /var/log/upstart/ for logs
 
 You can add your normal user to the sqlchain/bitcoin group (by default "btc"),
 
-    adduser <myuser> btc
+    sudo adduser <myuser> btc
     
 That allows you to use the config files easily, such as when using bitcoin-cli. It's also useful to have some aliases for common tasks. You can throw these in your .bashrc so they are present on login.
 
@@ -69,7 +69,7 @@ By default the API server (sqlchain-api) listens on localhost:8085 but of course
 
     "listen":"0.0.0.0:80",
     
-You can also set an SSL certificate file to use if you want to server on port 443. Again, edit the sqlchain-api.cfg and add:
+You can also set an SSL certificate file to use if you want to serve https. Again, edit the sqlchain-api.cfg and add:
 
     "ssl":"path/to/certfile",
     
