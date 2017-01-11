@@ -39,7 +39,7 @@ blkdat = raw_input( "Run sqlchaind in direct mode Y/[N]:" ) or 'N'
 sqlboot = raw_input( "Start sqlchaind at system boot [Y]/N:" ) or 'Y'
 apiboot = raw_input( "Start sqlchain-api at system boot [Y]/N:" ) or 'Y'   
 cfgdir = raw_input( "Directory for config files [/etc/bitcoin]:" ) or "/etc/bitcoin"
-sqldir = raw_input( "Directory for sqlchain blob and header data files [/var/data/sqlchain]:") or "/var/data/sqlchain"
+sqldir = raw_input( "Directory for sqlchain log, blob and header data files [/var/data/sqlchain]:") or "/var/data/sqlchain"
 wwwdir = raw_input( "Root web directory for sqlchain-api (N to disable) [/var/www]:") or "/var/www"
 
 dbname = raw_input( "\nMySQL database name [bitcoin]:" ) or "bitcoin"
@@ -196,5 +196,40 @@ with open(cfgdir+'/bitcoin.conf', 'w') as f:
         f.write("%s=%s\n" % (k,btcfg[k]))
 os.chown(cfgdir+'/bitcoin.conf', pwd.pw_uid, pwd.pw_gid)
 os.chmod(cfgdir+'/bitcoin.conf', 0660)
-    
-    
+
+### Create log rotation control files
+print "Creating logrotate files in: /etc/logrotate.d/"
+logconf = """
+%s/*.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    postrotate
+        killall -HUP sqlchaind sqlchain-api
+    endscript
+}
+""" 
+logconfpath = '/etc/logrotate.d/sqlchain'
+if not os.path.exists(logconfpath):
+    with open(logconfpath, 'w') as f:
+        f.write(logconf % sqldir)
+logconf = """
+%s/debug.log {
+    weekly
+    copytruncate
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+}
+"""
+logconfpath = '/etc/logrotate.d/bitcoin'
+if not os.path.exists(logconfpath):
+    with open(logconfpath, 'w') as f:
+        f.write(logconf % btcdir)
+
+
