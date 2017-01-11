@@ -320,6 +320,7 @@ def drop2user(cfg):
         os.setgid(pw.pw_gid)
         os.setuid(pw.pw_uid)
         os.umask(077) 
+        logts('Dropped to user %s' % cfg['user'])
 
             
 
