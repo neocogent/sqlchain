@@ -336,6 +336,13 @@ def usage():
 def sigterm_handler(_signo, _stack_frame):
     global done
     done.set()
+def sighup_handler(_signo, _stack_frame):
+    logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
+    sys.stdout.close()
+    sys.stdout=open(logpath,'a')
+    sys.stderr.close()
+    sys.stderr=open(logpath,'a')
+    logts("SIGHUP Log reopened")
     
 def run():
     global blockQ,done 
@@ -374,8 +381,8 @@ if __name__ == '__main__':
     else:
         logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
         pidpath = cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid'
-        with daemon.DaemonContext(working_directory='.', stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
-                signal_map={signal.SIGTERM:sigterm_handler} ):
+        with daemon.DaemonContext(working_directory='.', umask=0002, stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
+                signal_map={signal.SIGTERM:sigterm_handler, signal.SIGHUP:sighup_handler} ):
             with file(pidpath,'w') as f: 
                 f.write(str(os.getpid()))
             run()

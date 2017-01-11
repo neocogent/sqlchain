@@ -313,13 +313,20 @@ def log(msg):
     sys.stdout.flush()
     tidylog.release()
 
-def drop2user(cfg):
+def drop2user(cfg, chown=False):
     if ('user' in cfg) and (cfg['user'] != '') and (os.getuid() == 0):
         pw = pwd.getpwnam(cfg['user'])
+        if chown:
+            logfile = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
+            pidfile = cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid'
+            if os.path.exists(logfile):
+                os.chown(logfile, pw.pw_uid, pw.pw_gid)
+            if os.path.exists(pidfile):
+                os.chown(pidfile, pw.pw_uid, pw.pw_gid)
         os.setgroups([])
         os.setgid(pw.pw_gid)
         os.setuid(pw.pw_uid)
-        os.umask(077) 
+        os.umask(0022) 
         logts('Dropped to user %s' % cfg['user'])
 
             

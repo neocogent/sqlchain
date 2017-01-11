@@ -194,6 +194,14 @@ def sigterm_handler(_signo, _stack_frame):
         os.unlink(sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid')
     sys.exit(0)
     
+def sighup_handler(_signo, _stack_frame):
+    logpath = sqc.cfg['log'] if 'log' in sqc.cfg else sys.argv[0]+'.log'
+    sys.stdout.close()
+    sys.stdout=open(logpath,'a')
+    sys.stderr.close()
+    sys.stderr=open(logpath,'a')
+    logts("SIGHUP Log reopened")
+        
 def run():
     global server
     
@@ -214,7 +222,7 @@ def run():
     syncd.daemon = True
     syncd.start()
     
-    drop2user(sqc.cfg)
+    drop2user(sqc.cfg, chown=True)
 
     server.serve_forever()
     
@@ -238,8 +246,8 @@ if __name__ == '__main__':
     else:
         logpath = sqc.cfg['log'] if 'log' in sqc.cfg else sys.argv[0]+'.log'
         pidpath = sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid'
-        with daemon.DaemonContext(working_directory='.', stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
-                signal_map={signal.SIGTERM:sigterm_handler } ):
+        with daemon.DaemonContext(working_directory='.', umask=0002, stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
+                signal_map={signal.SIGTERM:sigterm_handler, signal.SIGHUP:sighup_handler } ):
             with file(pidpath,'w') as f: 
                 f.write(str(os.getpid()))
             run()
