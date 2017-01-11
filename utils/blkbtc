@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if [ "$1" == "off" ]; then
+  echo "bitcoin open"
+  CHG="D"
+else
+  echo "bitcoin blocked"
+  CHG="A"
+fi
+
+sudo iptables -$CHG INPUT -p tcp --dport 8333 -j DROP
+sudo iptables -$CHG OUTPUT -p tcp --dport 8333 -j DROP

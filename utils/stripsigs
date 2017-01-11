@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+#
+#  scan trxs and remove input sigScript data
+#
+#  - user at your own risk - this script may not work as expected
+#  - can reduce blob file size by ~93%
+#  - if sqlchaind isn't run with --no-sigs option then new blocks will have sig data
+#  - raw trx api calls will return non-standard data because missing sig data
+#  - this rewrites blobs.dat to blobs-nosigs.dat and then renames for sqlchaind use
+#  - sqlchaind should be stopped while this is run, and the trxs table should be backed up
+#    as it contains the only index to old blobs.dat if something goes wrong
+#
+import os, sys
+import MySQLdb as db
+from MySQLdb import cursors
+from struct import pack, unpack, unpack_from
+
+from sqlchain import util
+   
+blobname = '/var/data/nosigs.dat'
+dbcfg = "localhost:btc:password:bitcoin"
+
+if not os.path.isfile(blobname):
+    open(blobname, 'a').close()
+    
+sqlR = db.connect(*dbcfg.split(':'))
+curR = sqlR.cursor(cursors.SSCursor) # we use a server side cursor so all >80 million trxs aren't buffered
+curR.execute("select count(*) from trxs;")
+rows, = curR.fetchone()
+
+sqlU = db.connect(*dbcfg.split(':'))
+curU = sqlU.cursor() # we use a second connection normal cursor to do the updates
+curU.execute("create table txtmp ( `id` decimal(13) NOT NULL,`txdata` decimal(13,0) DEFAULT NULL ) ENGINE=MyISAM;")
+
+with open(blobname, 'r+b') as blobfile:
+    count = 0
+    curR.execute("select id,txdata,ins,outs from trxs;")
+    for txid,blob,ins,outs in curR:
+        hdr = getBlobHdr(int(blob))
+        if ins >= 192:
+            ins = (ins & 63)*256 + hdr[1]  
+        pos = int(blob) + hdr[0] + ins*7
+        buf = readBlob(int(blob), pos-int(blob))
+        for n in range(ins):
+            vsz,off = decodeVarInt(readBlob(pos, 9)) if not hdr[7] else (0,0)
+            pos += off+vsz
+            buf += readBlob(pos, (0 if hdr[6] else 4))
+            pos += (0 if hdr[6] else 4)
+        if outs >= 192:
+            outs = (outs & 63)*256 + hdr[2] 
+        for n in range(outs):
+            vsz,off = decodeVarInt(readBlob(pos, 9))
+            buf += readBlob(pos, off+vsz)
+            pos += off+vsz
+        txdata = blobfile.tell()
+        blobfile.write(buf)
+        curU.execute("insert into txtmp (id,txdata) value(%s,%s);", (txid, txdata))
+        count += 1
+        if count % 100000 == 0:
+            print "%2.1f" % count*100/rows
+
+print "Blob created. Now updating table to match new blob file."
+
+# disabled for safety
+#curU.execute("update trxs t inner join txtmp x on t.id=x.id set t.txdata=x.txdata;")
+print 'Done.'
+
+os.rename('/var/data/blobs.dat', '/var/data/blobs.bak')
+os.rename(blobname, '/var/data/blobs.dat')
+print 'Renamed.'
+
+    
