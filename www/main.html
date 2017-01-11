@@ -167,16 +167,19 @@
 <!-- Install docs -->
         <div class="tab-pane fade" id="install">
         <legend>Roll Your Own Blockchain Web App</legend>
-        It's easy to create a web app based on sqlChain. 
+        It's easy to create a web app based using sqlChain on an Ubuntu server. 
         <ol>
-            <li>Clone the sqlchain repo from <a href="https://github.com/neocogent/sqlchain">github</a>.</li>
-            <li>Copy <strong>sqlchain-api</strong> to your own name, eg. fluffy.</li>
-            <li>Edit the www directory html/js/css files to provide your web interface.</li>
-            <li>Add to / remove the http handler code as needed. It shows how to query sqlchain data.</li>
-            <li>Edit the cfg defaults, and/or create eg. fluffy.cfg</li>
-            <li>Run ./fluffy --debug and test the site (by default on localhost:8085).</li>
-            <li>Edit sqlchain.init.conf file and place in /etc/init to start both daemons at boot time.</li>
-            <li>Scale to serve the world: run nginx as front end and mysql replication behind.</li>
+            <li>Install base packages:<br>
+            <span class='bash'>sudo apt-get install bitcoind mysql-server libmysqlclient-dev python-pip python-dev</span></li>
+            <li>Install sqlchain from PyPi:<br>
+            <span class='bash'>sudo pip install sqlchain</span></li>
+            <li>Run the init script to setup mysql db, users and config files:<br>
+            <span class='bash'>sudo sqlchain-init</span></li>
+            <li>Start the daemons, as needed:<br>
+            <span class='bash'>sudo start bitcoin<br>sudo start sqlchain<br>sudo start sqlchain-api</span></li>
+            <li>Modify the /var/www source files as your own app.</li>
+            <li>Scale to serve the world:<br>
+            <span class='bash'>run nginx as front end and mysql replication behind.</span></li>
         </ol>
         </div>    
 <!-- Support -->

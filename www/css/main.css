@@ -66,5 +66,6 @@ legend { margin: 20px 0 10px; }
 .apiClk .info { display:none; margin: 0 0 10px; padding: 9.5px;background-color: #f5f5f5;  
     border: 1px solid #ccc;  border-radius: 4px; color: #333;  word-break: break-all; word-wrap: break-word; }
 
-
+#install ol li { margin-top: 3px; }
+.bash { display:block; text-align:left; font-family: monospace; margin-left:10px; position:relative; font-size:13px; color:coral; }
 
