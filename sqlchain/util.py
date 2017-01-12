@@ -329,5 +329,20 @@ def drop2user(cfg, chown=False):
         os.umask(0022) 
         logts('Dropped to user %s' % cfg['user'])
 
-            
+def getssl(cfg):
+    if not ('ssl' in cfg) or (cfg['ssl'] == ''):
+        return {}
 
+    logts("Loading SSL certificate chain.")
+    if sys.version_info < (2,7,9):
+        log("*** Warning: Upgrade to Python 2.7.9 for better SSL security! ***")
+        cert = { 'certfile':cfg['ssl'] }                                                        # ssl = key+cert in one file, or cert only
+        cert.update({ 'keyfile':cfg['key'] } if ('key' in cfg) and (cfg['key'] != '') else {})  # with key in 2nd file
+        return cert
+    
+    from gevent.ssl import SSLContext, PROTOCOL_SSLv23
+    context = SSLContext(PROTOCOL_SSLv23)
+    context.load_cert_chain(cfg['ssl'], cfg['key'] if ('key' in cfg) and (cfg['key'] != '') else None)
+    return { 'ssl_context': context }
+    
+    

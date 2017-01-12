@@ -221,9 +221,7 @@ def run():
 
     logts("Starting on %s" % sqc.cfg['listen'])
     host,port = sqc.cfg['listen'].split(':')
-    cert = {'certfile':sqc.cfg['ssl']} if ('ssl' in sqc.cfg) and (sqc.cfg['ssl'] != '') else {}         # ssl = key+cert in one file, or cert only
-    cert.update({'keyfile':sqc.cfg['key']} if ('key' in sqc.cfg) and (sqc.cfg['key'] != '') else {})    # with key in 2nd file
-    server = WebSocketServer((host, int(port)), APIs, spawn=10000, **cert)
+    server = WebSocketServer((host, int(port)), APIs, spawn=10000, **getssl(sqc.cfg))
     server.start()
 
     syncd = threading.Thread(target = syncMonitor)
