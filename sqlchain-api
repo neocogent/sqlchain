@@ -79,14 +79,15 @@ class BCIWebSocket(WebSocketApplication):
 
 # monitor mempool, block, orphan changes - publish to websocket subscriptions, notify waiting sync connections
 def syncMonitor():
+    global done, dbwrk
     with sqc.dbpool.get().cursor() as cur:
         cur.execute("select greatest(ifnull(m,0),ifnull(o,0)) from (select max(sync_id) as m from mempool) m,(select max(sync_id) as o from orphans) o;")
         sqc.sync_id = cur.fetchone()[0]
         cur.execute("select ifnull(max(id),0) from blocks;")
         sqc.cfg['block'] = cur.fetchone()[0]
         if sqc.cfg['dbinfo'] == 0:
-            threading.Thread(target = mkDBInfo).start()
-    while True:
+            dbwrk = threading.Thread(target = mkDBInfo).start()
+    while not done.isSet():
         with sqc.dbpool.get().cursor() as cur:
             txs = []
             cur.execute("select hash from mempool m, trxs t where m.sync_id > %s and t.id=m.id;", (sqc.sync_id,))
@@ -102,8 +103,11 @@ def syncMonitor():
         if block != sqc.cfg['block'] or new_orphans or len(txs) > 0:
             do_Sync(block)
         if sqc.cfg['dbinfo'] > 0 and (datetime.now() - datetime.fromtimestamp(int(sqc.cfg['dbinfo-ts']))).total_seconds() > sqc.cfg['dbinfo']*60:
-            threading.Thread(target = mkDBInfo).start()
+            dbwrk = threading.Thread(target = mkDBInfo)
+            dbwrk.start()
         sleep(5) 
+    if dbwrk:
+        dbwrk.join()
         
 def do_Sync(block):
     global lastBlk
@@ -125,6 +129,7 @@ def do_Sync(block):
                     clients[client]['lasttx'] = tx                     
 
 def mkDBInfo():
+    global dbwrk
     with sqc.dbpool.get().cursor() as cur:
         logts("Updating server db info")
         sqc.cfg['dbinfo-ts'] = datetime.now().strftime('%s')
@@ -142,6 +147,7 @@ def mkDBInfo():
         cur.execute("replace into info (class,`key`,value) values('db','outputs:unspent',%s);", (cur.fetchone()[0], ))
         cur.execute("replace into info (class,`key`,value) values('db','all:updated',now());")
         logts("DB info update complete")
+    dbwrk = None
 
 def options():
     try:                         
@@ -203,8 +209,9 @@ def sighup_handler(_signo, _stack_frame):
     logts("SIGHUP Log reopened")
         
 def run():
-    global server
+    global server, done
     
+    done = threading.Event()
     sqc.dbpool = DBPool(sqc.cfg['db'].split(':'), sqc.cfg['pool'], 'MySQLdb')
 
     mimetypes.init()
@@ -226,6 +233,9 @@ def run():
     drop2user(sqc.cfg, chown=True)
 
     server.serve_forever()
+    
+    done.set()
+    syncd.join()
     
 if __name__ == '__main__':
     

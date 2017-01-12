@@ -54,6 +54,7 @@ def getBlocks(blk):
     return blk - startblk
 
 def getBlocksDirect(cur, blk):
+    global done
     blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done,True))
     blkscan.start()
     logts("Using blkdat mode: %s" % cfg['blkdat'])
