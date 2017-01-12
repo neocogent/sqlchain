@@ -71,11 +71,16 @@ By default the API server (sqlchain-api) listens on localhost:8085 but of course
     
 You can also set an SSL certificate file to use if you want to serve https. Again, edit the sqlchain-api.cfg and add:
 
-    "ssl":"path/to/certfile",
+    "ssl":"path/to/full-chain-certificate-file",
+    "key":"path/to/private-key-file",     (optional: don't set if you use a combined key+cert in above)
     
-This would be a file with concatenated private key and certificate blocks. It should have suitable secure permissions.
+This could be a file with concatenated private key and certificate blocks, or separate files. It should have read-only permissions; due to how python handles ssl it needs to be readable by the running user.
 
 If you select "pruning" mode in the sqlchain-init questions then it will send rpc calls to bitcoin to let it know when a block is processed. Bitcoin prunes in "block file units", each one being ~128MB. So when sqlchaind has completed all blocks in a given block file it is deleted. The pruning only works in manual mode and this is currently non-standard. There is a nice pull request (#7871) in the bitcoin github to enable this but you would have to clone the repo, merge the pull request and build a custom binary. That's not hard to do and I can add a similar step-by-step if anyone requests it. It seems a custom build installs into /usr/local/bin instead of /usr/bin - so that overrides the normal bitcoind allowing you to use a full path to select which to start (change conf file to match).
+
+The sqlchain-api "dbinfo" cfg option sets whether db state queries are run and at what interval: -1 = never, 0 = at start only, >0 minute interval. The db info output is available as an API call. So the following will refresh info every 10 minutes.
+
+    "dbinfo":10,
 
 Any questions or suggestions - post issues on GitHub or comments on my blog or send a message through my web site.
 
