@@ -40,7 +40,7 @@ setup(
     long_description=readme_md,
     scripts=['sqlchaind','sqlchain-api','sqlchain-electrum','sqlchain-init'],
     install_requires=[
-        "gevent >= 1.0.2",
+        "gevent >= 1.2.0",
         "gevent-websocket >= 0.9.5",
         "python-daemon >= 1.5.5",
         "MySQL-python >= 1.2.5",
