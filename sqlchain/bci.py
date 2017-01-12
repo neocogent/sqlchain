@@ -9,6 +9,7 @@ from string import hexdigits
 from util import *
 from insight import apiHeader, apiTx
 from rpc import do_RPC
+from encodings import hex_codec
 
 def do_BCI(env, send_resp):
     args = env['PATH_INFO'].split('/')[2:]
