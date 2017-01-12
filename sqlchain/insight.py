@@ -436,8 +436,8 @@ def apiStatus(cur, cls='info', item=None):
                         (tbl[4], float("%.1f"%float(tbl[6]/1e9)), float("%.1f"%float(tbl[8]/1e9)), float("%.1f"%float(tbl[6]/1e9+tbl[8]/1e9)), tbl[6]+tbl[8]))
                 total_bytes += tbl[6]+tbl[8]
             cur.execute("replace into info (class,`key`,value) values('db','outputs:max-io-tx',%s);", (MAX_IO_TX, ))
-            cur.execute("replace into info (class,`key`,value) values('db','blocks:hdr-data',%s);", (os.stat('/var/data/hdrs.dat').st_size, ))
-            cur.execute("replace into info (class,`key`,value) values('db','trxs:blob-data',%s);", (os.stat('/var/data/blobs.dat').st_size, ))
+            cur.execute("replace into info (class,`key`,value) values('db','blocks:hdr-data',%s);", (os.stat(sqc.cfg['path']+'/hdrs.dat').st_size, ))
+            cur.execute("replace into info (class,`key`,value) values('db','trxs:blob-data',%s);", (os.stat(sqc.cfg['path']+'/blobs.dat').st_size, ))
             cur.execute("replace into info (class,`key`,value) values('db','trxs:max-tx-block',%s);", (MAX_TX_BLK, ))
             cur.execute("replace into info (class,`key`,value) values('db','all:total-bytes',%s);", (total_bytes, ))
             cur.execute("replace into info (class,`key`,value) values('db','all:total-GB',%s);", (float("%.1f"%float(total_bytes/1e9)), ))
