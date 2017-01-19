@@ -195,7 +195,10 @@ def usage():
     sys.exit(2) 
     
 def sigterm_handler(_signo, _stack_frame):
+    global done
     logts("Shutting down.")
+    done.set()
+    syncd.join()
     if not sqc.cfg['debug']:
         os.unlink(sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid')
     sys.exit(0)
@@ -231,9 +234,6 @@ def run():
     drop2user(sqc.cfg, chown=True)
 
     server.serve_forever()
-    
-    done.set()
-    syncd.join()
     
 if __name__ == '__main__':
     

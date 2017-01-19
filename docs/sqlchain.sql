@@ -1,5 +1,5 @@
 -- create new database after install
--- need to do these from mysql root user
+-- need to do these as mysql root user
 
 ----CREATE USER 'btc'@'localhost' IDENTIFIED BY 'sqlpwd';
 --GRANT ALL PRIVILEGES ON bitcoin.* TO 'btc'@'localhost' IDENTIFIED BY 'sqlpwd';
