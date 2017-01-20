@@ -8,7 +8,7 @@
 - Web Interface (using bootstrap, integrated with API backend, primarily a demo)
 - Electrum Server
 
-(at this time a demo server is being tested locally, but later will be hosted publicly)
+(at this time a demo server is being tested - expect to be public soon)
 
 **sqlChain** currently consists of three daemon programs.
 
@@ -17,6 +17,8 @@
 - **sqlchain-electrum**     - runs a private electrum server over the sqlchain-api layer
 
 #### Recent Updates
+
+Improved sync speed with another thread to handle output inserts/updates. These can happen "out of band" with the blocks/txs as long as in order. My testing on a "hybrid" 2 Core (8GB, SSD) server showed about double the tx/s conversion rate. I'll post some test results soon when it's fully sync'd again.
 
 Added sqlchain-init and installation guide (INSTALL.md) to help users get up and running. I've tested some more on Amazon EC2 and now also on a regular VPS account. So it's starting to get some workout and more bugs fixed. It sure runs faster on the VPS. I've found you can build a custom bitcoind and then rsync it up to the server and place in /usr/local/bin to override the default package install. That works.
 
@@ -30,7 +32,7 @@ sqlChain is still *Alpha level* software under active development (not ready for
 
 #### TODO
 
-- open server for demo purposes as public api
+- open server for demo purposes as public api - comming soon.
 - more testing on Electrum server operation
 - look further into pruning spent trxs (most of blob.dat) for a wallet api with even lower storage needs
 
