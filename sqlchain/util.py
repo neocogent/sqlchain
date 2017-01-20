@@ -193,12 +193,13 @@ def findTx(cur, txhash, mkNew=False, limit=32):
             if mkNew:
                 #if tx_id != start_id:
                 #    print '#', # collision
-                return tx_id
+                return (tx_id,False)
             return None
         if str(row[0]) == str(txhash):
-            return tx_id
+            return (tx_id,True) if mkNew else tx_id
         if tx_id > limit_id:
-            return None
+            logts("*** Tx Id limit exceeded %s ***" % txhash)
+            return (None,False) if mkNew else None
         tx_id += 1
 
 # blob and header file support stuff 

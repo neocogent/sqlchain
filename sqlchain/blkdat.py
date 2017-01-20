@@ -59,7 +59,8 @@ def findBlocks(cur, blockpath, verbose):
     global lastpos
     filenum,pos = lastpos
     startpos = pos
-    while not os.path.exists(blockpath % (filenum+1,)): # we trail by one blk file otherwise not reliable
+    blkhash = None
+    while not os.path.exists(blockpath % (filenum+2,)): # we trail by 2 blks file otherwise not reliable
         sleep(5)
         if done.isSet():
             return None
@@ -128,7 +129,7 @@ def getBlk(cfg, blkhash):
             return ( blk['height']-120,blkhash.decode('hex')[::-1] )
         except Exception, e:
             log( 'Blkdat rpc %s, trying again' % str(e) )
-            sleep(3) 
+            sleep(5) 
     return 0,''
 
 def initdb(cfg):
