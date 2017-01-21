@@ -18,6 +18,7 @@ from sqlchain.blkdat import BlkDatHandler
 cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain' } 
 blksecs = []
 memPool = set()
+maxblk = 120000
 
 def getBlocks(blk):
     global done
@@ -54,7 +55,7 @@ def getBlocks(blk):
     return blk - startblk
 
 def getBlocksDirect(cur, blk):
-    global done
+    global maxblk,done
     blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done,True))
     blkscan.start()
     logts("Using blkdat mode: %s" % cfg['blkdat'])
@@ -68,7 +69,8 @@ def getBlocksDirect(cur, blk):
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(0.01)
             continue
-        if chkPruning(blk - blockQ.qsize()) - blk < 288:
+        chkPruning(blk)
+        if (maxblk - blk) < 500:
             logts("Near sync %d. Aborting direct mode" % blk)
             return blk
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
@@ -94,16 +96,16 @@ def getBlocksDirect(cur, blk):
     return blk
     
 def chkPruning(blk):
+    global maxblk
     if blk > 120000 and blk % 100 == 0:
         try:
             rpc = AuthServiceProxy(cfg['rpc'])
             blkinfo = rpc.getblockchaininfo()
             if blkinfo['pruned']:
                 rpc.pruneblockchain(blk)
-            return blkinfo['headers']
+            maxblk = blkinfo['headers']
         except Exception, e:
             log( 'Prune rpc ' + str(e) + ' (ignoring)' )
-    return blk + 500 # faked to prevent aborting early
     
 def BlockHandler():
     global done
