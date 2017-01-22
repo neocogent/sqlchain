@@ -21,7 +21,7 @@ memPool = set()
 maxblk = 120000
 
 def getBlocks(blk):
-    global done
+    global maxblk,done
     rpc = AuthServiceProxy(cfg['rpc'])
     sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
@@ -29,7 +29,9 @@ def getBlocks(blk):
         cur.execute('select ifnull(max(id), -1) from blocks')
         blk = int(cur.fetchone()[0] + 1)
     startblk = blk
-    if 'blkdat' in cfg:
+    blkinfo = rpc.getblockchaininfo()
+    maxblk = blkinfo['headers']
+    if 'blkdat' in cfg and (maxblk - startblk) > 500:
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     if not done.isSet():
         logts("Using rpc mode. Monitoring blocks / mempool.")
@@ -37,10 +39,10 @@ def getBlocks(blk):
         blkinfo = rpc.getblockchaininfo()
         if blk > blkinfo['blocks']:
             checkMemPool(cur, rpc)
-            time.sleep(10)
+            time.sleep(5)
             continue
         if blockQ.qsize() >= cfg['queue']:
-            time.sleep(10)
+            time.sleep(5)
             continue
         if blkinfo['pruned']:
             chkPruning(blk - blockQ.qsize())
@@ -69,7 +71,7 @@ def getBlocksDirect(cur, blk):
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(0.01)
             continue
-        chkPruning(blk)
+        chkPruning(blk - blockQ.qsize())
         if (maxblk - blk) < 500:
             logts("Near sync %d. Aborting direct mode" % blk)
             return blk
@@ -131,12 +133,12 @@ def OutputHandler():
                 ins,outs = [],[]
         except Empty: 
             if len(outs) > 0 or len(ins) > 0:
-                print "Flushed outQ - outs %d - ins %d" % (len(outs), len(ins))
                 cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
                 cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
-                ins,outs = [],[]
             if flush.isSet():
+                print "Flushed outQ - outs %d - ins %d" % (len(outs), len(ins))
                 return
+            ins,outs = [],[]
             pass
     
 def checkMemPool(cur, rpc):
