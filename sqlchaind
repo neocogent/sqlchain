@@ -247,7 +247,7 @@ def checkReOrg(cur, data):
                             insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan block
                     addOrphan(cur, height)
                     cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
-                    puthdr(data['height'], data['hdr'], sqc.cfg['path'])
+                    puthdr(data['height'], data['hdr'], cfg['path'])
             height += 1
        
 def insertTxMemPool(cur, tx, sync_id):
