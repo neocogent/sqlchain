@@ -151,7 +151,7 @@ def checkMemPool(cur, rpc):
         try:
             rawtx = rpc.getrawtransaction(tx,0)
         except Exception, e:
-            log( 'Lost mempool tx: ' + tx + ' (ignoring)' )
+            #log( 'Lost mempool tx: ' + tx + ' (ignoring)' )
             continue
         txx = tx.decode('hex')[::-1][:8] # uses 1/4 space, only for detecting changes in mempool
         if txx not in memPool:
@@ -161,7 +161,7 @@ def checkMemPool(cur, rpc):
 def addOrphan(cur, height):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
     sync_id = cur.fetchone()[0]
-    hdr = gethdr(height, 'raw', sqc.cfg['path'])
+    hdr = gethdr(height, 'raw', cfg['path'])
     cur.execute("select hash,coinbase from blocks where id=%s limit 1;", (height,))
     for blkhash,coinbase in cur:
         cur.execute("insert into orphans (sync_id,block_id,hash,hdr,coinbase) values(%s,%s,%s,%s,%s);", (sync_id,height,blkhash,hdr,coinbase))
