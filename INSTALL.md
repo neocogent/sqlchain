@@ -4,14 +4,14 @@ At this time sqlChain is only tested on Linux servers. It may work on other plat
 
 There is a new sqlchain-init script that handles most of the configuration and DB init details. 
 
-Tested on a clean Ubuntu 14.04 Amazon EC2 instance (ami-feed08e8). I used a spot m4.large instance which costs only 1.4 cents/hour to test (plus data transfer out, which seems to be pretty substanial, and maybe the main cost).
+Tested on a clean Ubuntu 14.04 Amazon EC2 instance (ami-feed08e8). I used a spot m4.large instance which costs only 1.4 cents/hour to test (plus data transfer out, which seems to be pretty substanial, and maybe the main cost). 
 
 ### Getting Started - Step by Step
 
 First, you need Bitcoin Core and some standard Ubuntu packages for MySQL and Python.
 
 ```
-sudo apt-get install software-properties-common python-software-properties (may not need but won't hurt)
+sudo apt-get install software-properties-common python-software-properties libev-dev libevent-dev   # may not need but won't hurt
 sudo add-apt-repository ppa:bitcoin/bitcoin
 sudo apt-get update
 sudo apt-get install bitcoind mysql-server libmysqlclient-dev python-pip python-dev
