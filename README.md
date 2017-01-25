@@ -8,7 +8,7 @@
 - Web Interface (using bootstrap, integrated with API backend, primarily a demo)
 - Electrum Server
 
-(at this time a demo server is being tested - expect to be public soon)
+A public [DEMO server](https://api.coinview.info) is now up and running - feel free to test but don't depend on it; could go down at any time and some example calls may be buggy still.
 
 **sqlChain** currently consists of three daemon programs.
 
