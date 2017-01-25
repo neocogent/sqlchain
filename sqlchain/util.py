@@ -166,22 +166,25 @@ def encodeVarInt(v):
 # sqlchain ids support stuff
 def txh2id(txh):
     return ( unpack('<q', txh[:5]+'\0'*3)[0] >> 3 )
+    
+addr_lock = threading.Lock()
 
 def insertAddress(cur, addr):
     addr_id,pkh = addr2id(addr, rtnPKH=True)
     start_id = addr_id
+    addr_lock.acquire()
     while True:
         cur.execute("select addr from address where id=%s", (addr_id,))
         row = cur.fetchone()
         if row == None:
             cur.execute("insert into address (id,addr) values(%s,%s)", (addr_id, pkh))
-            #if addr_id != start_id:
-            #    print '!', # collision
+            addr_lock.release()
             return addr_id
         elif str(row[0]) == str(pkh):
+            addr_lock.release()
             return addr_id
         addr_id += 2
-            
+        
 def findTx(cur, txhash, mkNew=False, limit=32):
     tx_id = txh2id(txhash)
     limit_id = tx_id+limit
@@ -346,4 +349,6 @@ def getssl(cfg):
     context.load_cert_chain(cfg['ssl'], cfg['key'] if ('key' in cfg) and (cfg['key'] != '') else None)
     return { 'ssl_context': context }
     
-    
+
+
+

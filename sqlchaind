@@ -148,15 +148,15 @@ def checkMemPool(cur, rpc):
         cur.execute("delete from mempool;")
     trxs = rpc.getrawmempool()
     for tx in trxs:
-        try:
-            rawtx = rpc.getrawtransaction(tx,0)
-        except Exception, e:
-            #log( 'Lost mempool tx: ' + tx + ' (ignoring)' )
-            continue
         txx = tx.decode('hex')[::-1][:8] # uses 1/4 space, only for detecting changes in mempool
-        if txx not in memPool:
-            memPool.add(txx)
+        if txx not in memPool:        
+            try:
+                rawtx = rpc.getrawtransaction(tx,0)
+            except Exception, e:
+                #log( 'Lost mempool tx: ' + tx + ' (ignoring)' )
+                continue
             insertTxMemPool(cur, decodeTx(rawtx.decode('hex')), sync_id+1)
+            memPool.add(txx)           
 
 def addOrphan(cur, height):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
@@ -408,7 +408,7 @@ if __name__ == '__main__':
     loadcfg(cfg)
     options(cfg)
     drop2user(cfg)
-       
+    
     if cfg['debug']:
         signal.signal(signal.SIGINT, sigterm_handler)
         run()
