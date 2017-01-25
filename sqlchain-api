@@ -195,7 +195,7 @@ def usage():
     sys.exit(2) 
     
 def sigterm_handler(_signo, _stack_frame):
-    global done
+    global syncd, done
     logts("Shutting down.")
     done.set()
     syncd.join()
@@ -212,7 +212,7 @@ def sighup_handler(_signo, _stack_frame):
     logts("SIGHUP Log reopened")
         
 def run():
-    global server, done
+    global server, syncd, done
     
     done = threading.Event()
     sqc.dbpool = DBPool(sqc.cfg['db'].split(':'), sqc.cfg['pool'], 'MySQLdb')
