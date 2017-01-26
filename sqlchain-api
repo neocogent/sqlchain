@@ -23,6 +23,7 @@ sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'b
 
 sqc.sync = threading.Condition(); 
 sqc.sync_id = 0 
+dbwrk = None
 
 def do_Root(env, send_resp):
     try:
