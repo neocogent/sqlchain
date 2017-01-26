@@ -423,7 +423,7 @@ def apiClosure(cur, addrs):
             balance += utxo['amount']
     return { 'closure':closure, 'balance':balance }
     
-def apiStatus(cur, cls='info', item=None):
+def apiStatus(cur, cls='info', *args):
     data = {}
     cur.execute("select value from info where `class`='sys' and `key`='updated';")
     row = cur.fetchone()
