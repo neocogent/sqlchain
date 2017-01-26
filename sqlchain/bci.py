@@ -139,7 +139,7 @@ def bciTx(cur, txhash):
         data['ver'],data['lock_time'] = hdr[4:6]
         data['inputs'],data['vin_sz'] = bciInputs(cur, blkid, int(blob), ins)
         data['out'],data['vout_sz'] = bciOutputs(cur, int(txid), int(blob))
-        data['time'] = gethdr(data['block_height'], 'time', sqc.cfg['path'])
+        data['time'] = gethdr(data['block_height'], 'time', sqc.cfg['path']) if int(blkid) > -1 else 0
         data['size'] = txsize if txsize < 0xFF00 else (txsize&0xFF)<<16 + hdr[3]
         return data
     return None
