@@ -7,11 +7,13 @@
 <script language="javascript" type="text/javascript">
 
   var wsUri = "ws://localhost:8085/ws";
-  var output;
+  var websocket, output, stopbtn;
 
   function init()
   {
     output = document.getElementById("output");
+    stopbtn = document.getElementById("stop");
+    stopbtn.onclick = function(evt) { console.log("stopping"); websocket.close(); }
     testWebSocket();
   }
 
@@ -44,7 +46,9 @@
 
   function onError(evt)
   {
-    writeToScreen('<span style="color: red;">ERROR:</span> ' + JSON.stringify(JSON.parse(evt.data), null, 2)); 
+      if (evt.data) {
+        writeToScreen('<span style="color: red;">ERROR:</span> ' + JSON.stringify(JSON.parse(evt.data), null, 2)); 
+    }
   }
 
   function doSend(message)
@@ -66,5 +70,5 @@
 </script>
 
 <h2>WebSocket Test</h2>
-
+<button id="stop">Stop It!</button>
 <div id="output"></div>
