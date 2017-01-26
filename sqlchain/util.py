@@ -1,7 +1,7 @@
 #
 # Common sqlchain support utils 
 #
-import os, sys, pwd, time, hashlib, json, threading
+import os, sys, pwd, time, hashlib, json, threading, re, glob
 
 from Queue import Queue
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
@@ -16,6 +16,7 @@ tidylog = threading.Lock()
 # and update data eg. update trxs set block_id=block_id/OLD_MAX*NEW_MAX + block_id%OLD_MAX
 MAX_TX_BLK = 10000  # allows 9,999,999 blocks with decimal(11)
 MAX_IO_TX = 4096    # allows 37 bit out_id value, (5 byte hash >> 3)*4096 in decimal(16), 7 bytes in blobs
+BLOB_SPLIT_SIZE = int(5e9) # size limit for split blobs, approx. as may extend past if tx on boundary
 
 b58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -174,18 +175,16 @@ addr_lock = threading.Lock()
 def insertAddress(cur, addr):
     addr_id,pkh = addr2id(addr, rtnPKH=True)
     start_id = addr_id
-    addr_lock.acquire()
-    while True:
-        cur.execute("select addr from address where id=%s", (addr_id,))
-        row = cur.fetchone()
-        if row == None:
-            cur.execute("insert into address (id,addr) values(%s,%s)", (addr_id, pkh))
-            addr_lock.release()
-            return addr_id
-        elif str(row[0]) == str(pkh):
-            addr_lock.release()
-            return addr_id
-        addr_id += 2
+    with addr_lock:
+        while True:
+            cur.execute("select addr from address where id=%s", (addr_id,))
+            row = cur.fetchone()
+            if row == None:
+                cur.execute("insert into address (id,addr) values(%s,%s)", (addr_id, pkh))
+                return addr_id
+            elif str(row[0]) == str(pkh):
+                return addr_id
+            addr_id += 2
         
 def findTx(cur, txhash, mkNew=False, limit=32):
     tx_id = txh2id(txhash)
@@ -231,7 +230,7 @@ def bits2diff(bits):
     
 def getBlobHdr(pos, path='/var/data'):
     buf = readBlob(int(pos), 13, path) 
-    bits = [ (1,'B',0), (1,'B',0), (2,'H',0), (4,'I',1), (4,'I',0) ]  # ins,outs,size,version,locktime
+    bits = [ (1,'B',0), (1,'B',0), (2,'H',0), (4,'I',1), (4,'I',0) ]  # ins,outs,tx size,version,locktime
     out,mask = [1],0x80 
     for sz,typ,default in bits:
         if ord(buf[0])&mask:
@@ -271,22 +270,47 @@ def mkBlobHdr(ins, outs, tx, stdSeq, nosigs):
         flags |= 0x02
     # max hdr = 13 bytes but most will be only 1 flag byte
     return ins,outs,sz,pack('<B', flags) + hdr
+
+blob_lock = threading.Lock()
     
 def insertBlob(data, path='/var/data'):
     if len(data) == 0:
         return 0
-    with open(path+'/blobs.dat', 'r+b') as blob:
-        blob.seek(0,2)
-        pos = blob.tell()
-        blob.write(data)
-    return pos
+    fn = '/blobs.dat'
+    pos = (0,2)
+    with blob_lock:
+        if not os.path.exists(path+fn): # support split blobs
+            try:
+                fn = '/blobs.%d.dat' % (insertBlob.nextpos/BLOB_SPLIT_SIZE,)
+            except AttributeError:
+                n = 0
+                for f in glob.glob(path+'/blobs.*[0-9].dat'): # should happen only once as init
+                    n = max(n, int(re.findall('\d+', f)[0]))
+                pos = os.path.getsize(path+'/blobs.%d.dat' % n) if os.path.exists(path+'/blobs.%d.dat' % n) else 0
+                insertBlob.nextpos =  n*BLOB_SPLIT_SIZE + pos
+                fn = '/blobs.%d.dat' % (insertBlob.nextpos/BLOB_SPLIT_SIZE,) # advances file number when pos > split size
+            pos = insertBlob.nextpos % BLOB_SPLIT_SIZE 
+            rtnpos = insertBlob.nextpos
+            insertBlob.nextpos += len(data)
+        with open(path+fn, 'r+b' if os.path.exists(path+fn) else 'wb') as blob:
+            blob.seek(pos)
+            newpos = blob.tell()
+            blob.write(data)
+        return rtnpos if 'rtnpos' in locals() else newpos
+
 
 def readBlob(pos, sz, path='/var/data'):
-    if sz != 0:
-        with open(path+'/blobs.dat', 'rb') as blob:
-            blob.seek(pos)
-            return blob.read(sz)
-    return ''
+    if sz == 0:
+        return ''
+    fn = '/blobs.dat'
+    if not os.path.exists(path+fn): # support split blobs
+        fn = '/blobs.%d.dat' % pos/BLOB_SPLIT_SIZE
+        pos = pos % BLOB_SPLIT_SIZE
+    if not os.path.exists(path+fn): # file missing, return zeros to allow pruning
+        return '\0'*sz  
+    with open(path+fn, 'rb') as blob:
+        blob.seek(pos)
+        return blob.read(sz)
         
 # cfg file handling stuff
 def loadcfg(cfg):
