@@ -146,11 +146,13 @@ def bciTx(cur, txhash):
 
 def bciInputs(cur, height, blob, ins):
     data = []
-    hdr = getBlobHdr(blob, sqc.cfg['path'])
+    hdr = getBlobHdr(blob, sqc.cfg['path']) # hdrsz,ins,outs,size,version,locktime,stdSeq,nosigs
     if ins >= 192:
         ins = (ins & 63)*256 + hdr[1] 
-    if ins == 0:
+    if (ins == 0):  # no inputs
         data.append({ }) # only sequence and script here 
+    elif hdr[1] == 0: # missing blob data
+        data.append({ 'error':'missing data' })
     else:
         buf = readBlob(blob+hdr[0], ins*7, sqc.cfg['path'])
         for n in range(ins):

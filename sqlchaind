@@ -7,7 +7,6 @@ import MySQLdb as db
 
 from Queue import Queue, Empty
 from datetime import datetime
-from bitcoinrpc.authproxy import AuthServiceProxy
 from struct import pack, unpack, unpack_from
 from hashlib import sha256
 
@@ -15,14 +14,15 @@ from sqlchain.version import *
 from sqlchain.util import *
 from sqlchain.blkdat import BlkDatHandler
 
+__builtins__.sqc = dotdict()  # container for super globals
+
 cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain' } 
 blksecs = []
 memPool = set()
 maxblk = 120000
 
 def getBlocks(blk):
-    global maxblk,done
-    rpc = AuthServiceProxy(cfg['rpc'])
+    global maxblk
     sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
     if blk == 0:
@@ -33,12 +33,12 @@ def getBlocks(blk):
     maxblk = blkinfo['headers']
     if 'blkdat' in cfg and (maxblk - startblk) > 500:
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
-    if not done.isSet():
+    if not sqc.done.isSet():
         logts("Using rpc mode. Monitoring blocks / mempool.")
-    while not done.isSet():
+    while not sqc.done.isSet():
         blkinfo = rpc.getblockchaininfo()
         if blk > blkinfo['blocks']:
-            checkMemPool(cur, rpc)
+            checkMemPool(cur)
             time.sleep(5)
             continue
         if blockQ.qsize() >= cfg['queue']:
@@ -48,7 +48,7 @@ def getBlocks(blk):
             chkPruning(blk - blockQ.qsize())
         rpcstart = time.time()
         blkhash = rpc.getblockhash(blk)
-        if blkhash:
+        if blkhash is not None:
             data = decodeBlock(rpc.getblock(blkhash, False).decode('hex'))
             data['height'] = blk
             data['rpc'] = time.time()-rpcstart
@@ -57,17 +57,17 @@ def getBlocks(blk):
     return blk - startblk
 
 def getBlocksDirect(cur, blk):
-    global maxblk,done
-    blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,done,True))
+    global maxblk
+    blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,True))
     blkscan.start()
     logts("Using blkdat mode: %s" % cfg['blkdat'])
-    while not done.isSet():
+    while not sqc.done.isSet():
         cur.execute("select count(1) from information_schema.tables where table_name='blkdat';")
         if cur.fetchone()[0]:
             break
         time.sleep(5)
         logts("Waiting for blkdat to be ready")
-    while not done.isSet():
+    while not sqc.done.isSet():
         if blockQ.qsize() >= cfg['queue']:
             time.sleep(0.01)
             continue
@@ -93,32 +93,26 @@ def getBlocksDirect(cur, blk):
                 blk += 1
         else:
             time.sleep(3)
-    log("Waiting for blkscan to finish")
+    log("Waiting for blkdat handler to finish")
     blkscan.join()
     return blk
     
 def chkPruning(blk):
     global maxblk
     if blk > 120000 and blk % 100 == 0:
-        try:
-            rpc = AuthServiceProxy(cfg['rpc'])
-            blkinfo = rpc.getblockchaininfo()
-            if blkinfo['pruned']:
-                rpc.pruneblockchain(blk)
-            maxblk = blkinfo['headers']
-        except Exception, e:
-            log( 'Prune rpc ' + str(e) + ' (ignoring)' )
+        blkinfo = rpc.getblockchaininfo()
+        if blkinfo['pruned']:
+            rpc.pruneblockchain(blk)
+        maxblk = blkinfo['headers']
     
 def BlockHandler():
-    global done
     sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
-    while not done.isSet():
+    while not sqc.done.isSet():
         try: insertBlock(cur, blockQ.get(True, 5))
         except Empty: pass
 
 def OutputHandler():
-    global flush
     sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
     ins,outs = [],[]
@@ -127,7 +121,7 @@ def OutputHandler():
             xo,xi = outQ.get(True, 3)
             outs.extend(xo)
             ins.extend(xi)
-            if len(outs) > 8192 or len(ins) > 8192:
+            if len(outs) + len(ins) > 8192:
                 cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
                 cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
                 ins,outs = [],[]
@@ -135,13 +129,13 @@ def OutputHandler():
             if len(outs) > 0 or len(ins) > 0:
                 cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
                 cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
-            if flush.isSet():
+            if sqc.flush.isSet():
                 print "Flushed outQ - outs %d - ins %d" % (len(outs), len(ins))
                 return
             ins,outs = [],[]
             pass
     
-def checkMemPool(cur, rpc):
+def checkMemPool(cur):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
     sync_id = cur.fetchone()[0]
     if len(memPool) == 0:
@@ -150,13 +144,10 @@ def checkMemPool(cur, rpc):
     for tx in trxs:
         txx = tx.decode('hex')[::-1][:8] # uses 1/4 space, only for detecting changes in mempool
         if txx not in memPool:        
-            try:
-                rawtx = rpc.getrawtransaction(tx,0)
-            except Exception, e:
-                #log( 'Lost mempool tx: ' + tx + ' (ignoring)' )
-                continue
-            insertTxMemPool(cur, decodeTx(rawtx.decode('hex')), sync_id+1)
-            memPool.add(txx)           
+            rawtx = rpc.getrawtransaction(tx,0)
+            if rawtx is not None:
+                insertTxMemPool(cur, decodeTx(rawtx.decode('hex')), sync_id+1)
+                memPool.add(txx)           
 
 def addOrphan(cur, height):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
@@ -221,7 +212,6 @@ def decodeTx(data):
 def checkReOrg(cur, data):
     if data['height'] == 0:
         return
-    rpc = AuthServiceProxy(cfg['rpc'])
     blkhash,height = data['previousblockhash'],data['height']-1
     while True:
         cur.execute("select id from blocks where hash=%s limit 1;", (blkhash,))
@@ -236,18 +226,17 @@ def checkReOrg(cur, data):
         logts("Block %d *** ReOrg: %d orphan(s), %d txs affected" % (height, data['height']-height, cur.rowcount))
         while height < data['height']:
             blkhash = rpc.getblockhash(height)
-            if blkhash:
-                data = decodeBlock(rpc.getblock(blkhash, False).decode('hex')) # get good chain blocks
-                if data:
-                    for n,tx in enumerate(data['tx']):
-                        tx_id,found = findTx(cur, tx['txid'], mkNew=True)
-                        if found:
-                            cur.execute("update trxs set block_id=%s where id=%s limit 1;", (height*MAX_TX_BLK+n, tx_id))
-                        else:
-                            insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan block
-                    addOrphan(cur, height)
-                    cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
-                    puthdr(data['height'], data['hdr'], cfg['path'])
+            data = decodeBlock(rpc.getblock(blkhash, False).decode('hex')) # get good chain blocks
+            if data:
+                for n,tx in enumerate(data['tx']):
+                    tx_id,found = findTx(cur, tx['txid'], mkNew=True)
+                    if found:
+                        cur.execute("update trxs set block_id=%s where id=%s limit 1;", (height*MAX_TX_BLK+n, tx_id))
+                    else:
+                        insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan block
+                addOrphan(cur, height)
+                cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
+                puthdr(data['height'], data['hdr'], cfg['path'])
             height += 1
        
 def insertTxMemPool(cur, tx, sync_id):
@@ -362,8 +351,7 @@ def usage():
     sys.exit(2) 
     
 def sigterm_handler(_signo, _stack_frame):
-    global done
-    done.set()
+    sqc.done.set()
 def sighup_handler(_signo, _stack_frame):
     logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
     sys.stdout.close()
@@ -373,12 +361,12 @@ def sighup_handler(_signo, _stack_frame):
     logts("SIGHUP Log reopened")
     
 def run():
-    global blockQ,outQ,done,flush 
+    global blockQ,outQ 
     
     blockQ = Queue()
     outQ = Queue(64)
-    done = threading.Event()
-    flush = threading.Event()
+    sqc.done = threading.Event()
+    sqc.flush = threading.Event()
     
     blkwrk = threading.Thread(target = BlockHandler)
     blkwrk.start()
@@ -387,7 +375,7 @@ def run():
   
     blksdone = None
     workstart = time.time()
-    while True:
+    while not sqc.done.isSet():
         try:
             blksdone = getBlocks(cfg['block'] if 'block' in cfg else 0)
             break
@@ -396,18 +384,20 @@ def run():
             time.sleep(5) 
             pass  
         
-    done.set()
+    sqc.done.set()
     blkwrk.join()
-    flush.set()
+    sqc.flush.set()
     outwrk.join()
     if blksdone:
-        log("Session %.2f blks/s" % float(blksdone / (time.time() - workstart)) )
+        log("Session %d blocks, %.2f blocks/s" % (blksdone, float(blksdone / (time.time() - workstart))) )
     
 if __name__ == '__main__':
 
     loadcfg(cfg)
     options(cfg)
     drop2user(cfg)
+    
+    rpc = rpcPool(cfg)
     
     if cfg['debug']:
         signal.signal(signal.SIGINT, sigterm_handler)

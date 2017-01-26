@@ -221,9 +221,11 @@ def apiInputs(cur, height, blob, ins):
     hdr = getBlobHdr(blob, sqc.cfg['path'])
     if ins >= 192:
         ins = (ins & 63)*256 + hdr[1]  
-    if ins == 0:
+    if ins == 0: # no inputs, assume coinbase
         cur.execute("select coinbase from blocks where id=%s;", (height,))
         data.append({ 'n':0, 'coinbase':cur.fetchone()[0].encode('hex') })
+    elif hdr[1] == 0: # missing blob data
+        data.append({ 'error':'missing data' })
     else:
         buf = readBlob(blob+hdr[0], ins*7, sqc.cfg['path'])
         for n in range(ins):
@@ -253,6 +255,8 @@ def apiSpent(cur, txid, out_id):
     cur.execute("select txdata,hash,block_id/{0},ins from trxs where id=%s limit 1;".format(MAX_TX_BLK), (txid,))
     for blob,txh,blk,ins in cur:
         hdr = getBlobHdr(int(blob), sqc.cfg['path'])
+        if hdr[1] == 0: # missing blob data
+            return { 'error':'missing data' }
         if ins >= 192:
             ins = (ins & 63)*256 + hdr[1]  
         buf = readBlob(int(blob)+hdr[0], ins*7, sqc.cfg['path'])
@@ -277,6 +281,8 @@ def txAddrs(cur, txhash):
     cur.execute("select txdata,ins from trxs where id=%s limit 1;", (txid,))
     for blob,ins in cur:
         hdr = getBlobHdr(int(blob), sqc.cfg['path'])
+        if hdr[1] == 0: # missing blob data
+            return []
         if ins > 0:
             if ins >= 0xC0:
                 ins = (ins&0x3F)<<8 + hdr[1] 
@@ -338,6 +344,8 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
         cb = cur.fetchone()[0]
         out += [ '\x01', '\0'*32, '\xff'*4, encodeVarInt(len(cb)), cb, '\0'*4 ]
         vpos = 0
+    elif hdr[1] == 0: # missing blob data
+        return "<div class='rawtx'>Data Not Available</div>" if 'html' in args else "Data Not Available" 
     else:
         out += encodeVarInt(ins)
         vpos = int(txdata) + hdr[0]

@@ -1,8 +1,10 @@
 #
 # Common sqlchain support utils 
 #
-import os, sys, pwd, hashlib, json, threading
+import os, sys, pwd, time, hashlib, json, threading
 
+from Queue import Queue
+from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 from struct import pack, unpack, unpack_from
 from datetime import datetime
 from hashlib import sha256
@@ -349,6 +351,40 @@ def getssl(cfg):
     context.load_cert_chain(cfg['ssl'], cfg['key'] if ('key' in cfg) and (cfg['key'] != '') else None)
     return { 'ssl_context': context }
     
-
-
-
+class rpcPool(object):
+    def __init__(self, cfg, size=4, timeout=30):
+        self.url = cfg['rpc']
+        self.timeout = timeout
+        self.connQ = blockQ = Queue(size)
+        for n in range(size):
+            self.connQ.put(AuthServiceProxy(cfg['rpc'], None, timeout, None))
+            
+    def __getattr__(self, name):
+        if name.startswith('__') and name.endswith('__'):
+            raise AttributeError
+        self.name = name
+        return self
+        
+    def __call__(self, *args):
+        rpc_obj = self.connQ.get()
+        while True:
+            try:
+                result = rpc_obj.__getattr__(self.name)(*args)
+                break
+            except JSONRPCException as e:
+                if e.code == -5:
+                    return None
+            except Exception, e:
+                log( 'RPC Error ' + str(e) + ' (retrying)' )
+                print "===>", self.name, args
+                if sqc and 'done' in sqc and sqc.done.isSet():
+                    raise socket.error # shutdown, otherwise hung daemon
+                rpc_obj = AuthServiceProxy(self.url, None, self.timeout, None) # maybe broken, make new connection
+                time.sleep(3) # slow down, in case gone away
+                pass
+        self.connQ.put(rpc_obj)
+        return result
+            
+                
+            
+            

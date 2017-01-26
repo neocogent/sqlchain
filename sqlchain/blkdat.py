@@ -16,7 +16,6 @@
 import os, sys, signal, getopt, socket, threading
 import MySQLdb as db
 
-from bitcoinrpc.authproxy import AuthServiceProxy
 from struct import pack, unpack, unpack_from
 from time import sleep
 from hashlib import sha256
@@ -42,15 +41,16 @@ CREATE TABLE `blkdat` (
   KEY `hash` (`hash`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;'''
   
-def BlkDatHandler(cfg, owner_done, verbose = False):
+def BlkDatHandler(cfg, verbose = False):
     global done
-    done = owner_done
+    if sqc and 'done' in sqc:
+        done = sqc.done
     cur = initdb(cfg)
     blockpath = cfg['blkdat'] + "/blocks/blk%05d.dat"
     while not done.isSet():
         blkhash = findBlocks(cur, blockpath, verbose)
         if blkhash:
-            blk,blkhash = getBlk(cfg, blkhash)
+            blk,blkhash = getBlk(blkhash)
             if blk:
                 log("Blkdat %d - %s" % (blk,blkhash[::-1].encode('hex')) )
                 linkMainChain(cfg, cur, blk, blkhash, verbose)
@@ -120,17 +120,10 @@ def linkMainChain(cfg, cur, blk, blkhash, verbose):
                 break
     todo = tmp
             
-def getBlk(cfg, blkhash):
-    while not done.isSet():
-        try: # this tries to talk to bitcoind despite it being comatose
-            rpc = AuthServiceProxy(cfg['rpc'], timeout=120)
-            blk = rpc.getblock(blkhash[::-1].encode('hex'))
-            blkhash = rpc.getblockhash(blk['height']-120) # offset to avoid reorg, order problems
-            return ( blk['height']-120,blkhash.decode('hex')[::-1] )
-        except Exception, e:
-            log( 'Blkdat rpc %s, trying again' % str(e) )
-            sleep(5) 
-    return 0,''
+def getBlk(blkhash):
+    blk = rpc.getblock(blkhash[::-1].encode('hex'))
+    blkhash = rpc.getblockhash(blk['height']-120) # offset to avoid reorg, order problems
+    return ( blk['height']-120,blkhash.decode('hex')[::-1] )
 
 def initdb(cfg):
     global todo,lastpos
@@ -188,6 +181,8 @@ if __name__ == '__main__':
     
     loadcfg(cfg)
     options(cfg)
+    
+    rpc = rpcPool(cfg)
     
     if cfg['db'] == '':
         print "No db connection provided."
