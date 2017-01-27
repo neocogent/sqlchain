@@ -224,17 +224,18 @@ def apiInputs(cur, height, blob, ins):
     if ins == 0: # no inputs, assume coinbase
         cur.execute("select coinbase from blocks where id=%s;", (height,))
         data.append({ 'n':0, 'coinbase':cur.fetchone()[0].encode('hex') })
-    elif hdr[1] == 0: # missing blob data
-        data.append({ 'error':'missing data' })
     else:
         buf = readBlob(blob+hdr[0], ins*7, sqc.cfg['path'])
-        for n in range(ins):
-            in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
-            cur.execute("select value,addr,addr_id,hash from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id, in_id/MAX_IO_TX))
-            for value,addr,aid,txhash in cur:
-                btc = float(value)/1e8
-                data.append({ 'n':n, 'vout':in_id%MAX_IO_TX, 'value':round(btc,8), 'valueSat':int(value), 'txid':txhash[::-1].encode('hex'), 'addr':mkaddr(addr,aid) })
-                total += btc
+        if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
+            data.append({ 'error':'missing data' })
+        else:
+            for n in range(ins):
+                in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
+                cur.execute("select value,addr,addr_id,hash from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id, in_id/MAX_IO_TX))
+                for value,addr,aid,txhash in cur:
+                    btc = float(value)/1e8
+                    data.append({ 'n':n, 'vout':in_id%MAX_IO_TX, 'value':round(btc,8), 'valueSat':int(value), 'txid':txhash[::-1].encode('hex'), 'addr':mkaddr(addr,aid) })
+                    total += btc
     return round(total,8),data
     
 def apiOutputs(cur, txid, blob):
@@ -255,11 +256,11 @@ def apiSpent(cur, txid, out_id):
     cur.execute("select txdata,hash,block_id/{0},ins from trxs where id=%s limit 1;".format(MAX_TX_BLK), (txid,))
     for blob,txh,blk,ins in cur:
         hdr = getBlobHdr(int(blob), sqc.cfg['path'])
-        if hdr[1] == 0: # missing blob data
-            return { 'error':'missing data' }
         if ins >= 192:
             ins = (ins & 63)*256 + hdr[1]  
         buf = readBlob(int(blob)+hdr[0], ins*7, sqc.cfg['path'])
+        if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
+            return { 'error':'missing data' }
         for n in range(ins):
             in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
             if in_id == out_id:
@@ -281,12 +282,14 @@ def txAddrs(cur, txhash):
     cur.execute("select txdata,ins from trxs where id=%s limit 1;", (txid,))
     for blob,ins in cur:
         hdr = getBlobHdr(int(blob), sqc.cfg['path'])
-        if hdr[1] == 0: # missing blob data
+        if hdr[3] == 0: # txsize = 0, means missing blob data
             return []
         if ins > 0:
             if ins >= 0xC0:
                 ins = (ins&0x3F)<<8 + hdr[1] 
             buf = readBlob(int(blob)+hdr[0], ins*7, sqc.cfg['path'])
+            if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
+                return [ 'missing-data' ]
             for n in range(ins):
                 in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
                 cur.execute("select addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (in_id,))
@@ -344,21 +347,23 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
         cb = cur.fetchone()[0]
         out += [ '\x01', '\0'*32, '\xff'*4, encodeVarInt(len(cb)), cb, '\0'*4 ]
         vpos = 0
-    elif hdr[1] == 0: # missing blob data
-        return "<div class='rawtx'>Data Not Available</div>" if 'html' in args else "Data Not Available" 
     else:
         out += encodeVarInt(ins)
         vpos = int(txdata) + hdr[0]
         buf = readBlob(vpos, ins*7, sqc.cfg['path'])
-        vpos += ins*7
-        for n in range(ins):
-            in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
-            cur.execute("select hash from trxs where id=%s limit 1;", (in_id / MAX_IO_TX,))
-            out += [ cur.fetchone()[0][:32], pack('<I', in_id % MAX_IO_TX) ]
-            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path'])) if not hdr[7] else (0,0) # no-sigs flag
-            sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4), sqc.cfg['path']) 
-            out += [ sigbuf[:off], sigbuf[off:off+vsz], ('\xFF'*4 if hdr[6] else sigbuf[off+vsz:]) ] 
-            vpos += off+vsz+(0 if hdr[6] else 4)
+        if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
+            for n in range(ins):
+                out += [ '\0'*32, '\0'*4, '', '', '' ]
+        else:
+            vpos += ins*7
+            for n in range(ins):
+                in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
+                cur.execute("select hash from trxs where id=%s limit 1;", (in_id / MAX_IO_TX,))
+                out += [ cur.fetchone()[0][:32], pack('<I', in_id % MAX_IO_TX) ]
+                vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path'])) if not hdr[7] else (0,0) # no-sigs flag
+                sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4), sqc.cfg['path']) 
+                out += [ sigbuf[:off], sigbuf[off:off+vsz], ('\xFF'*4 if hdr[6] else sigbuf[off+vsz:]) ] 
+                vpos += off+vsz+(0 if hdr[6] else 4)
     out += encodeVarInt(outs)
     for n in range(outs):
         cur.execute("select value,addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (txid*MAX_IO_TX + n,))
@@ -460,6 +465,8 @@ def apiStatus(cur, cls='info', *args):
                 data[k1] = { k2:v }
         else:
             data[k] = v
+    if 'html' in args:
+        pass # todo wrap data as html table
     return data
     
     
