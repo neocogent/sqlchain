@@ -11,7 +11,7 @@ Tested on a clean Ubuntu 14.04 Amazon EC2 instance (ami-feed08e8). I used a spot
 First, you need Bitcoin Core and some standard Ubuntu packages for MySQL and Python.
 
 ```
-sudo apt-get install python-software-properties libev-dev libevent-dev   # may not need but won't hurt
+sudo apt-get install software-properties-common python-software-properties libev-dev libevent-dev   # may not need but won't hurt
 sudo add-apt-repository ppa:bitcoin/bitcoin
 sudo apt-get update
 sudo apt-get install bitcoind mysql-server libmysqlclient-dev python-pip python-dev
