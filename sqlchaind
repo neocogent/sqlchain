@@ -35,6 +35,7 @@ def getBlocks(blk):
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     if not sqc.done.isSet():
         logts("Using rpc mode. Monitoring blocks / mempool.")
+    poll_delay = 0.05
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
         if blk > blkinfo['blocks']:
@@ -42,8 +43,10 @@ def getBlocks(blk):
             time.sleep(5)
             continue
         if blockQ.qsize() >= cfg['queue']:
-            time.sleep(5)
+            time.sleep(min(poll_delay,5))
+            poll_delay *= 2
             continue
+        poll_delay = 0.05
         if blkinfo['pruned']:
             chkPruning(blk - blockQ.qsize())
         rpcstart = time.time()
