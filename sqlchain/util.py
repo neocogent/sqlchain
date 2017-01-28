@@ -277,7 +277,7 @@ def insertBlob(data, path='/var/data'):
     if len(data) == 0:
         return 0
     fn = '/blobs.dat'
-    pos = (0,2)
+    pos,off = (0,2)
     with blob_lock:
         if not os.path.exists(path+fn): # support split blobs
             try:
@@ -289,11 +289,11 @@ def insertBlob(data, path='/var/data'):
                 pos = os.path.getsize(path+'/blobs.%d.dat' % n) if os.path.exists(path+'/blobs.%d.dat' % n) else 0
                 insertBlob.nextpos =  n*BLOB_SPLIT_SIZE + pos
                 fn = '/blobs.%d.dat' % (insertBlob.nextpos/BLOB_SPLIT_SIZE,) # advances file number when pos > split size
-            pos = insertBlob.nextpos % BLOB_SPLIT_SIZE 
+            pos,off = (insertBlob.nextpos % BLOB_SPLIT_SIZE, 0)
             rtnpos = insertBlob.nextpos
             insertBlob.nextpos += len(data)
         with open(path+fn, 'r+b' if os.path.exists(path+fn) else 'wb') as blob:
-            blob.seek(pos)
+            blob.seek(pos,off)
             newpos = blob.tell()
             blob.write(data)
         return rtnpos if 'rtnpos' in locals() else newpos
