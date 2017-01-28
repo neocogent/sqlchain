@@ -121,8 +121,8 @@ def linkMainChain(cfg, cur, blk, blkhash, verbose):
     todo = tmp
             
 def getBlk(blkhash):
-    blk = rpc.getblock(blkhash[::-1].encode('hex'))
-    blkhash = rpc.getblockhash(blk['height']-120) # offset to avoid reorg, order problems
+    blk = sqc.rpc.getblock(blkhash[::-1].encode('hex'))
+    blkhash = sqc.rpc.getblockhash(blk['height']-120) # offset to avoid reorg, order problems
     return ( blk['height']-120,blkhash.decode('hex')[::-1] )
 
 def initdb(cfg):
@@ -136,11 +136,11 @@ def initdb(cfg):
     row = cur.fetchone()
     if row != (None,None):
         lastpos = row
-    cur.execute("""select (select min(t3.id)-1 from blkdat t3 where t3.id > t1.id) as blk,
+    '''cur.execute("""select (select min(t3.id)-1 from blkdat t3 where t3.id > t1.id) as blk,
                           (select prevhash from blkdat t4 where t4.id=blk+1) as blkhash from blkdat t1 where not exists 
                           (select t2.id from blkdat t2 where t2.id = t1.id + 1) having blk is not null;""") # scan for id gaps, set todo
     for (blk,blkhash) in cur:
-        todo[blk] = blkhash    
+        todo[blk] = blkhash    '''
     return cur
 
 def options(cfg):
@@ -182,7 +182,8 @@ if __name__ == '__main__':
     loadcfg(cfg)
     options(cfg)
     
-    rpc = rpcPool(cfg)
+    sqc = dotdict()
+    sqc.rpc = rpcPool(cfg)
     
     if cfg['db'] == '':
         print "No db connection provided."

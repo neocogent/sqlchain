@@ -29,14 +29,14 @@ def getBlocks(blk):
         cur.execute('select ifnull(max(id), -1) from blocks')
         blk = int(cur.fetchone()[0] + 1)
     startblk = blk
-    blkinfo = rpc.getblockchaininfo()
+    blkinfo = sqc.rpc.getblockchaininfo()
     maxblk = blkinfo['headers']
     if 'blkdat' in cfg and (maxblk - startblk) > 500:
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     if not sqc.done.isSet():
         logts("Using rpc mode. Monitoring blocks / mempool.")
     while not sqc.done.isSet():
-        blkinfo = rpc.getblockchaininfo()
+        blkinfo = sqc.rpc.getblockchaininfo()
         if blk > blkinfo['blocks']:
             checkMemPool(cur)
             time.sleep(5)
@@ -47,9 +47,9 @@ def getBlocks(blk):
         if blkinfo['pruned']:
             chkPruning(blk - blockQ.qsize())
         rpcstart = time.time()
-        blkhash = rpc.getblockhash(blk)
+        blkhash = sqc.rpc.getblockhash(blk)
         if blkhash is not None:
-            data = decodeBlock(rpc.getblock(blkhash, False).decode('hex'))
+            data = decodeBlock(sqc.rpc.getblock(blkhash, False).decode('hex'))
             data['height'] = blk
             data['rpc'] = time.time()-rpcstart
             blockQ.put(data)
@@ -100,9 +100,9 @@ def getBlocksDirect(cur, blk):
 def chkPruning(blk):
     global maxblk
     if blk > 120000 and blk % 100 == 0:
-        blkinfo = rpc.getblockchaininfo()
+        blkinfo = sqc.rpc.getblockchaininfo()
         if blkinfo['pruned']:
-            rpc.pruneblockchain(blk)
+            sqc.rpc.pruneblockchain(blk)
         maxblk = blkinfo['headers']
     
 def BlockHandler():
@@ -140,11 +140,11 @@ def checkMemPool(cur):
     sync_id = cur.fetchone()[0]
     if len(memPool) == 0:
         cur.execute("delete from mempool;")
-    trxs = rpc.getrawmempool()
+    trxs = sqc.rpc.getrawmempool()
     for tx in trxs:
         txx = tx.decode('hex')[::-1][:8] # uses 1/4 space, only for detecting changes in mempool
         if txx not in memPool:        
-            rawtx = rpc.getrawtransaction(tx,0)
+            rawtx = sqc.rpc.getrawtransaction(tx,0)
             if rawtx is not None:
                 insertTxMemPool(cur, decodeTx(rawtx.decode('hex')), sync_id+1)
                 memPool.add(txx)           
@@ -219,14 +219,14 @@ def checkReOrg(cur, data):
         if row and row[0] == height: # rewind until block in good chain
             break
         height -= 1
-        blkhash = rpc.getblockhash(height).decode('hex')[::-1] 
+        blkhash = sqc.rpc.getblockhash(height).decode('hex')[::-1] 
     height += 1
     if height < data['height']:
         cur.execute("update trxs set block_id=-1 where block_id >= %s;", (height*MAX_TX_BLK,)) # set bad chain txs uncfmd
         logts("Block %d *** ReOrg: %d orphan(s), %d txs affected" % (height, data['height']-height, cur.rowcount))
         while height < data['height']:
-            blkhash = rpc.getblockhash(height)
-            data = decodeBlock(rpc.getblock(blkhash, False).decode('hex')) # get good chain blocks
+            blkhash = sqc.rpc.getblockhash(height)
+            data = decodeBlock(sqc.rpc.getblock(blkhash, False).decode('hex')) # get good chain blocks
             if data:
                 for n,tx in enumerate(data['tx']):
                     tx_id,found = findTx(cur, tx['txid'], mkNew=True)
@@ -397,7 +397,7 @@ if __name__ == '__main__':
     options(cfg)
     drop2user(cfg)
     
-    rpc = rpcPool(cfg)
+    sqc.rpc = rpcPool(cfg)
     
     if cfg['debug']:
         signal.signal(signal.SIGINT, sigterm_handler)
