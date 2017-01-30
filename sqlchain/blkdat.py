@@ -60,10 +60,11 @@ def findBlocks(cur, blockpath, verbose):
     filenum,pos = lastpos
     startpos = pos
     blkhash = None
-    while not os.path.exists(blockpath % (filenum+2,)): # we trail by 2 blks file otherwise not reliable
-        sleep(5)
-        if done.isSet():
-            return None
+    if filenum > 0:
+        while not os.path.exists(blockpath % (filenum+2,)): # we trail by 2 blks file otherwise not reliable
+            sleep(5)
+            if done.isSet():
+                return None
     try:
         with open(blockpath % filenum, "rb") as fd:
             while not done.isSet():
@@ -88,7 +89,9 @@ def findBlocks(cur, blockpath, verbose):
             lastpos = filenum+1,0
             return blkhash
     except IOError:
+        print "No file:", blockpath % filenum
         lastpos = filenum,pos
+        sqc.done.set()
         return None
 
 def linkMainChain(cfg, cur, blk, blkhash, verbose):
@@ -136,11 +139,11 @@ def initdb(cfg):
     row = cur.fetchone()
     if row != (None,None):
         lastpos = row
-    '''cur.execute("""select (select min(t3.id)-1 from blkdat t3 where t3.id > t1.id) as blk,
+        cur.execute("""select (select min(t3.id)-1 from blkdat t3 where t3.id > t1.id) as blk,
                           (select prevhash from blkdat t4 where t4.id=blk+1) as blkhash from blkdat t1 where not exists 
                           (select t2.id from blkdat t2 where t2.id = t1.id + 1) having blk is not null;""") # scan for id gaps, set todo
-    for (blk,blkhash) in cur:
-        todo[blk] = blkhash    '''
+        for (blk,blkhash) in cur:
+            todo[blk] = blkhash    
     return cur
 
 def options(cfg):
