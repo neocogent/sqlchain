@@ -374,39 +374,45 @@ def getssl(cfg):
     context = SSLContext(PROTOCOL_SSLv23)
     context.load_cert_chain(cfg['ssl'], cfg['key'] if ('key' in cfg) and (cfg['key'] != '') else None)
     return { 'ssl_context': context }
-    
+
+rpc_lock = threading.Lock()
+
 class rpcPool(object):
     def __init__(self, cfg, size=4, timeout=30):
         self.url = cfg['rpc']
         self.timeout = timeout
-        self.connQ = blockQ = Queue(size)
-        for n in range(size):
-            self.connQ.put(AuthServiceProxy(cfg['rpc'], None, timeout, None))
+        #self.connQ = blockQ = Queue(size)
+        #for n in range(size):
+        #    self.connQ.put(AuthServiceProxy(cfg['rpc'], None, timeout, None))
             
     def __getattr__(self, name):
         if name.startswith('__') and name.endswith('__'):
             raise AttributeError
+        rpc_lock.acquire()
         self.name = name
         return self
         
     def __call__(self, *args):
-        rpc_obj = self.connQ.get()
+        name = self.name
+        rpc_lock.release()
+        rpc_obj = AuthServiceProxy(self.url, None, self.timeout, None)
+        #rpc_obj = self.connQ.get()
         while True:
             try:
-                result = rpc_obj.__getattr__(self.name)(*args)
+                result = rpc_obj.__getattr__(name)(*args)
                 break
             except JSONRPCException as e:
                 if e.code == -5:
                     return None
             except Exception as e:
                 log( 'RPC Error ' + str(e) + ' (retrying)' )
-                print "===>", self.name, args
-                if sqc and 'done' in sqc and sqc.done.isSet():
-                    raise socket.error # shutdown, otherwise hung daemon
+                print "===>", name, args
+                #if sqc and 'done' in sqc and sqc.done.isSet():
+                #    raise socket.error # shutdown, otherwise hung daemon
                 rpc_obj = AuthServiceProxy(self.url, None, self.timeout, None) # maybe broken, make new connection
                 time.sleep(3) # slow down, in case gone away
                 pass
-        self.connQ.put(rpc_obj)
+        #self.connQ.put(rpc_obj)
         return result
             
                 
