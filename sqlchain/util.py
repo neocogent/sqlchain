@@ -1,7 +1,7 @@
 #
 # Common sqlchain support utils 
 #
-import os, sys, pwd, time, hashlib, json, threading, re, glob
+import os, sys, socket, pwd, time, hashlib, json, threading, re, glob
 
 from Queue import Queue
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
@@ -398,7 +398,7 @@ class rpcPool(object):
             except JSONRPCException as e:
                 if e.code == -5:
                     return None
-            except Exception, e:
+            except Exception as e:
                 log( 'RPC Error ' + str(e) + ' (retrying)' )
                 print "===>", self.name, args
                 if sqc and 'done' in sqc and sqc.done.isSet():
