@@ -1,9 +1,10 @@
 #
 # Common sqlchain support utils 
 #
-import os, sys, socket, pwd, time, hashlib, json, threading, re, glob
+import os, sys, socket, pwd, time, hashlib, json, threading, re, glob, urllib2
 
 from Queue import Queue
+from backports.functools_lru_cache import lru_cache
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 from struct import pack, unpack, unpack_from
 from datetime import datetime
@@ -281,14 +282,14 @@ def insertBlob(data, path='/var/data'):
     with blob_lock:
         if not os.path.exists(path+fn): # support split blobs
             try:
-                fn = '/blobs.%d.dat' % (insertBlob.nextpos/BLOB_SPLIT_SIZE,)
+                fn = '/blobs.%d.dat' % (insertBlob.nextpos//BLOB_SPLIT_SIZE,)
             except AttributeError:
                 n = 0
                 for f in glob.glob(path+'/blobs.*[0-9].dat'): # should happen only once as init
                     n = max(n, int(re.findall('\d+', f)[0]))
                 pos = os.path.getsize(path+'/blobs.%d.dat' % n) if os.path.exists(path+'/blobs.%d.dat' % n) else 0
                 insertBlob.nextpos =  n*BLOB_SPLIT_SIZE + pos
-                fn = '/blobs.%d.dat' % (insertBlob.nextpos/BLOB_SPLIT_SIZE,) # advances file number when pos > split size
+                fn = '/blobs.%d.dat' % (insertBlob.nextpos//BLOB_SPLIT_SIZE,) # advances file number when pos > split size
             pos,off = (insertBlob.nextpos % BLOB_SPLIT_SIZE, 0)
             rtnpos = insertBlob.nextpos
             insertBlob.nextpos += len(data)
@@ -304,14 +305,28 @@ def readBlob(pos, sz, path='/var/data'):
         return ''
     fn = '/blobs.dat'
     if not os.path.exists(path+fn): # support split blobs
-        fn = '/blobs.%d.dat' % pos/BLOB_SPLIT_SIZE
+        fn = '/blobs.%d.dat' % (pos//BLOB_SPLIT_SIZE)
         pos = pos % BLOB_SPLIT_SIZE
-    if not os.path.exists(path+fn): # file missing, return zeros to allow pruning
-        return '\0'*sz  
+    if True: #not os.path.exists(path+fn): # file missing, try s3 if available
+        if sqc and 'cfg' in sqc and 's3' in sqc.cfg:
+            return s3get(sqc.cfg['s3']+fn, pos, sz)
+        return '\0'*sz  # data missing, return zeros as null data (not ideal)
     with open(path+fn, 'rb') as blob:
         blob.seek(pos)
         return blob.read(sz)
         
+def s3get(blob, pos, sz):
+    fblk,tblk = (pos // 4096),((pos+sz) // 4096)
+    print "S3 REQ:", blob, (pos, sz), (fblk, tblk)
+    return s3blk(blob, fblk, tblk)[ pos%4096 : pos%4096+sz ]
+    
+@lru_cache(maxsize=512)
+def s3blk(blob, fblk, tblk):
+    req = urllib2.Request(blob)
+    req.add_header('Range', '%d-%d' % (fblk*4096,(tblk+1)*4096))
+    resp = urllib2.urlopen(req)
+    return resp.read(4096*(tblk-fblk+1))
+
 # cfg file handling stuff
 def loadcfg(cfg):
     cfgpath = sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1][0] != '-' else os.path.basename(sys.argv[0])+'.cfg'
