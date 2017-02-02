@@ -1,0 +1,20 @@
+#!/bin/bash
+# for server deploy of git repo - customize to suit
+# include in repo - needs a post-receive hook to call
+# checkout is current directory
+# runs as user git
+
+declare -A branch
+branch["master"]="/usr/local" 
+
+if [[ "${branch[$1]}" ]]; then
+    target=${branch[$1]}
+    
+    cp sqlchaind sqlchain-api sqlchain-init sqlchain-electrum $target/bin/
+    cp sqlchain/* $target/lib/python2.7/dist-packages/sqlchain/
+    cp -r www/* /var/data/www/demo/
+    
+else
+    echo "Branch "$1" has no target - not deployed."
+fi
+
