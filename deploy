@@ -10,6 +10,7 @@ branch["master"]="/usr/local"
 if [[ "${branch[$1]}" ]]; then
     target=${branch[$1]}
     
+    echo "Copying executable and package files"
     cp sqlchaind sqlchain-api sqlchain-init sqlchain-electrum $target/bin/
     cp sqlchain/* $target/lib/python2.7/dist-packages/sqlchain/
     cp -r www/* /var/data/www/demo/

@@ -377,7 +377,7 @@ def drop2user(cfg, chown=False):
         os.setgid(pw.pw_gid)
         os.setuid(pw.pw_uid)
         os.umask(0022) 
-        logts('Dropped to user %s' % cfg['user'])
+        log('Dropped to user %s' % cfg['user'])
 
 def getssl(cfg):
     if not ('ssl' in cfg) or (cfg['ssl'] == ''):

@@ -24,6 +24,7 @@ sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'b
 sqc.sync = threading.Condition(); 
 sqc.sync_id = 0 
 dbwrk = None
+syncd = None
 
 def do_Root(env, send_resp):
     try:
@@ -106,7 +107,7 @@ def syncMonitor():
         if sqc.cfg['dbinfo'] > 0 and (datetime.now() - datetime.fromtimestamp(int(sqc.cfg['dbinfo-ts']))).total_seconds() > sqc.cfg['dbinfo']*60:
             dbwrk = threading.Thread(target = mkDBInfo)
             dbwrk.start()
-        sleep(5) 
+        sleep(sqc.cfg['sync'] if 'sync' in sqc.cfg else 5) 
     if dbwrk:
         dbwrk.join()
         
@@ -199,7 +200,8 @@ def sigterm_handler(_signo, _stack_frame):
     global syncd, done
     logts("Shutting down.")
     done.set()
-    syncd.join()
+    if syncd:
+        syncd.join()
     if not sqc.cfg['debug']:
         os.unlink(sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid')
     sys.exit(0)
@@ -228,9 +230,13 @@ def run():
     server = WebSocketServer((host, int(port)), APIs, spawn=10000, **getssl(sqc.cfg))
     server.start()
 
-    syncd = threading.Thread(target = syncMonitor)
-    syncd.daemon = True
-    syncd.start()
+    if 'sync' not in sqc.cfg or sqc.cfg['sync'] > 0:
+        log("Sync monitoring at %d second intervals" % (sqc.cfg['sync'] if 'sync' in sqc.cfg else 5,))
+        syncd = threading.Thread(target = syncMonitor)
+        syncd.daemon = True
+        syncd.start()
+    else:
+        log("Sync monitor disabled")
     
     drop2user(sqc.cfg, chown=True)
 
