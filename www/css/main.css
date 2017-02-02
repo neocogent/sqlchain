@@ -57,7 +57,7 @@ legend { margin: 20px 0 10px; }
 .opcode { color:blue; }
 
 #findbox { margin-top:20px; }
-#finddata { width:600px; font-size:18px; font-weight:400; }
+#finddata { width:600px; font-size:16px; font-weight:400; }
 .form-horizontal .find-label { padding-top:3px; font-size:21px; font-weight:400; }
 
 .apiClk li span { color:lightsteelblue; font-size:13px; }

@@ -318,8 +318,8 @@ def apiMerkle(cur, txhash):
 
 rawTxHdr = [ 'version','# inputs','# outputs', 'locktime' ]
 rawCbHdr = [ 'null txid','n','coinbase size','coinbase bytes','sequence' ]
-rawInHdr = [ 'in txid %d','n %d','sigScript size %d','sigScript bytes %d','sequence %d' ] 
-rawOutHdr = [ 'out value %d','scriptPK size %d','scriptPK<br>bytes/asm %d' ]
+rawInHdr = [ 'in txid #%d','n #%d','sigScript size #%d','sigScript bytes #%d','sequence #%d' ] 
+rawOutHdr = [ 'out value #%d','scriptPK size #%d','scriptPK<br>bytes/asm #%d' ]
 
 def rawHTML(out, vi, vo):
     outhex = [ x.encode('hex') for x in out ]
@@ -448,9 +448,11 @@ def apiStatus(cur, cls='info', *args):
                     cur.execute("replace into info (class,`key`,value) values('db','{0}:rows',%s),('db','{0}:data-GB',%s),('db','{0}:idx-GB',%s),('db','{0}:total-GB',%s),('db','{0}:total-bytes',%s);".format(tbl[0]), 
                         (tbl[4], float("%.1f"%float(tbl[6]/1e9)), float("%.1f"%float(tbl[8]/1e9)), float("%.1f"%float(tbl[6]/1e9+tbl[8]/1e9)), tbl[6]+tbl[8]))
                 total_bytes += tbl[6]+tbl[8]
+            blobs_size = getBlobsSize(sqc.cfg['path'])
             cur.execute("replace into info (class,`key`,value) values('db','outputs:max-io-tx',%s);", (MAX_IO_TX, ))
             cur.execute("replace into info (class,`key`,value) values('db','blocks:hdr-data',%s);", (os.stat(sqc.cfg['path']+'/hdrs.dat').st_size, ))
-            cur.execute("replace into info (class,`key`,value) values('db','trxs:blob-data',%s);", (os.stat(sqc.cfg['path']+'/blobs.dat').st_size, ))
+            cur.execute("replace into info (class,`key`,value) values('db','trxs:blob-data',%s);", (blobs_size, ))
+            cur.execute("replace into info (class,`key`,value) values('db','trxs:blob-GB',%s);", (float("%.1f"%float(blobs_size/1e9)), ))
             cur.execute("replace into info (class,`key`,value) values('db','trxs:max-tx-block',%s);", (MAX_TX_BLK, ))
             cur.execute("replace into info (class,`key`,value) values('db','all:total-bytes',%s);", (total_bytes, ))
             cur.execute("replace into info (class,`key`,value) values('db','all:total-GB',%s);", (float("%.1f"%float(total_bytes/1e9)), ))
@@ -468,6 +470,5 @@ def apiStatus(cur, cls='info', *args):
     if 'html' in args:
         pass # todo wrap data as html table
     return data
-    
     
     

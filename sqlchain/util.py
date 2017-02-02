@@ -307,7 +307,7 @@ def readBlob(pos, sz, path='/var/data'):
     if not os.path.exists(path+fn): # support split blobs
         fn = '/blobs.%d.dat' % (pos//BLOB_SPLIT_SIZE)
         pos = pos % BLOB_SPLIT_SIZE
-    if True: #not os.path.exists(path+fn): # file missing, try s3 if available
+    if not os.path.exists(path+fn): # file missing, try s3 if available
         if sqc and 'cfg' in sqc and 's3' in sqc.cfg:
             return s3get(sqc.cfg['s3']+fn, pos, sz)
         return '\0'*sz  # data missing, return zeros as null data (not ideal)
@@ -316,16 +316,21 @@ def readBlob(pos, sz, path='/var/data'):
         return blob.read(sz)
         
 def s3get(blob, pos, sz):
-    fblk,tblk = (pos // 4096),((pos+sz) // 4096)
-    print "S3 REQ:", blob, (pos, sz), (fblk, tblk)
-    return s3blk(blob, fblk, tblk)[ pos%4096 : pos%4096+sz ]
+    return s3blk(blob, pos // 4096, (pos+sz) // 4096)[ pos % 4096 : pos % 4096 + sz ]
     
 @lru_cache(maxsize=512)
 def s3blk(blob, fblk, tblk):
+    log( "S3 REQ: %s %d %d" % (blob,fblk,tblk) )
     req = urllib2.Request(blob)
-    req.add_header('Range', '%d-%d' % (fblk*4096,(tblk+1)*4096))
+    req.add_header('Range', 'bytes=%d-%d' % (fblk*4096,(tblk+1)*4096))
     resp = urllib2.urlopen(req)
     return resp.read(4096*(tblk-fblk+1))
+    
+def getBlobsSize(path='/var/data'):
+    sz = 0
+    for f in glob.glob(path+'/blobs*.dat'):
+        sz += os.stat(f).st_size 
+    return sz
 
 # cfg file handling stuff
 def loadcfg(cfg):
