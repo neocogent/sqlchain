@@ -18,6 +18,7 @@ tidylog = threading.Lock()
 MAX_TX_BLK = 10000  # allows 9,999,999 blocks with decimal(11)
 MAX_IO_TX = 4096    # allows 37 bit out_id value, (5 byte hash >> 3)*4096 in decimal(16), 7 bytes in blobs
 BLOB_SPLIT_SIZE = int(5e9) # size limit for split blobs, approx. as may extend past if tx on boundary
+S3_BLK_SIZE = 4096 # s3 block size for caching
 
 b58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -316,15 +317,18 @@ def readBlob(pos, sz, path='/var/data'):
         return blob.read(sz)
         
 def s3get(blob, pos, sz):
-    return s3blk(blob, pos // 4096, (pos+sz) // 4096)[ pos % 4096 : pos % 4096 + sz ]
+    data = ''
+    for blk in range(pos // S3_BLK_SIZE, (pos+sz) // S3_BLK_SIZE + 1):
+        data += s3blk(blob, blk)
+    return data[ pos % S3_BLK_SIZE : pos % S3_BLK_SIZE + sz ]
     
 @lru_cache(maxsize=512)
-def s3blk(blob, fblk, tblk):
-    log( "S3 REQ: %s %d %d" % (blob,fblk,tblk) )
+def s3blk(blob, blk):
+    log( "S3 REQ: %s %d" % (blob,blk) )
     req = urllib2.Request(blob)
-    req.add_header('Range', 'bytes=%d-%d' % (fblk*4096,(tblk+1)*4096))
+    req.add_header('Range', 'bytes=%d-%d' % (blk*S3_BLK_SIZE,(blk+1)*S3_BLK_SIZE-1))
     resp = urllib2.urlopen(req)
-    return resp.read(4096*(tblk-fblk+1))
+    return resp.read(S3_BLK_SIZE)
     
 def getBlobsSize(path='/var/data'):
     sz = 0
