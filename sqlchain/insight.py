@@ -10,6 +10,8 @@ from string import hexdigits
 from version import *
 from util import *
 
+RESULT_ROW_LIMIT = 1000
+
 #main entry point for api calls
 def do_API(env, send_resp):
     get,args,cur = urlparse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
@@ -107,24 +109,33 @@ def apiAddr(cur, addrs, args, get={}):
                 if 'utxo' in args:
                     data.append(addrUTXOs(cur, addr_id, addr))
                 else:
-                    data.append(addrTXs(cur, addr_id, addr, args, 'noTxList' not in get or get['noTxList'][0] == '0'))
+                    data.append(addrTXs(cur, addr_id, addr, args, get))
     return data if len(data) != 1 else data[0]
     
                             
-def addrTXs(cur, addr_id, addr, args, incTxs):
+def addrTXs(cur, addr_id, addr, args, get):
+    incTxs = 'noTxList' not in get or get['noTxList'][0] == '0'
+    offset = int(get['from'][0]) if 'from' in get else 0
+    limit = min(int(get['to'][0])-offset, RESULT_ROW_LIMIT) if 'to' in get else RESULT_ROW_LIMIT
     txs = []
     sums = [[0,0],[0,0]]
     untxs = 0
-    cur.execute("select value,t.id,tx_id,hash,block_id from trxs t left join outputs o on t.id=floor(o.id/{0}) or t.id=o.tx_id where addr_id=%s order by block_id;".format(MAX_IO_TX), (addr_id,))
-    for value,tx_id,spent_id,txhash,blk in cur:
+    count = 0
+    cur.execute("select value,t.id,tx_id,hash,block_id from trxs t left join outputs o on t.id=floor(o.id/{0}) or t.id=o.tx_id where addr_id=%s order by block_id desc;".format(MAX_IO_TX), (addr_id,))    
+    #cur.execute("select * from (select value,t.id,tx_id,hash,block_id from trxs t left join outputs o on t.id=floor(o.id/{0}) or t.id=o.tx_id where addr_id=%s) r order by block_id limit {1},{2};".format(MAX_IO_TX,offset,limit), (addr_id,))
+    #cur.execute("select value,t.id,tx_id,hash,block_id from trxs t left join outputs o on t.id=floor(o.id/{0}) or t.id=o.tx_id where addr_id=%s order by block_id limit {1},{2};".format(MAX_IO_TX,offset,limit), (addr_id,))
+    for value,tx_id,spend_id,txhash,blk in cur:
         uncfmd = 1 if blk < 0 else 0
         untxs += uncfmd
-        spent = 1 if tx_id == spent_id else 0
-        sums[uncfmd][spent] += value
+        spend = 1 if tx_id == spend_id else 0
+        sums[uncfmd][spend] += value
         
-        txhash = txhash[::-1].encode('hex')
-        if incTxs and txhash not in txs:
-            txs.append(txhash)
+        if spend == 0 and count >= offset and count < offset+limit:
+            txhash = txhash[::-1].encode('hex')
+            if incTxs and txhash not in txs:
+                txs.append(txhash)
+        if spend == 0:
+            count += 1
             
     if 'balance' in args:
         return int(sums[0][0]-sums[0][1])
@@ -138,7 +149,7 @@ def addrTXs(cur, addr_id, addr, args, incTxs):
     return { 'addStr':addr, 'balanceSat':int(sums[0][0]-sums[0][1]), 'balance':float(sums[0][0]-sums[0][1])/1e8, 'totalReceivedSat':int(sums[0][0]), 
              'totalReceived': float(sums[0][0])/1e8, 'totalSentSat':int(sums[0][1]), 'totalSent':float(sums[0][1])/1e8, 
              'unconfirmedBalanceSat':int(sums[1][0]-sums[1][1]), 'unconfirmedBalance':float(sums[1][0]-sums[1][1])/1e8,
-             'txApperances':len(txs)-untxs, 'transactions':txs, 'unconfirmedTxApperances':untxs }   
+             'txApperances':count, 'transactions':txs, 'unconfirmedTxApperances':untxs }   
 
 def addrUTXOs(cur, addr_id, addr):
     data = []
