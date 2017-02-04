@@ -197,8 +197,6 @@ def findTx(cur, txhash, mkNew=False, limit=32):
         row = cur.fetchone()
         if row == None:
             if mkNew:
-                #if tx_id != start_id:
-                #    print '#', # collision
                 return (tx_id,False)
             return None
         if str(row[0]) == str(txhash):

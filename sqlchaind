@@ -34,7 +34,7 @@ def getBlocks(blk):
     if 'blkdat' in cfg and (maxblk - startblk) > 500:
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     if not sqc.done.isSet():
-        logts("Using rpc mode. Monitoring blocks / mempool.")
+        log("Using rpc mode. Monitoring blocks / mempool.")
     poll_delay = 0.05
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
@@ -63,7 +63,7 @@ def getBlocksDirect(cur, blk):
     global maxblk
     blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,True))
     blkscan.start()
-    logts("Using blkdat mode: %s" % cfg['blkdat'])
+    log("Using blkdat mode: %s" % cfg['blkdat'])
     while not sqc.done.isSet():
         cur.execute("select count(1) from information_schema.tables where table_name='blkdat';")
         if cur.fetchone()[0]:
