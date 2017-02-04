@@ -62,9 +62,11 @@ def findBlocks(cur, blockpath, verbose):
     blkhash = None
     if filenum > 0:
         while not os.path.exists(blockpath % (filenum+2,)): # we trail by 2 blks file otherwise not reliable
-            sleep(5)
-            if done.isSet():
-                return None
+            for _ in range(12):
+                sleep(5)
+                if done.isSet():
+                    return None
+            cur.execute("select 1;") # keepalive during long waits
     try:
         with open(blockpath % filenum, "rb") as fd:
             while not done.isSet():
