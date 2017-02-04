@@ -43,6 +43,8 @@ finally:
 import threading
 import logging
 
+KEEPALIVE_PERIOD = 1800
+
 class DBPool():
     def __init__(self,connectionstring,poolsize,modulename='pyodbc'):
         self.conns = [DBConnection_(socket_.socketpair()) for x in xrange(poolsize)]
@@ -53,6 +55,14 @@ class DBPool():
             self.threads[i].start()
             self.conns[i].connect(connectionstring,modulename)
             self.queue.put(self.conns[i])
+        if KEEPALIVE_PERIOD > 0:
+            self.monitor = gevent.spawn(self.keepalive)
+        
+    def keepalive(self):
+        while True:
+            for n in range(len(self.conns)):
+                self.get().cursor().execute("select 1;")
+            gevent.sleep(KEEPALIVE_PERIOD)
 
     def worker(self,conn):
         while True:
