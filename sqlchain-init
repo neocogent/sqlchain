@@ -208,14 +208,15 @@ logconf = """
     missingok
     notifempty
     postrotate
-        killall -HUP sqlchaind sqlchain-api
+        kill -HUP `cat %s/api.pid`
+        kill -HUP `cat %s/daemon.pid`
     endscript
 }
 """ 
 logconfpath = '/etc/logrotate.d/sqlchain'
 if not os.path.exists(logconfpath):
     with open(logconfpath, 'w') as f:
-        f.write(logconf % sqldir)
+        f.write(logconf % (sqldir,sqldir,sqldir))
 logconf = """
 %s/debug.log {
     weekly
