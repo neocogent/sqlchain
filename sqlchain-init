@@ -178,17 +178,17 @@ else:   # create systemd init files
     initfile = '/lib/systemd/system/bitcoin.service' + ('.disabled' if btcboot.upper() != 'Y' else '')
     print "Creating systemd init file: %s" % initfile
     with open(initfile, 'w') as f:
-        s = "ExecStart=start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s: --exec %s -- -conf=%s/bitcoin.conf -datadir=%s\n" % (sqldir,btcuser,btcbin,cfgdir,btcdir)
+        s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s:%s --exec %s -- -conf=%s/bitcoin.conf -datadir=%s\n" % (sqldir,btcuser,btcuser,btcbin,cfgdir,btcdir)
         f.write(initsrc.replace('ExecStart',s))
     initfile = '/lib/systemd/system/sqlchain.service' + ('.disabled' if sqlboot.upper() != 'Y' else '')
     print "Creating systemd init file: %s" % initfile 
     with open(initfile, 'w') as f:
-        s = "ExecStart=start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
+        s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
         f.write(initsrc.replace('Type=forking\n\t','').replace('ExecStart',s))
     initfile = '/lib/systemd/system/sqlchain-api.service' + ('.disabled' if apiboot.upper() != 'Y' else '')
     print "Creating systemd init file: %s" % initfile 
     with open(initfile, 'w') as f:
-        s = "ExecStart=start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
+        s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
         f.write(initsrc.replace('Type=forking\n\t','').replace('ExecStart',s))
     
 ### Create sqlchaind.cfg 

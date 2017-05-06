@@ -14,7 +14,7 @@ First, you need Bitcoin Core and some standard Ubuntu packages for MySQL and Pyt
 sudo apt-get install software-properties-common python-software-properties libev-dev libevent-dev   # may not need but won't hurt
 sudo add-apt-repository ppa:bitcoin/bitcoin
 sudo apt-get update
-sudo apt-get install bitcoind mysql-server libmysqlclient-dev python-pip python-dev
+sudo apt-get install bitcoind mysql-server libmysqlclient-dev python-pip python-dev build-essential
 ```
 
 Then you can install sqlChain from PyPi the easy way, includes dependencies and demo API web pages.
@@ -29,7 +29,7 @@ The easy way to create the DB and configure and co-ordinate both bitcoin core an
     
 Answer the questions and it will create a user, mysql db and config files with correct permissions in locations you indicate. There are defaults for everything so you can get by with hitting 'Enter' the whole way thru. It also can be run again to change options but does not remove old files. It won't clobber the database either - you have to do that manually. It will create some demo api/web server files which you can build upon.
 
-Finally, try starting the daemons, one at a time at first (this uses the upstart init process, which also starts them at boot).
+Finally, try starting the daemons, one at a time at first (this uses the upstart init process, which also starts them at boot). On Ubuntu > 14.04 use `systemctl start` instead.
 
 ```
 sudo start bitcoin
@@ -37,12 +37,18 @@ sudo start sqlchain
 sudo start sqlchain-api
 ```
 
-If the process doesn't seem to start you can check in /var/log/upstart/ for logs upstart makes when something goes wrong. If a process starts but has other issues you can monitor them in their log files, by default directories as below,
+If the process doesn't seem to start you can check in /var/log/upstart/ for logs upstart makes when something goes wrong (Ubuntu > 14.04, use `systemctl status`). If a process starts but has other issues you can monitor them in their log files, by default directories as below,
 
 ```
 /var/data/bitcoin/debug.log
 /var/data/sqlchain/daemon.log
 /var/data/sqlchain/api.log
+```
+
+If you happen to install MySQL version 5.7 you may get start up errors related to ONLY_FULL_GROUP_BY. I solved this by adding the following setting in my my.cnf (or preferrably /etc/mysql/conf.d/bitcoin.cnf where you can put other optimized settings) which just removes the new ONLY_FULL_GROUP_BY default value. Then restart MySQL server.
+
+```
+sql_mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION"
 ```
 
 You can add your normal user to the sqlchain/bitcoin group (by default "btc"),
@@ -66,11 +72,21 @@ should do the trick. Bitcoin will get updated by the Ubuntu PPA package system (
 
 ### Pruning Mode
 
-If you select "pruning" mode in the sqlchain-init questions then it will send rpc calls to bitcoin to let it know when a block is processed. Bitcoin prunes in "block file units", each one being ~128MB. So when sqlchaind has completed all blocks in a given block file it is deleted. The pruning only works in manual mode and this is currently non-standard, though it appears it has been committed for bitcoin version 0.14.0
-
-There is a nice pull request (#7871) in the bitcoin github to enable this but you would have to clone the repo, merge the pull request and build a custom binary. That's not hard to do and I can add a similar step-by-step if anyone requests it. It seems a custom build installs into /usr/local/bin instead of /usr/bin - so that overrides the normal bitcoind allowing you to use a full path to select which to start (change conf file to match).
+If you select "pruning" mode in the sqlchain-init questions then it will send rpc calls to bitcoin to let it know when a block is processed. Bitcoin prunes in "block file units", each one being ~128MB. So when sqlchaind has completed all blocks in a given block file it is deleted. The pruning only works in manual mode and this is available in bitcoind >= 0.14.1 (otherwise you need to custom build bitcoind).
 
 ### Other Details
+
+You should probably create an optimized my.cnf override file in /etc/mysql/conf.d/bitcoin.cnf which has values suited to your system. For example I use below with 8 GB RAM and it seems to improve speed (but don't claim this is optimal).
+
+    #optimized for bitcoin database using values from mysqltuner.pl adjusted for other uses
+    [mysqld]
+    ignore-builtin-innodb
+    default-storage-engine = myisam
+    key_buffer_size=6000M
+    query_cache_type=0
+    
+    tmp_table_size=32M
+    max_heap_table_size=32M
 
 By default the API server (sqlchain-api) listens on localhost:8085 but of course a simple edit of sqlchain-api.cfg allows changing that. For example, to listen on the normal public port, assuming root privileges (when started as root it will drop to chosen user after):
 
@@ -104,7 +120,7 @@ A simple proxy config for nginx is below. You could have several api servers beh
         }
     }
 
-It is also probably better for serving static content and only passing api calls to sqlchain-api, in which case use a blank value www cfg item to disable root files. eg.
+It is also probably better for serving static content and only passing api calls to sqlchain-api, in which case use a blank www in sqlchain-api.cfg to disable root files. eg.
 
     "www":"",
 
