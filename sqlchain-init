@@ -93,7 +93,7 @@ elif not os.path.exists(wwwdir):
             os.chown(os.path.join(wwwdir+dst, f), pwd.pw_uid, pwd.pw_gid)
     
 ### Create empty data files and set ownership
-for f in ['/blobs.dat','/hdrs.dat']:
+for f in ['/blobs.0.dat','/hdrs.dat']:
     try:
         os.utime(sqldir+f, None)
     except:

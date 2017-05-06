@@ -45,7 +45,7 @@ If the process doesn't seem to start you can check in /var/log/upstart/ for logs
 /var/data/sqlchain/api.log
 ```
 
-If you happen to install MySQL version 5.7 you may get start up errors related to ONLY_FULL_GROUP_BY. I solved this by adding the following setting in my my.cnf (or preferrably /etc/mysql/conf.d/bitcoin.cnf where you can put other optimized settings) which just removes the new ONLY_FULL_GROUP_BY default value. Then restart MySQL server.
+If you happen to install MySQL version >= 5.7.5 you may get start up errors related to ONLY_FULL_GROUP_BY. I solved this by adding the following setting in my my.cnf (or preferrably /etc/mysql/conf.d/bitcoin.cnf where you can put other optimized settings) which just removes the new ONLY_FULL_GROUP_BY default value. Then restart MySQL server.
 
 ```
 sql_mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION"
@@ -76,7 +76,7 @@ If you select "pruning" mode in the sqlchain-init questions then it will send rp
 
 ### Other Details
 
-You should probably create an optimized my.cnf override file in /etc/mysql/conf.d/bitcoin.cnf which has values suited to your system. For example I use below with 8 GB RAM and it seems to improve speed (but don't claim this is optimal).
+You should probably create an optimized my.cnf override file in /etc/mysql/conf.d/bitcoin.cnf which has values suited to your system. For example I use below with 8 GB RAM and it seems to improve speed (but don't claim this is optimal). The latest versions of MySQL seem to also add a mysql.conf.d directory and order of configuration is non-deterministic so you may need to play with the cnf location and name while checking how variables get set. This bizarre and confusing cnf loading wasn't a problem for me in earlier versions; call it progress.
 
     #optimized for bitcoin database using values from mysqltuner.pl adjusted for other uses
     [mysqld]
