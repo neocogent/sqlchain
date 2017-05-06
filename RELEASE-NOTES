@@ -1,3 +1,12 @@
+v0.1.40 - alpha 1 release, update readme and release notes
+v0.1.39 - make split blobs default, update install docs
+v0.1.36 - fix s3 ranges, insight db status
+v0.1.35 - fix seek in single blobs
+v0.1.32 - add rpcPool, handle zero blob data
+v0.1.31 - update install guide, nginx proxy, demo web page info
+v0.1.30 - add locks to insertAddress, improve checkMemPool
+v0.1.28 - fix addOrphan bug
+v0.1.27 - chg near sync handling, update install guide
 v0.1.26 - Jan 20, 2017 -- add outQ threading, chg findTx, improve sync speed
 v0.1.25 - Jan 12, 2017 -- fix bugs, shutdown thread handling, add sslContext for python >= 2.7.9, logrotate support, sighup
 v0.1.23 - Jan 09, 2017 -- fix blkdat sync problems, install guide, bump version
