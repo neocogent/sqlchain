@@ -184,12 +184,12 @@ else:   # create systemd init files
     print "Creating systemd init file: %s" % initfile 
     with open(initfile, 'w') as f:
         s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
-        f.write(initsrc.replace('Type=forking\n\t','').replace('ExecStart',s))
+        f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
     initfile = '/lib/systemd/system/sqlchain-api.service' + ('.disabled' if apiboot.upper() != 'Y' else '')
     print "Creating systemd init file: %s" % initfile 
     with open(initfile, 'w') as f:
         s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
-        f.write(initsrc.replace('Type=forking\n\t','').replace('ExecStart',s))
+        f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
     
 ### Create sqlchaind.cfg 
 sqlcfg = { "log": sqldir+"/daemon.log", "pid": sqldir+"/daemon.pid", "path": sqldir, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), \
