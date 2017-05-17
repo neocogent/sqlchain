@@ -105,7 +105,7 @@ def chkPruning(blk):
     if blk > 120000 and blk % 100 == 0:
         blkinfo = sqc.rpc.getblockchaininfo()
         if blkinfo['pruned']:
-            sqc.rpc.pruneblockchain(blk)
+            sqc.rpc.pruneblockchain(blk-20) #keep a 20 block offset in case of a reorg, we will need this history
         maxblk = blkinfo['headers']
     
 def BlockHandler():
