@@ -137,8 +137,14 @@ def initdb(cfg):
     cur.execute("select count(1) from information_schema.tables where table_name='blkdat';")
     if not cur.fetchone()[0]:
         cur.execute(sqlmk) # create table if not existing
-    cur.execute("select filenum,max(filepos) from blkdat where filenum=(select max(filenum) from blkdat);") # find any previous position
-    row = cur.fetchone()
+    
+    #queries separated for ubuntu 16 compatibility.
+    cur.execute("select max(filenum) from blkdat;") # find any previous position
+    maxFileNum = cur.fetchone()[0]
+    cur.execute("select max(filepos) from blkdat where filenum=%s;", (maxFileNum,) )
+    maxFilePos = cur.fetchone()[0]
+    row = (maxFileNum, maxFilePos)
+
     if row != (None,None):
         lastpos = row
         cur.execute("""select (select min(t3.id)-1 from blkdat t3 where t3.id > t1.id) as blk,
