@@ -26,14 +26,14 @@ The **blkbtc** utility blocks bitcoin network traffic. This allows sqlchain to c
 
 Improved sync speed with another thread to handle output inserts/updates. These can happen "out of band" with the blocks/txs as long as in order. My testing on a "hybrid" 2 Core (8GB, SSD) server showed about double the tx/s conversion rate. I'll post some test results soon when it's fully sync'd again.
 
-Added sqlchain-init and installation guide (INSTALL.md) to help users get up and running. I've tested some more on Amazon EC2 and now also on a regular VPS account. So it's starting to get some workout and more bugs fixed. It sure runs faster on the VPS. I've found you can build a custom bitcoind and then rsync it up to the server and place in /usr/local/bin to override the default package install. That works.
+Added sqlchain-init and installation guide (INSTALL.md) to help users get up and running. I've tested some more on Amazon EC2 and now also on a regular VPS account, and on a few Vultr instances. So it's starting to get some workout and more bugs fixed. It sure runs faster on the hybrid-dedicated vultr instance. 
 
-sqlChain is still *Alpha level* software under active development (not ready for prime time) - but I'm busy on getting it there. For this reason the IRC peer discovery for public Electrum servers is not yet implemented, and wont be until enough testing has been completed.
+sqlChain is still *Alpha level* software under sporadic active development (not ready for prime time). For this reason the IRC peer discovery for public Electrum servers is not yet implemented, and wont be until enough testing has been completed.
 
 #### TODO
 
 - more testing on Electrum server operation
 - look further into pruning spent trxs (most of blob.dat) for a wallet api with even lower storage needs
-
+- update it for segwit specific data (not currently stored in sql db)
 
 
