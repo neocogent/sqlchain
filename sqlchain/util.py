@@ -101,7 +101,9 @@ def decodeScriptPK(data):
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
         if data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:34])) };
-        if len(data) <= 41 and data[0] == '\x6a': # NULL
+        if len(data) >= 38 and data[:6] == '\x6a\x24\aa\21\a9\ed': # witness commitment
+            return { 'type':'witness', 'hash':data[6:38], 'data':data[38:] };
+        if len(data) <= 41 and data[0] == '\x6a': # OP_RETURN
             return { 'type':'null', 'data':data };
     return { 'type':'other', 'data':data } # other, non-std
     
@@ -241,9 +243,10 @@ def getBlobHdr(pos, path='/var/data'):
         mask >>= 1
     out.append( ord(buf[0])&0x04 == 0 )  # stdSeq
     out.append( ord(buf[0])&0x02 != 0 )  # nosigs
+    out.append( ord(buf[0])&0x01 != 0 )  # segwit
     return out # out[0] is hdr size
 
-def mkBlobHdr(ins, outs, tx, stdSeq, nosigs):
+def mkBlobHdr(ins, outs, tx, stdSeq, nosigs, segwit):
     flags,hdr = 0,''
     sz = tx['size']
     if ins >= 0xC0:
@@ -268,6 +271,8 @@ def mkBlobHdr(ins, outs, tx, stdSeq, nosigs):
         flags |= 0x04  
     if nosigs:
         flags |= 0x02
+    if segwit:
+        flags |= 0x01
     # max hdr = 13 bytes but most will be only 1 flag byte
     return ins,outs,sz,pack('<B', flags) + hdr
 

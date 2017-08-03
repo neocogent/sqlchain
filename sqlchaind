@@ -184,8 +184,11 @@ def decodeBlock(data):
 def decodeTx(data):
     vers, = unpack_from('<I', data)
     tx = { 'version': vers, 'vin':[], 'vout':[] }
-    vicnt,off = decodeVarInt(data[4:13])
-    off += 4
+    tx['segwit'] = ( data[4:5] == '\0\1' )
+    off = 6 if tx['segwit'] else 4
+    vicnt,ioff = decodeVarInt(data[off:off+9])
+    off += ioff
+    wcnt = vicnt
     while vicnt > 0:
         txid,vout = unpack_from('<32sI', data, off)
         sigsz,soff = decodeVarInt(data[off+36:off+36+9])
@@ -207,9 +210,25 @@ def decodeTx(data):
         tx['vout'].append({'value':value, 'n':n, 'scriptPubKey':decodeScriptPK( data[off:off+pksz] ) }) 
         off += pksz
         n += 1
+    if tx['segwit']:
+        woff = off
+        if 'coinbase' in tx['vin'][0]:
+            off += 32
+            tx['witness'] = data[woff:off]
+        else:
+            while wcnt > 0:
+                scnt,soff = decodeVarInt(data[off:off+9])
+                off += soff
+                while scnt > 0:
+                    icnt,ioff = decodeVarInt(data[off:off+9])
+                    off += icnt+ioff
+                    scnt -= 1
+                wcnt -= 1
+            tx['witness'] = data[woff:off]
+        tx['txid'] = sha256(sha256(data[:4]+data[6:woff]+data[off:off+4]).digest()).digest()
     tx['locktime'], = unpack_from('<I', data, off)
     tx['size'] = off+4
-    tx['txid'] = sha256(sha256(data[:tx['size']]).digest()).digest()
+    tx['wtxid' if tx['segwit'] else 'txid'] = sha256(sha256(data[:tx['size']]).digest()).digest()        
     return tx
 
 def checkReOrg(cur, data):
@@ -274,7 +293,9 @@ def insertTx(cur, tx, tx_id, blk_id):
             outlist.append(( tx_id*MAX_IO_TX + vout['n'], addr_id, vout['value'] ))
             txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
     outQ.put((outlist,inlist))
-    ins,outs,sz,txhdr = mkBlobHdr(len(inlist), len(outlist), tx, stdSeq, cfg['no-sigs'])
+    ins,outs,sz,txhdr = mkBlobHdr(len(inlist), len(outlist), tx, stdSeq, cfg['no-sigs'], tx['segwit'])
+    if (not cfg['no-sigs']) and tx['segwit']:
+        txdata += tx['witness']
     cur.execute("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", 
         ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, cfg['path']), blk_id ))    
             

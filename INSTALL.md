@@ -6,7 +6,7 @@ There is a new sqlchain-init script that handles most of the configuration and D
 
 Tested on a clean Ubuntu 14.04 Amazon EC2 instance (ami-feed08e8). I used a spot m4.large instance which costs only 1.4 cents/hour to test (plus data transfer out, which seems to be pretty substanial, and maybe the main cost). 
 
-A better test platform is [Vultr.com](http://www.vultr.com/?ref=7087266) and they also accept Bitcoin payments. Faster and cheaper, though not quite as advanced block storage and scripting. If you try it then please use my [affiliate link](http://www.vultr.com/?ref=7087266) - gives me a some much needed server credit for testing.
+Also tested with Ubuntu 16.04 on [Vultr.com](http://www.vultr.com/?ref=7087266), which I prefer and they also accept Bitcoin payments. Faster and cheaper, though not quite as advanced block storage and scripting. If you try it then please use my [affiliate link](http://www.vultr.com/?ref=7087266) - gives me some much needed server credit for testing.
 
 ### Getting Started - Step by Step
 
@@ -21,6 +21,9 @@ sudo apt-get install bitcoind mysql-server libmysqlclient-dev python-pip python-
 
 Then you can install sqlChain from PyPi the easy way, includes dependencies and demo API web pages.
 
+    sudo pip install --upgrade pip  # may need this, won't hurt
+    sudo pip install setuptools     # likewise
+    
     sudo pip install sqlchain
 
 That creates binaries in /usr/local/bin and puts python stuff where it should normally go.
