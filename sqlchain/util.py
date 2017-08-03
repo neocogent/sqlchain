@@ -63,6 +63,8 @@ def addr2pkh(v):
     return result[1:-4]
     
 def mkaddr(pkh, aid=0):
+    if pkh == '\0'*20:
+        return '' # pkh==0 special case for null address when op_return or non-std script
     pad = ''
     an = chr((111 if sqc.testnet else 0) if aid%2==0 else (196 if sqc.testnet else 5)) + str(pkh)
     for c in an:
