@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS `address` (
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
+--dummy row so API will properly return undecoded outputs
+INSERT INTO `address` (`id`, `addr`) VALUES (0,0);
+
 CREATE TABLE IF NOT EXISTS `trxs` (
   `id` decimal(13) NOT NULL,
   `hash` binary(32) NOT NULL,

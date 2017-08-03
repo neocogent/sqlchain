@@ -63,6 +63,8 @@ def addr2pkh(v):
     return result[1:-4]
     
 def mkaddr(pkh, aid=0):
+    if pkh == '0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00':
+        return '' #pkh==0 is special case for outputs that cant be decoded. Client-side should handle proper display of these.
     pad = ''
     an = chr(0 if aid%2==0 else 5) + str(pkh)
     for c in an:
