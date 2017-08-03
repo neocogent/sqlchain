@@ -86,7 +86,7 @@ def getBlocksDirect(cur, blk):
             with open(cfg['blkdat'] + "/blocks/blk%05d.dat" % filenum, 'rb') as fd:
                 fd.seek(pos)
                 magic,blksize = unpack('<II', fd.read(8))
-                if magic != 0xD9B4BEF9:
+                if magic != ( 0xD9B4BEF9 if not sqc.testnet else 0x0709110B ):
                     logts("Error reading block %d - bad blkdat index. Aborting direct mode" % blk)
                     return blk
                 data = decodeBlock(fd.read(blksize))
@@ -400,6 +400,7 @@ if __name__ == '__main__':
     options(cfg)
     drop2user(cfg)
     
+    sqc.testnet = cfg['blkdat'].find('testnet3') != -1 
     sqc.rpc = rpcPool(cfg)
     
     if cfg['debug']:

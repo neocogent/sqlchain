@@ -64,7 +64,7 @@ def addr2pkh(v):
     
 def mkaddr(pkh, aid=0):
     pad = ''
-    an = chr(0 if aid%2==0 else 5) + str(pkh)
+    an = chr((111 if sqc.testnet else 0) if aid%2==0 else (196 if sqc.testnet else 5)) + str(pkh)
     for c in an:
         if c == '\0': pad += '1'
         else: break
@@ -79,7 +79,7 @@ def addr2id(addr, cur=None, rtnPKH=False):
     pkh = addr2pkh(addr)
     addr_id, = unpack('<q', sha256(pkh).digest()[:5]+'\0'*3) 
     addr_id *= 2
-    if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
+    if addr[0] in '3M': # encode P2SH as odd id, P2PKH as even id
         addr_id += 1
     if cur:
         cur.execute("select id from address where id>=%s and id<%s+32 and addr=%s limit 1;", (addr_id,addr_id,pkh))
