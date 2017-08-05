@@ -31,7 +31,7 @@ def getBlocks(blk):
     startblk = blk
     blkinfo = sqc.rpc.getblockchaininfo()
     maxblk = blkinfo['headers']
-    if 'blkdat' in cfg and (maxblk - startblk) > 500:
+    if 'blkdat' in cfg and (maxblk - startblk) > (500 if not sqc.testnet else 8000):
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     if not sqc.done.isSet():
         log("Using rpc mode. Monitoring blocks / mempool.")
@@ -75,7 +75,7 @@ def getBlocksDirect(cur, blk):
             time.sleep(0.01)
             continue
         chkPruning(blk - blockQ.qsize())
-        if (maxblk - blk) < 500:
+        if (maxblk - blk) < (500 if not sqc.testnet else 8000):
             logts("Near sync %d. Aborting direct mode" % blk)
             return blk
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))

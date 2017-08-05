@@ -99,7 +99,7 @@ def decodeScriptPK(data):
             return { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[2:22],5)};
         if data[0] == '\x41' and data[66] == '\xac': # P2PK
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
-        if data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
+        if len(data) >= 35 and data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:34])) };
         if len(data) >= 38 and data[:6] == '\x6a\x24\aa\21\a9\ed': # witness commitment
             return { 'type':'witness', 'hash':data[6:38], 'data':data[38:] };
