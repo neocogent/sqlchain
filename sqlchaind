@@ -184,7 +184,7 @@ def decodeBlock(data):
 def decodeTx(data):
     vers, = unpack_from('<I', data)
     tx = { 'version': vers, 'vin':[], 'vout':[] }
-    tx['segwit'] = ( data[4:5] == '\0\1' )
+    tx['segwit'] = ( data[4:6] == '\0\1' )
     off = 6 if tx['segwit'] else 4
     vicnt,ioff = decodeVarInt(data[off:off+9])
     off += ioff
@@ -212,23 +212,19 @@ def decodeTx(data):
         n += 1
     if tx['segwit']:
         woff = off
-        if 'coinbase' in tx['vin'][0]:
-            off += 32
-            tx['witness'] = data[woff:off]
-        else:
-            while wcnt > 0:
-                scnt,soff = decodeVarInt(data[off:off+9])
-                off += soff
-                while scnt > 0:
-                    icnt,ioff = decodeVarInt(data[off:off+9])
-                    off += icnt+ioff
-                    scnt -= 1
-                wcnt -= 1
-            tx['witness'] = data[woff:off]
+        while wcnt > 0:
+            scnt,soff = decodeVarInt(data[off:off+9])
+            off += soff
+            while scnt > 0:
+                icnt,ioff = decodeVarInt(data[off:off+9])
+                off += icnt+ioff
+                scnt -= 1
+            wcnt -= 1
+        tx['witness'] = data[woff:off]
         tx['txid'] = sha256(sha256(data[:4]+data[6:woff]+data[off:off+4]).digest()).digest()
     tx['locktime'], = unpack_from('<I', data, off)
     tx['size'] = off+4
-    tx['wtxid' if tx['segwit'] else 'txid'] = sha256(sha256(data[:tx['size']]).digest()).digest()        
+    tx['wtxid' if tx['segwit'] else 'txid'] = sha256(sha256(data[:tx['size']]).digest()).digest()
     return tx
 
 def checkReOrg(cur, data):
