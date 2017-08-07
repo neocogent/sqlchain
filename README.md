@@ -16,6 +16,8 @@
 
 #### Recent Updates
 
+Testnet and first partial SegWit support added. Still testing but should be ignored except on testnet where segwit txs exist. Currently decodes and stores witness data but the API doesn't yet return segwit status or witness data. That will come.
+
 Pruning mode now supported with bitcoind >= 0.14.1 with manual pruning mode. This allows deleting block files as they are processed by sqlchain and cuts down on total disk usage by about 50%. Most of the "witness" data is stored in the sqlchain blob file(s). 
 
 Split blobs are now supported by default allowing more flexible locations - you can put recent blobs on SSD and older ones on slower disks or even Amazon S3. You can move a blob and replace with a symlink (but probably should only do that when sqlchain stopped).
@@ -26,14 +28,18 @@ The **blkbtc** utility blocks bitcoin network traffic. This allows sqlchain to c
 
 Improved sync speed with another thread to handle output inserts/updates. These can happen "out of band" with the blocks/txs as long as in order. My testing on a "hybrid" 2 Core (8GB, SSD) server showed about double the tx/s conversion rate. I'll post some test results soon when it's fully sync'd again.
 
-Added sqlchain-init and installation guide (INSTALL.md) to help users get up and running. I've tested some more on Amazon EC2 and now also on a regular VPS account. So it's starting to get some workout and more bugs fixed. It sure runs faster on the VPS. I've found you can build a custom bitcoind and then rsync it up to the server and place in /usr/local/bin to override the default package install. That works.
+Added sqlchain-init and installation guide (INSTALL.md) to help users get up and running. I've tested some more on Amazon EC2 and now also on a regular VPS account, and on a few [Vultr](http://www.vultr.com/?ref=7087266) instances. So it's starting to get some workout and more bugs fixed.  
 
-sqlChain is still *Alpha level* software under active development (not ready for prime time) - but I'm busy on getting it there. For this reason the IRC peer discovery for public Electrum servers is not yet implemented, and wont be until enough testing has been completed.
+sqlChain is still *Alpha level* software under sporadic active development (not ready for prime time). For this reason the IRC peer discovery for public Electrum servers is not yet implemented, and wont be until enough testing has been completed.
+
+#### Try It Out
+
+You can try it on Testnet and it doesn't take much time or resources. Even a 1vCPU (1.5 cents/hour) [Vultr](http://www.vultr.com/?ref=7087266) instance can run it quite well. You can snapshot the instance and only run as needed. On this VPS Testnet sync'd in 45 minutes and used ~ 12 GB. It takes ~1.5 days to sync mysql data to block 1156000. The first block with segwit txs seems to be 872730.
 
 #### TODO
 
-- more testing on Electrum server operation
-- look further into pruning spent trxs (most of blob.dat) for a wallet api with even lower storage needs
-
+- more testing on Electrum server and testnet operation  
+- look further into pruning spent outputs (most of blob.dat) for a wallet api with even lower storage needs
+- add segwit specific API data
 
 

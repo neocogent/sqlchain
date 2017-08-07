@@ -205,7 +205,7 @@ os.chmod(cfgdir+'/sqlchaind.cfg', 0660)
 ### Create sqlchain-api.cfg 
 apicfg = { "www": wwwdir, "user": btcuser, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), "dbinfo": -1, "dbinfo-ts": "0", \
            "rpc": "http://%s:%s@localhost:8332" % (btcuser,btcpwd), "pool": 4, "log": sqldir+"/api.log", "pid": sqldir+"/api.pid", \
-           "path": sqldir, "debug": False, "block": 0, "listen": "localhost:8085" }
+           "path": sqldir, "debug": False, "block": 0, "listen": "localhost:8085", "sync": 0 }
 print "Creating config file:", cfgdir+'/sqlchain-api.cfg'
 with open(cfgdir+'/sqlchain-api.cfg', 'w') as f:
     json.dump(apicfg, f, indent=2)

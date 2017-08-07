@@ -6,6 +6,8 @@ There is a new sqlchain-init script that handles most of the configuration and D
 
 Tested on a clean Ubuntu 14.04 Amazon EC2 instance (ami-feed08e8). I used a spot m4.large instance which costs only 1.4 cents/hour to test (plus data transfer out, which seems to be pretty substanial, and maybe the main cost). 
 
+Also tested with Ubuntu 16.04 on [Vultr.com](http://www.vultr.com/?ref=7087266), which I prefer and they also accept Bitcoin payments. Faster and cheaper, though not quite as advanced block storage and scripting. If you try it then please use my [affiliate link](http://www.vultr.com/?ref=7087266) - gives me some much needed server credit for testing.
+
 ### Getting Started - Step by Step
 
 First, you need Bitcoin Core and some standard Ubuntu packages for MySQL and Python.
@@ -19,6 +21,9 @@ sudo apt-get install bitcoind mysql-server libmysqlclient-dev python-pip python-
 
 Then you can install sqlChain from PyPi the easy way, includes dependencies and demo API web pages.
 
+    sudo pip install --upgrade pip  # may need this, won't hurt
+    sudo pip install setuptools     # likewise
+    
     sudo pip install sqlchain
 
 That creates binaries in /usr/local/bin and puts python stuff where it should normally go.
@@ -74,6 +79,15 @@ should do the trick. Bitcoin will get updated by the Ubuntu PPA package system (
 
 If you select "pruning" mode in the sqlchain-init questions then it will send rpc calls to bitcoin to let it know when a block is processed. Bitcoin prunes in "block file units", each one being ~128MB. So when sqlchaind has completed all blocks in a given block file it is deleted. The pruning only works in manual mode and this is available in bitcoind >= 0.14.1 (otherwise you need to custom build bitcoind).
 
+### Testnet
+
+You can use sqlchain with Bitcoin testnet. Just update bitcoin.conf with `testnet=1` and sqlchaind.cfg:
+  
+- update rpc port to 18332 instead of 8332
+- if using blkdat mode be sure blkdat path includes testnet3 subdirectory
+
+I haven't tested this much yet but expect to do more when I test the electrum server.
+
 ### Other Details
 
 You should probably create an optimized my.cnf override file in /etc/mysql/conf.d/bitcoin.cnf which has values suited to your system. For example I use below with 8 GB RAM and it seems to improve speed (but don't claim this is optimal). The latest versions of MySQL seem to also add a mysql.conf.d directory and order of configuration is non-deterministic so you may need to play with the cnf location and name while checking how variables get set. This bizarre and confusing cnf loading wasn't a problem for me in earlier versions; call it progress.
@@ -128,7 +142,7 @@ The sqlchain-api "dbinfo" cfg option sets whether db state queries are run and a
 
     "dbinfo":10,
 
-Any questions or suggestions - post issues on GitHub or comments on my blog or send a message through my web site.
+Any questions or suggestions - post issues on GitHub.
 
 
 

@@ -75,7 +75,7 @@ def findBlocks(cur, blockpath, verbose):
                 if len(buf) < 8:
                     break
                 magic,blksize = unpack('<II', buf)
-                if magic != 0xD9B4BEF9:
+                if magic != ( 0xD9B4BEF9 if not sqc.testnet else 0x0709110B ): 
                     if pos-startpos > 1e6: # skip large end gaps
                         break
                     pos += 1

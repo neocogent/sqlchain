@@ -63,10 +63,10 @@ def addr2pkh(v):
     return result[1:-4]
     
 def mkaddr(pkh, aid=0):
-    if pkh == '0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00':
-        return '' #pkh==0 is special case for outputs that cant be decoded. Client-side should handle proper display of these.
+    if pkh == '\0'*20:
+        return '' # pkh==0 special case for null address when op_return or non-std script
     pad = ''
-    an = chr(0 if aid%2==0 else 5) + str(pkh)
+    an = chr((111 if sqc.testnet else 0) if aid%2==0 else (196 if sqc.testnet else 5)) + str(pkh)
     for c in an:
         if c == '\0': pad += '1'
         else: break
@@ -81,7 +81,7 @@ def addr2id(addr, cur=None, rtnPKH=False):
     pkh = addr2pkh(addr)
     addr_id, = unpack('<q', sha256(pkh).digest()[:5]+'\0'*3) 
     addr_id *= 2
-    if addr[0] == '3': # encode P2SH as odd id, P2PKH as even id
+    if addr[0] in '3M': # encode P2SH as odd id, P2PKH as even id
         addr_id += 1
     if cur:
         cur.execute("select id from address where id>=%s and id<%s+32 and addr=%s limit 1;", (addr_id,addr_id,pkh))
@@ -101,9 +101,11 @@ def decodeScriptPK(data):
             return { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[2:22],5)};
         if data[0] == '\x41' and data[66] == '\xac': # P2PK
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
-        if data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
+        if len(data) >= 35 and data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:34])) };
-        if len(data) <= 41 and data[0] == '\x6a': # NULL
+        if len(data) >= 38 and data[:6] == '\x6a\x24\aa\21\a9\ed': # witness commitment
+            return { 'type':'witness', 'hash':data[6:38], 'data':data[38:] };
+        if len(data) <= 41 and data[0] == '\x6a': # OP_RETURN
             return { 'type':'null', 'data':data };
     return { 'type':'other', 'data':data } # other, non-std
     
@@ -243,9 +245,10 @@ def getBlobHdr(pos, path='/var/data'):
         mask >>= 1
     out.append( ord(buf[0])&0x04 == 0 )  # stdSeq
     out.append( ord(buf[0])&0x02 != 0 )  # nosigs
+    out.append( ord(buf[0])&0x01 != 0 )  # segwit
     return out # out[0] is hdr size
 
-def mkBlobHdr(ins, outs, tx, stdSeq, nosigs):
+def mkBlobHdr(ins, outs, tx, stdSeq, nosigs, segwit):
     flags,hdr = 0,''
     sz = tx['size']
     if ins >= 0xC0:
@@ -270,6 +273,8 @@ def mkBlobHdr(ins, outs, tx, stdSeq, nosigs):
         flags |= 0x04  
     if nosigs:
         flags |= 0x02
+    if segwit:
+        flags |= 0x01
     # max hdr = 13 bytes but most will be only 1 flag byte
     return ins,outs,sz,pack('<B', flags) + hdr
 

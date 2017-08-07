@@ -1,3 +1,3 @@
 # like a version, touched for the very first time
 
-version = '0.1.40'
+version = '0.2.0'

@@ -1,0 +1,205 @@
+<!DOCTYPE html> 
+<html lang="en"> 
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <title>sqlChain Testnet Demo - Bitcoin SQL Blockchain Explorer</title>
+    <meta content="bitcoin testnet blockchain insight api using sqlchain" name="description">
+    <meta content="neocogent" name="author"> 
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+    <link href="css/main.css" rel="stylesheet">
+    
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+    <link href="img/favicon.png" rel="shortcut icon">    
+</head>
+<body>
+<nav class="navbar navbar-default  navbar-fixed-top navbar-inverse">
+  <div class="container-fluid">
+    <!-- Brand and toggle get grouped for better mobile display -->
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/">sqlChain</a><span class="beta">Demo</span>
+    </div>
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="active"><a data-toggle="tab" href="#overview">Overview <span class="sr-only">(current)</span></a></li>
+        <li><a data-toggle="tab" href="#api">Demo API</a></li>
+        <li><a data-toggle="tab" href="#install">Install</a></li>
+        <li><a data-toggle="tab" href="#support">Support</a></li>
+      </ul>
+    </div><!-- /.navbar-collapse -->
+  </div><!-- /.container-fluid -->
+</nav>
+
+<div class="container"> 
+    <div class="tab-content"> 
+
+<!-- Overview -->
+        <div class="tab-pane fade in active" id="overview">
+        <legend>Overview</legend>
+            sqlChain is a compact SQL layer that runs on top of bitcoind. It extends the query options on the 
+            blockchain with a priority towards lower storage demands. 
+            This demonstration server provides multiple API (compatible) interfaces:<br>
+            <ul>
+                <li>Insight API (with some extensions)</li> 
+                <li>Blockchain.info API (with WebSocket)</li> 
+                <li>RPC via POST, GET urls</li>
+                <li>Electrum server</li>  
+            </ul>
+            The Demo API page above documents the queries supported and differences to the original sites.<br><br>
+            Three daemon programs are provided:<br>
+            <ul>
+                <li><strong>sqlchaind</strong> updates the mysql backend from bitcoind.</li>
+                <li><strong>sqlchain-api</strong> provides an the API and web interfaces for querying the database.</li> 
+                <li><strong>sqlchain-electrum</strong> adds a layer over sqlchain-api supporting Electrum clients.</li>
+            </ul>
+            Using sqlChain over a pruning node as a compact alternative, a web socket interface, and other ideas, are currently under development.
+            Status and blockchain analysis information below is updated periodically from this server. The open source Python code is 
+            available in the <a href="https://github.com/neocogent/sqlchain">neoCogent Github</a> and please check out 
+             my <a href="http://neocogent.com">neoCogent blog</a>.
+        <legend>Server Status - Testnet</legend>This information is provided by the /api/status/db/html call.
+        <div id='dbstatus'></div>
+        </div>
+<!-- API docs -->
+        <div class="tab-pane fade" id="api">
+        <div id="findbox">
+            <form id="findform" class="form-horizontal">
+            <fieldset>
+                <div class="form-group">
+                    <label class="col-sm-1 control-label find-label" for="data">Find</label> 
+                    <div class="col-sm-10">
+                        <input id="finddata"  class="text" name="data" type="text">
+                    </div>
+                </div>
+            </fieldset>
+            </form>
+        </div>
+        <legend>Insight - Testnet</legend>
+        <ul class='apiClk'>
+            <li>/api/block/<span>0000000000003431c5b86d3788a953eeaeef2bd5b3491dff0f4e0a931aa4f8f3</span></li>
+            <li>/api/block-index/<span>892679</span></li>
+            <li>/api/tx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span></li>
+            <li>/api/raw/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span></li>
+            <li>/api/addr/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span><span class='opt'>?noTxList=1</span></li>
+            <div class='info'>Spelling mistake on txApperances is maintained for compatibility.</div>
+            <li>/api/addr/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/balance</li>
+            <li>/api/addr/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/totalReceived</li>
+            <li>/api/addr/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/totalSent</li>
+            <li>/api/addr/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/unconfirmedBalance</li>
+            <li>/api/addr/<span>n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ</span>/utxo</li>
+            <li>/api/addrs/<span>n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ,muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/utxo</li>
+            <div class='info'>Also supports POST at '/api/addrs/utxo' with param 'addrs'.</div>
+            <li>/api/addrs/<span>n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ,muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/txs<span class='opt'>?from=0&to=1</span></li>
+            <div class='info'>Also supports POST at '/api/addrs/txs' with params 'addrs,from,to'.</div>
+            <li>/api/txs<span class='opt'>?block=0000000000003431c5b86d3788a953eeaeef2bd5b3491dff0f4e0a931aa4f8f3</span></li>
+            <li>/api/txs<span class='opt'>?address=n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ</span></li>
+            <li class='noargs'>/api/utils/estimatefee<span class='opt'>?nbBlocks=2</span></li>
+            <li>/api/tx/send</li>
+            <div class='info'>Send raw transaction by POST method with param 'rawtx'.</div>
+        </ul>
+        <legend>Blockchain.info - Testnet</legend>
+        <ul class='apiClk'>
+            <li>/bci/block-height/<span>892679</span></li>
+            <div class='info'>...</div>
+            <li>/bci/rawblock/<span>0000000000003431c5b86d3788a953eeaeef2bd5b3491dff0f4e0a931aa4f8f3</span></li>
+            <li>/bci/rawtx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span><span class='opt'>?format=hex</span></li>
+            <li>/bci/address/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span></li>
+            <li>/bci/unspent/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span></li>
+            <li class='noargs'>/bci/latestblock</li>
+            <li class='noargs'>/bci/q/getblockcount</li>
+            <li>ws://api-host<span><a href="/wstest.html" target="wstest">/ws</a></span></li>
+            <div class='info'>Blockchain.info compatible websocket interface</div>
+        </ul>
+        <legend>RPC - Testnet</legend>
+        This api also available via POST with [method,params] args.
+        <ul class='apiClk'>
+            <li class='noargs'>/rpc/getinfo</li>
+            <li class='noargs'>/rpc/getdifficulty</li>
+            <li>/rpc/getblock/<span>0000000000003431c5b86d3788a953eeaeef2bd5b3491dff0f4e0a931aa4f8f3</span></li>
+            <li>/rpc/getblockhash/<span>892679</span></li>
+            <li class='noargs'>/rpc/getblockcount</li>
+            <li>/rpc/getrawtransaction/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span></li>
+            <li>/rpc/gettxout/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35/1</span></li>
+            <li class='noargs'>/rpc/getmempoolinfo</li>
+            <li class='noargs'>/rpc/getrawmempool</li>
+        </ul>
+        <legend>Electrum - Testnet</legend> Extensions to support sqlchain-electrum server.
+        <ul class="apiClk">
+            <li>/api/history/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span></li>
+            <li>/api/history/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/status</li>
+            <li>/api/history/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/balance</li>
+            <li>/api/history/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/uncfmd</li>
+            <li>/api/history/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/utxo</li>
+            <li>/api/block-index/<span>167324/electrum</li>
+            <li>/api/tx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span>/output/<span>1</span></li>
+            <li>/api/tx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span>/raw</li>
+            <li>/api/tx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span>/addrs</li>
+            <li>/api/merkle/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span></li>
+        </ul>
+        <legend>Extras - Testnet</legend> Extensions, and status / debugging.
+        <ul class="apiClk">
+            <li>/api/auto/<span>892679</span></li>
+            <div class='info'>Auto detect value and return appropriate data.<br>Supports 4 modes: block-index, block hash, address, tx hash.<br>
+            Also available as POST method with 'data' parameter, as demonstrated above with "Find".</div>
+            <li>/api/closure/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span></li>
+            <div class='info'>Compute the closure of an address. That is, the addresses likely to be owned by the same entity.</div>
+            <li class='noargs'>/api/status</li>
+            <li>/api/status/<span>db</span><span class='opt'>/html</span></li>
+            <div class='info'>Returns database information like row counts, disk space used.<br>Advanced info like multi-sig address count, 
+            id collision counts, non-std and unspent output counts are updated periodically due to slow query time. An html 
+            version returns a table that can be used in web pages with styling.</div>
+            <li class="raw">/api/tx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span>/html</li>
+            <div class='info'>An html table formatted version of raw transaction data with hex values and op codes.</div>
+        </ul>
+        <div id="blank" class="resp"></div>
+        </div>   
+<!-- Install docs -->
+        <div class="tab-pane fade" id="install">
+        <legend>Roll Your Own Blockchain Web App</legend>
+        It's easy to create a web app based using sqlChain on an Ubuntu server.<br><br>See the full install guide on <a href="https://github.com/neocogent/sqlchain">github</a>, but briefly:
+        <ol>
+            <li>Install base packages:<br>
+            <span class='bash'> # may not need but won't hurt<br>sudo apt-get install python-software-properties libev-dev libevent-dev</span></li>
+            <span class='bash'>sudo apt-get install bitcoind mysql-server libmysqlclient-dev python-pip python-dev</span></li>
+            <li>Install sqlchain from PyPi:<br>
+            <span class='bash'>sudo pip install sqlchain</span></li>
+            <li>Run the init script to setup mysql db, users and config files:<br>
+            <span class='bash'>sudo sqlchain-init</span></li>
+            <li>Start the daemons, as needed:<br>
+            <span class='bash'>sudo start bitcoin<br>sudo start sqlchain<br>sudo start sqlchain-api</span></li>
+            <li>Modify the /var/www source files as your own app.</li>
+            <li>Scale to serve the world:<br>
+            <span class='bash'>run nginx as front end and mysql replication behind.</span></li>
+        </ol>
+        </div>    
+<!-- Support -->
+        <div class="tab-pane fade" id="support">
+        <legend>Support</legend>
+        Huh, What support?<br><br>
+        More seriously, I put a lot of work into creating this. If you want to support continued effort by donating 
+        that would be cool. Visit my <a href="http://www.neocogent.com/pages/btc-donation.html">blog donation page</a>.<br><br>
+        I do <a href="http://www.neocogent.com/pages/about-me.html">freelance programming</a> work, and I'm available to build on this commericially for you or work on other Bitcoin related 
+        projects. My rates are very reasonable, given my expertise, because I live in a downright life-is-cheap country. 
+        So if donating rubs you the wrong way then you can always hire me.
+        
+        </div>                        
+    <FOOTER> 
+    <p></p> 
+    </FOOTER> 
+</div>
+<script src="js/jquery.min.js"></script>
+<script src="js/bootstrap.min.js"></script> 
+<script src="js/main.js"></script>
+</body>
+</html>
