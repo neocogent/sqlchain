@@ -50,12 +50,6 @@ If the process doesn't seem to start you can check in /var/log/upstart/ for logs
 /var/data/sqlchain/api.log
 ```
 
-If you happen to install MySQL version >= 5.7.5 you may get start up errors related to ONLY_FULL_GROUP_BY. I solved this by adding the following setting in my my.cnf (or preferrably /etc/mysql/conf.d/bitcoin.cnf where you can put other optimized settings) which just removes the new ONLY_FULL_GROUP_BY default value. Then restart MySQL server.
-
-```
-sql_mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION"
-```
-
 You can add your normal user to the sqlchain/bitcoin group (by default "btc"),
 
     sudo adduser <myuser> btc

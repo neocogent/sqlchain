@@ -34,7 +34,7 @@ def getBlocks(blk):
     if 'blkdat' in cfg and (maxblk - startblk) > (500 if not sqc.testnet else 8000):
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     if not sqc.done.isSet():
-        log("Using rpc mode. Monitoring blocks / mempool.")
+        log("Using rpc mode. Monitoring blocks / mempool on "+("testnet." if sqc.testnet else "mainnet."))
     poll_delay = 0.05
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
@@ -417,7 +417,7 @@ if __name__ == '__main__':
     options(cfg)
     drop2user(cfg)
     
-    sqc.testnet = cfg['blkdat'].find('testnet3') != -1 
+    sqc.testnet = (('testnet' in cfg) and cfg['testnet']) or (('rpc' in cfg) and cfg['rpc'].find('18332') != -1 )
     sqc.rpc = rpcPool(cfg)
     
     if cfg['debug']:
