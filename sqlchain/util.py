@@ -62,11 +62,11 @@ def addr2pkh(v):
     result = chr(0)*nPad + result
     return result[1:-4]
     
-def mkaddr(pkh, aid=0):
-    if pkh == '\0'*20:
-        return '' # pkh==0 special case for null address when op_return or non-std script
+def mkaddr(pkh, aid=None, p2sh=False):
+    if pkh == '\0'*20 and aid==0:
+        return '' # pkh==0 id==0, special case for null address when op_return or non-std script
     pad = ''
-    an = chr((111 if sqc.testnet else 0) if aid%2==0 else (196 if sqc.testnet else 5)) + str(pkh)
+    an = chr((111 if sqc.testnet else 0) if (aid is None and not p2sh) or (aid is not None and aid%2==0) else (196 if sqc.testnet else 5)) + str(pkh)
     for c in an:
         if c == '\0': pad += '1'
         else: break
@@ -81,7 +81,7 @@ def addr2id(addr, cur=None, rtnPKH=False):
     pkh = addr2pkh(addr)
     addr_id, = unpack('<q', sha256(pkh).digest()[:5]+'\0'*3) 
     addr_id *= 2
-    if addr[0] in '3M': # encode P2SH as odd id, P2PKH as even id
+    if addr[0] in '32': # encode P2SH as odd id, P2PKH as even id
         addr_id += 1
     if cur:
         cur.execute("select id from address where id>=%s and id<%s+32 and addr=%s limit 1;", (addr_id,addr_id,pkh))
@@ -98,7 +98,7 @@ def decodeScriptPK(data):
         if data[:3] == '\x76\xa9\x14' and data[23:25] == '\x88\xac': # P2PKH
             return { 'type':'p2pkh', 'data':'', 'addr':mkaddr(data[3:23]) };
         if data[:2] == '\xa9\x14' and data[22] == '\x87': # P2SH
-            return { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[2:22],5)};
+            return { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[2:22],p2sh=True)};
         if data[0] == '\x41' and data[66] == '\xac': # P2PK
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
         if len(data) >= 35 and data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
