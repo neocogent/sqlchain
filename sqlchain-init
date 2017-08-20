@@ -41,9 +41,13 @@ print """\nsqlchaind can parse block files directly, bypassing RPC calls. This i
 and not responding to RPC calls. Direct mode is currently experimnetal and may not be as safe.\n"""
 blkdat = raw_input( "Run sqlchaind in direct mode Y/[N]:" ) or 'N'
 
+print """\nsqlchaind can discard signature and witness data used for validation. Many use cases don't require
+this data and it can save almost 50% total disk usage to discard it.\n"""
+nosigs = raw_input( "Discard signature/witness data [Y]/N:" ) or 'Y'
+
 sqlboot = raw_input( "Start sqlchaind at system boot [Y]/N:" ) or 'Y'
 apiboot = raw_input( "Start sqlchain-api at system boot [Y]/N:" ) or 'Y'   
-cfgdir = raw_input( "Directory for config files [/etc/bitcoin]:" ) or "/etc/bitcoin"
+cfgdir = raw_input( "\nDirectory for config files [/etc/bitcoin]:" ) or "/etc/bitcoin"
 sqldir = raw_input( "Directory for sqlchain log, blob and header data files [/var/data/sqlchain]:") or "/var/data/sqlchain"
 wwwdir = raw_input( "Root web directory for sqlchain-api (N to disable) [/var/www]:") or "/var/www"
 
@@ -235,7 +239,8 @@ os.chmod(cfgdir+'/bitcoin.conf', 0660)
     
 ### Create sqlchaind.cfg 
 sqlcfg = { "log": sqldir+"/daemon.log", "pid": sqldir+"/daemon.pid", "path": sqldir, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), \
-           "queue": 8, "rpc": "http://%s:%s@localhost:8332" % (btcfg['rpcuser'],btcfg['rpcpassword']), "debug": False, "user": btcuser, "no-sigs": False }
+           "queue": 8, "rpc": "http://%s:%s@localhost:8332" % (btcfg['rpcuser'],btcfg['rpcpassword']), "debug": False, "user": btcuser, \
+           "no-sigs": nosigs.upper() == 'Y' }
 if blkdat.upper() == 'Y':
     sqlcfg["blkdat"] = btcdir
 if 'testnet' in btcfg and btcfg['testnet']:
