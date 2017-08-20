@@ -69,4 +69,4 @@ CREATE TABLE IF NOT EXISTS `info` (
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 --dummy row so API will properly return null outputs
-INSERT INTO `address` (`id`, `addr`) VALUES (0,'');
+INSERT IGNORE INTO `address` (`id`, `addr`) VALUES (0,'');
