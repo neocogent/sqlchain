@@ -225,6 +225,14 @@ def sigterm_handler(_signo, _stack_frame):
     if not cfg['debug']:
         os.unlink(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid')
     sys.exit(0)
+    
+def sighup_handler(_signo, _stack_frame):
+    logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
+    sys.stdout.close()
+    sys.stdout=open(logpath,'a')
+    sys.stderr.close()
+    sys.stderr=open(logpath,'a')
+    logts("SIGHUP Log reopened")
 
 def run():
     global reqQ,respQ
@@ -248,7 +256,7 @@ def run():
     cert = {'certfile':cfg['ssl']} if ('ssl' in cfg) and (cfg['ssl'] != '') else {}
     server = StreamServer((host, int(port)), TcpHandler, **cert)
     
-    drop2user(cfg)
+    drop2user(cfg, chown=True)
     
     server.serve_forever()
     
@@ -261,9 +269,11 @@ if __name__ == '__main__':
         signal.signal(signal.SIGINT, sigterm_handler)
         run()
     else:
-        with daemon.DaemonContext(working_directory='.', stdout=open(sys.argv[0]+'.log','a'), stderr=open(sys.argv[0]+'.log','a'), 
-                signal_map={signal.SIGTERM:sigterm_handler } ):
-            with file(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid','w') as f: 
+        logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
+        pidpath = cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid'
+        with daemon.DaemonContext(working_directory='.', umask=0002, stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
+                signal_map={signal.SIGTERM:sigterm_handler, signal.SIGHUP:sighup_handler } ):
+            with file(pidpath,'w') as f: 
                 f.write(str(os.getpid()))
             run()
             
