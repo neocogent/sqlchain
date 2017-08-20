@@ -245,6 +245,8 @@ if blkdat.upper() == 'Y':
     sqlcfg["blkdat"] = btcdir
 if 'testnet' in btcfg and btcfg['testnet']:
     sqlcfg.update({'testnet':1, "rpc": "http://%s:%s@localhost:18332" % (btcfg['rpcuser'],btcfg['rpcpassword'])})
+    if 'blkdat' in sqlcfg:
+        sqlcfg["blkdat"] += '/testnet3'
 print "Creating config file:", cfgdir+'/sqlchaind.cfg'
 with open(cfgdir+'/sqlchaind.cfg', 'w') as f:
     json.dump(sqlcfg, f, indent=2)
