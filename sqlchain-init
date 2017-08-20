@@ -132,23 +132,23 @@ except db.Error, e:
     pass
 
 ### Create init scripts for system boot
-if btcboot != '#':
-    dist,release,_ = platform.linux_distribution()
-    if dist != "Ubuntu" or release == "14.04":  # create upstart init files
-        initsrc = """
-        description "sqlChain - Bitcoin SQL layer and API"
-        
-        start on runlevel [2345]
-        stop on starting rc RUNLEVEL=[016]
-        
-        expect fork
-        respawn limit 5 120
-        kill timeout 60
-        
-        """
-        btcbin = '/usr/local/bin/bitcoind'
-        if not os.path.exists(btcbin):
-            btcbin = '/usr/bin/bitcoind'
+dist,release,_ = platform.linux_distribution()
+if dist != "Ubuntu" or release == "14.04":  # create upstart init files
+    initsrc = """
+    description "sqlChain - Bitcoin SQL layer and API"
+    
+    start on runlevel [2345]
+    stop on starting rc RUNLEVEL=[016]
+    
+    expect fork
+    respawn limit 5 120
+    kill timeout 60
+    
+    """
+    btcbin = '/usr/local/bin/bitcoind'
+    if not os.path.exists(btcbin):
+        btcbin = '/usr/bin/bitcoind'
+    if btcboot != '#':
         initfile = '/etc/init/bitcoin.conf'
         print "Creating upstart init file: %s" % initfile
         with open(initfile, 'w') as f:
@@ -156,55 +156,56 @@ if btcboot != '#':
             f.write(initsrc+s)
         if btcboot.upper() != 'Y':
             open('/etc/init/bitcoin.override', 'a').close()
-        initfile = '/etc/init/sqlchain.conf' 
-        print "Creating upstart init file: %s" % initfile 
-        with open(initfile, 'w') as f:
-            s = "exec start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
-            f.write(initsrc.replace('expect fork','')+s)
-        if sqlboot.upper() != 'Y':
-            open('/etc/init/sqlchain.override', 'a').close()
-        initfile = '/etc/init/sqlchain-api.conf'
-        print "Creating upstart init file: %s" % initfile 
-        with open(initfile, 'w') as f:
-            s = "exec start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
-            f.write(initsrc.replace('expect fork','')+s)
-        if apiboot.upper() != 'Y':
-            open('/etc/init/sqlchain-api.override', 'a').close()
-            
-    else:   # create systemd init files
-        initsrc = """
-        [Unit]
-        Description=sqlChain - Bitcoin SQL layer and API
+    initfile = '/etc/init/sqlchain.conf' 
+    print "Creating upstart init file: %s" % initfile 
+    with open(initfile, 'w') as f:
+        s = "exec start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
+        f.write(initsrc.replace('expect fork','')+s)
+    if sqlboot.upper() != 'Y':
+        open('/etc/init/sqlchain.override', 'a').close()
+    initfile = '/etc/init/sqlchain-api.conf'
+    print "Creating upstart init file: %s" % initfile 
+    with open(initfile, 'w') as f:
+        s = "exec start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
+        f.write(initsrc.replace('expect fork','')+s)
+    if apiboot.upper() != 'Y':
+        open('/etc/init/sqlchain-api.override', 'a').close()
         
-        [Service]
-        Type=forking
-        ExecStart
+else:   # create systemd init files
+    initsrc = """
+    [Unit]
+    Description=sqlChain - Bitcoin SQL layer and API
+    
+    [Service]
+    Type=forking
+    ExecStart
+    
+    [Install]
+    WantedBy=multi-user.target
         
-        [Install]
-        WantedBy=multi-user.target
-            
-        """
-        btcbin = '/usr/local/bin/bitcoind'
-        if not os.path.exists(btcbin):
-            btcbin = '/usr/bin/bitcoind'
+    """
+    btcbin = '/usr/local/bin/bitcoind'
+    if not os.path.exists(btcbin):
+        btcbin = '/usr/bin/bitcoind'
+    if btcboot != '#':
         initfile = '/lib/systemd/system/bitcoin.service' 
         print "Creating systemd init file: %s" % initfile
         with open(initfile, 'w') as f:
             w = 'WantedBy' if btcboot.upper() == 'Y' else '#WantedBy'
             s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s:%s --exec %s -- -conf=%s/bitcoin.conf -datadir=%s\n" % (sqldir,btcuser,btcuser,btcbin,cfgdir,btcdir)
             f.write(initsrc.replace('ExecStart',s).replace('WantedBy',w))
-        initfile = '/lib/systemd/system/sqlchain.service' 
-        print "Creating systemd init file: %s" % initfile 
-        with open(initfile, 'w') as f:
-            w = 'WantedBy' if sqlboot.upper() == 'Y' else '#WantedBy'
-            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
-            f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s).replace('WantedBy',w))
-        initfile = '/lib/systemd/system/sqlchain-api.service' 
-        print "Creating systemd init file: %s" % initfile 
-        with open(initfile, 'w') as f:
-            w = 'WantedBy' if apiboot.upper() == 'Y' else '#WantedBy'
-            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
-            f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s).replace('WantedBy',w))
+    initfile = '/lib/systemd/system/sqlchain.service' 
+    print "Creating systemd init file: %s" % initfile 
+    with open(initfile, 'w') as f:
+        w = 'WantedBy' if sqlboot.upper() == 'Y' else '#WantedBy'
+        s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
+        f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s).replace('WantedBy',w))
+    initfile = '/lib/systemd/system/sqlchain-api.service' 
+    print "Creating systemd init file: %s" % initfile 
+    with open(initfile, 'w') as f:
+        w = 'WantedBy' if apiboot.upper() == 'Y' else '#WantedBy'
+        s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
+        f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s).replace('WantedBy',w))
 
 ### Create or update the bitcoin.conf
 btcfg = {}
