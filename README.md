@@ -26,7 +26,7 @@ Direct block file mode allows processing blocks even when bitcoind is syncing. T
 
 The **blkbtc** utility blocks bitcoin network traffic. This allows sqlchain to catch up while pruning block files thereby cutting down on transient storage needs (and sqlchain can also use more cpu resources).
 
-Improved sync speed with another thread to handle output inserts/updates. These can happen "out of band" with the blocks/txs as long as in order. My testing on a "hybrid" 2 Core (8GB, SSD) server showed about double the tx/s conversion rate. I'll post some test results soon when it's fully sync'd again.
+Improved sync speed with another thread to handle output inserts/updates. These can happen "out of band" with the blocks/txs as long as in order. My testing on a "hybrid" 2 Core (8GB, SSD) server showed about double the tx/s conversion rate. 
 
 Added sqlchain-init and installation guide (INSTALL.md) to help users get up and running. I've tested some more on Amazon EC2 and now also on a regular VPS account, and on a few [Vultr](http://www.vultr.com/?ref=7087266) instances. So it's starting to get some workout and more bugs fixed.  
 
@@ -34,7 +34,7 @@ sqlChain is still *Alpha level* software under sporadic active development (not 
 
 #### Try It Out
 
-You can try it on Testnet and it doesn't take much time or resources. Even a 1vCPU (1.5 cents/hour) [Vultr](http://www.vultr.com/?ref=7087266) instance can run it quite well. You can snapshot the instance and only run as needed. On this VPS Testnet sync'd in 45 minutes and used ~ 12 GB. It takes ~1.5 days to sync mysql data to block 1156000. The first block with segwit txs seems to be 872730.
+You can try it on Testnet and it doesn't take much time or resources. Even a 1vCPU (1.5 cents/hour) [Vultr](http://www.vultr.com/?ref=7087266) instance can run it quite well. You can snapshot the instance and only run as needed. On this VPS Testnet sync'd in 45 minutes and used ~ 12 GB. It takes ~1.5 days to sync mysql data to block 1156000. The first block with segwit txs seems to be 834624.
 
 #### TODO
 
