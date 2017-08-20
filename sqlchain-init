@@ -22,15 +22,20 @@ if go.upper() != 'Y':
     sys.exit(0)
 
 btcdir = raw_input( "\nEnter the bitcoin data directory [/var/data/bitcoin]:" ) or "/var/data/bitcoin"
-btcboot = raw_input( "Start bitcoind at system boot [Y]/N:" ) or 'Y'
+btcboot = raw_input( "Start bitcoind at system boot Y/N/[No Change]:" ) or '#'
 btcuser = raw_input( "User to run bitcoind and sqlchain daemons (will create if not existing) [btc]:" ) or 'btc'
-btcpwd = raw_input( "Bitcoin RPC password [create random]:" ) 
+btcrpc = raw_input( "Use existing Bitcoin RPC user/pwd? [Y]/N:" ) or 'Y'
+btcpwd = ''
+if btcrpc.upper() != 'Y':
+    btcrpc = raw_input( "Bitcoin RPC username? [btc]:" ) or 'btc'
+    btcpwd = raw_input( "Bitcoin RPC password [create random]:" ) 
 
 print """\nBitcoin can be run in pruning mode to discard block data after sqlchaind has processed it. 
-This requires a bitcoind be built with 'manual pruning' to allow control over pruned blocks. This is currently 
-available as PR #7871, which can be pulled and merged for a custom build. If you do not have this mode 
+This requires a bitcoind be built with 'manual pruning' to allow control over pruned blocks. 
+This requires version >= 0.14.1 or a custom build with PR #7871. If you do not have this mode 
 available then do not enable pruning as blocks could be pruned before being processed by sqlchaind.\n"""
 btcprune = raw_input( "Run bitcoind in pruning mode Y/[N]:" ) or 'N'
+btctest = raw_input( "Run bitcoind on Testnet Y/[N]:" ) or 'N'
 
 print """\nsqlchaind can parse block files directly, bypassing RPC calls. This is faster when bitcoind is busy
 and not responding to RPC calls. Direct mode is currently experimnetal and may not be as safe.\n"""
@@ -127,91 +132,80 @@ except db.Error, e:
     pass
 
 ### Create init scripts for system boot
-dist,release,_ = platform.linux_distribution()
-if dist != "Ubuntu" or release == "14.04":  # create upstart init files
-    initsrc = """
-    description "sqlChain - Bitcoin SQL layer and API"
-    
-    start on runlevel [2345]
-    stop on starting rc RUNLEVEL=[016]
-    
-    expect fork
-    respawn limit 5 120
-    kill timeout 60
-    
-    """
-    btcbin = '/usr/local/bin/bitcoind'
-    if not os.path.exists(btcbin):
-        btcbin = '/usr/bin/bitcoind'
-    initfile = '/etc/init/bitcoin.conf' + ('.disabled' if btcboot.upper() != 'Y' else '')
-    print "Creating upstart init file: %s" % initfile
-    with open(initfile, 'w') as f:
-        s = "exec start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s: --exec %s -- -conf=%s/bitcoin.conf -datadir=%s\n" % (sqldir,btcuser,btcbin,cfgdir,btcdir)
-        f.write(initsrc+s)
-    initfile = '/etc/init/sqlchain.conf' + ('.disabled' if sqlboot.upper() != 'Y' else '')
-    print "Creating upstart init file: %s" % initfile 
-    with open(initfile, 'w') as f:
-        s = "exec start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
-        f.write(initsrc.replace('expect fork','')+s)
-    initfile = '/etc/init/sqlchain-api.conf' + ('.disabled' if apiboot.upper() != 'Y' else '')
-    print "Creating upstart init file: %s" % initfile 
-    with open(initfile, 'w') as f:
-        s = "exec start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
-        f.write(initsrc.replace('expect fork','')+s)
+if btcboot != '#':
+    dist,release,_ = platform.linux_distribution()
+    if dist != "Ubuntu" or release == "14.04":  # create upstart init files
+        initsrc = """
+        description "sqlChain - Bitcoin SQL layer and API"
         
-else:   # create systemd init files
-    initsrc = """
-    [Unit]
-    Description=sqlChain - Bitcoin SQL layer and API
-    
-    [Service]
-    Type=forking
-    ExecStart
-    
-    [Install]
-    WantedBy=multi-user.target
+        start on runlevel [2345]
+        stop on starting rc RUNLEVEL=[016]
         
-    """
-    btcbin = '/usr/local/bin/bitcoind'
-    if not os.path.exists(btcbin):
-        btcbin = '/usr/bin/bitcoind'
-    initfile = '/lib/systemd/system/bitcoin.service' + ('.disabled' if btcboot.upper() != 'Y' else '')
-    print "Creating systemd init file: %s" % initfile
-    with open(initfile, 'w') as f:
-        s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s:%s --exec %s -- -conf=%s/bitcoin.conf -datadir=%s\n" % (sqldir,btcuser,btcuser,btcbin,cfgdir,btcdir)
-        f.write(initsrc.replace('ExecStart',s))
-    initfile = '/lib/systemd/system/sqlchain.service' + ('.disabled' if sqlboot.upper() != 'Y' else '')
-    print "Creating systemd init file: %s" % initfile 
-    with open(initfile, 'w') as f:
-        s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
-        f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
-    initfile = '/lib/systemd/system/sqlchain-api.service' + ('.disabled' if apiboot.upper() != 'Y' else '')
-    print "Creating systemd init file: %s" % initfile 
-    with open(initfile, 'w') as f:
-        s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
-        f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
-    
-### Create sqlchaind.cfg 
-sqlcfg = { "log": sqldir+"/daemon.log", "pid": sqldir+"/daemon.pid", "path": sqldir, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), \
-           "queue": 8, "rpc": "http://%s:%s@localhost:8332" % (btcuser,btcpwd), "debug": False, "user": btcuser, "no-sigs": False }
-if blkdat.upper() == 'Y':
-    sqlcfg["blkdat"] = btcdir
-print "Creating config file:", cfgdir+'/sqlchaind.cfg'
-with open(cfgdir+'/sqlchaind.cfg', 'w') as f:
-    json.dump(sqlcfg, f, indent=2)
-os.chown(cfgdir+'/sqlchaind.cfg', pwd.pw_uid, pwd.pw_gid)
-os.chmod(cfgdir+'/sqlchaind.cfg', 0660)
+        expect fork
+        respawn limit 5 120
+        kill timeout 60
+        
+        """
+        btcbin = '/usr/local/bin/bitcoind'
+        if not os.path.exists(btcbin):
+            btcbin = '/usr/bin/bitcoind'
+        initfile = '/etc/init/bitcoin.conf'
+        print "Creating upstart init file: %s" % initfile
+        with open(initfile, 'w') as f:
+            s = "exec start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s: --exec %s -- -conf=%s/bitcoin.conf -datadir=%s\n" % (sqldir,btcuser,btcbin,cfgdir,btcdir)
+            f.write(initsrc+s)
+        if btcboot.upper() != 'Y':
+            open('/etc/init/bitcoin.override', 'a').close()
+        initfile = '/etc/init/sqlchain.conf' 
+        print "Creating upstart init file: %s" % initfile 
+        with open(initfile, 'w') as f:
+            s = "exec start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
+            f.write(initsrc.replace('expect fork','')+s)
+        if sqlboot.upper() != 'Y':
+            open('/etc/init/sqlchain.override', 'a').close()
+        initfile = '/etc/init/sqlchain-api.conf'
+        print "Creating upstart init file: %s" % initfile 
+        with open(initfile, 'w') as f:
+            s = "exec start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
+            f.write(initsrc.replace('expect fork','')+s)
+        if apiboot.upper() != 'Y':
+            open('/etc/init/sqlchain-api.override', 'a').close()
+            
+    else:   # create systemd init files
+        initsrc = """
+        [Unit]
+        Description=sqlChain - Bitcoin SQL layer and API
+        
+        [Service]
+        Type=forking
+        ExecStart
+        
+        [Install]
+        WantedBy=multi-user.target
+            
+        """
+        btcbin = '/usr/local/bin/bitcoind'
+        if not os.path.exists(btcbin):
+            btcbin = '/usr/bin/bitcoind'
+        initfile = '/lib/systemd/system/bitcoin.service' 
+        print "Creating systemd init file: %s" % initfile
+        with open(initfile, 'w') as f:
+            w = 'WantedBy' if btcboot.upper() == 'Y' else '#WantedBy'
+            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/bitcoind.pid --chuid %s:%s --exec %s -- -conf=%s/bitcoin.conf -datadir=%s\n" % (sqldir,btcuser,btcuser,btcbin,cfgdir,btcdir)
+            f.write(initsrc.replace('ExecStart',s).replace('WantedBy',w))
+        initfile = '/lib/systemd/system/sqlchain.service' 
+        print "Creating systemd init file: %s" % initfile 
+        with open(initfile, 'w') as f:
+            w = 'WantedBy' if sqlboot.upper() == 'Y' else '#WantedBy'
+            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchaind.cfg\n" % (sqldir,cfgdir)
+            f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s).replace('WantedBy',w))
+        initfile = '/lib/systemd/system/sqlchain-api.service' 
+        print "Creating systemd init file: %s" % initfile 
+        with open(initfile, 'w') as f:
+            w = 'WantedBy' if apiboot.upper() == 'Y' else '#WantedBy'
+            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.cfg\n" % (sqldir,cfgdir)
+            f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s).replace('WantedBy',w))
 
-### Create sqlchain-api.cfg 
-apicfg = { "www": wwwdir, "user": btcuser, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), "dbinfo": -1, "dbinfo-ts": "0", \
-           "rpc": "http://%s:%s@localhost:8332" % (btcuser,btcpwd), "pool": 4, "log": sqldir+"/api.log", "pid": sqldir+"/api.pid", \
-           "path": sqldir, "debug": False, "block": 0, "listen": "localhost:8085", "sync": 0 }
-print "Creating config file:", cfgdir+'/sqlchain-api.cfg'
-with open(cfgdir+'/sqlchain-api.cfg', 'w') as f:
-    json.dump(apicfg, f, indent=2)
-os.chown(cfgdir+'/sqlchain-api.cfg', pwd.pw_uid, pwd.pw_gid)
-os.chmod(cfgdir+'/sqlchain-api.cfg', 0660)
-    
 ### Create or update the bitcoin.conf
 btcfg = {}
 try:
@@ -223,13 +217,45 @@ try:
 except (IOError, ImportError):
     print "Creating file: %s/bitcoin.conf" % cfgdir
     
-btcfg.update({'server':1, 'daemon':1, 'prune':1 if btcprune.upper() == 'Y' else 0, 'rpcuser':btcuser, 'rpcpassword':btcpwd, \
+btcfg.update({'server':1, 'daemon':1, 'prune':1 if btcprune.upper() == 'Y' else 0, \
               'datadir':btcdir, 'pid':sqldir+'/bitcoind.pid', 'disablewallet':1 })
+if btcrpc.upper() != 'Y':
+    btcfg.update({'rpcuser':btcrpc, 'rpcpassword':btcpwd })
+elif 'rpcuser' not in btcfg:
+    btcfg.update({'rpcuser':'btc', 'rpcpassword':btcpwd })
+if btctest.upper() == 'Y':
+    btcfg.update({'testnet':1 })
+    
 with open(cfgdir+'/bitcoin.conf', 'w') as f:
     for k in btcfg:
         f.write("%s=%s\n" % (k,btcfg[k]))
 os.chown(cfgdir+'/bitcoin.conf', pwd.pw_uid, pwd.pw_gid)
 os.chmod(cfgdir+'/bitcoin.conf', 0660)
+    
+### Create sqlchaind.cfg 
+sqlcfg = { "log": sqldir+"/daemon.log", "pid": sqldir+"/daemon.pid", "path": sqldir, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), \
+           "queue": 8, "rpc": "http://%s:%s@localhost:8332" % (btcfg['rpcuser'],btcfg['rpcpassword']), "debug": False, "user": btcuser, "no-sigs": False }
+if blkdat.upper() == 'Y':
+    sqlcfg["blkdat"] = btcdir
+if 'testnet' in btcfg and btcfg['testnet']:
+    sqlcfg.update({'testnet':1, "rpc": "http://%s:%s@localhost:18332" % (btcfg['rpcuser'],btcfg['rpcpassword'])})
+print "Creating config file:", cfgdir+'/sqlchaind.cfg'
+with open(cfgdir+'/sqlchaind.cfg', 'w') as f:
+    json.dump(sqlcfg, f, indent=2)
+os.chown(cfgdir+'/sqlchaind.cfg', pwd.pw_uid, pwd.pw_gid)
+os.chmod(cfgdir+'/sqlchaind.cfg', 0660)
+
+### Create sqlchain-api.cfg 
+apicfg = { "www": wwwdir, "user": btcuser, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), "dbinfo": -1, "dbinfo-ts": "0", \
+           "rpc": "http://%s:%s@localhost:8332" % (btcfg['rpcuser'],btcfg['rpcpassword']), "pool": 4, "log": sqldir+"/api.log", "pid": sqldir+"/api.pid", \
+           "path": sqldir, "debug": False, "block": 0, "listen": "localhost:8085", "sync": 0 }
+if 'testnet' in btcfg and btcfg['testnet']:
+    apicfg.update({"rpc": "http://%s:%s@localhost:18332" % (btcfg['rpcuser'],btcfg['rpcpassword'])})           
+print "Creating config file:", cfgdir+'/sqlchain-api.cfg'
+with open(cfgdir+'/sqlchain-api.cfg', 'w') as f:
+    json.dump(apicfg, f, indent=2)
+os.chown(cfgdir+'/sqlchain-api.cfg', pwd.pw_uid, pwd.pw_gid)
+os.chmod(cfgdir+'/sqlchain-api.cfg', 0660)
 
 ### Create log rotation control files
 print "Creating logrotate files in: /etc/logrotate.d/"
