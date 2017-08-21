@@ -51,7 +51,8 @@ cfgdir = raw_input( "\nDirectory for config files [/etc/bitcoin]:" ) or "/etc/bi
 sqldir = raw_input( "Directory for sqlchain log, blob and header data files [/var/data/sqlchain]:") or "/var/data/sqlchain"
 wwwdir = raw_input( "Root web directory for sqlchain-api (N to disable) [/var/www]:") or "/var/www"
 
-dbname = raw_input( "\nMySQL database name [bitcoin]:" ) or "bitcoin"
+dbname = 'bitcoin' if btctest.upper() != 'Y' else 'testnet'
+dbname = raw_input( "\nMySQL database name [%s]:" % dbname ) or dbname
 dbuser = raw_input( "MySQL database user (will grant privileges) [btc]:" ) or "btc"
 dbpwd = raw_input( "MySQL %s user password [create random]:" % dbuser )
 rootpwd = raw_input( "MySQL root password (needed to create database and user):" )
