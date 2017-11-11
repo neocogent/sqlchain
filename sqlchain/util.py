@@ -95,11 +95,11 @@ def mkSPK(addr, addr_id):
     
 def decodeScriptPK(data):
     if len(data) > 1:
-        if data[:3] == '\x76\xa9\x14' and data[23:25] == '\x88\xac': # P2PKH
+        if len(data) == 26 and data[:3] == '\x76\xa9\x14' and data[23:25] == '\x88\xac': # P2PKH
             return { 'type':'p2pkh', 'data':'', 'addr':mkaddr(data[3:23]) };
-        if data[:2] == '\xa9\x14' and data[22] == '\x87': # P2SH
+        if len(data) == 23 and data[:2] == '\xa9\x14' and data[22] == '\x87': # P2SH
             return { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[2:22],p2sh=True)};
-        if data[0] == '\x41' and data[66] == '\xac': # P2PK
+        if len(data) == 67 and data[0] == '\x41' and data[66] == '\xac': # P2PK
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
         if len(data) >= 35 and data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:34])) };
