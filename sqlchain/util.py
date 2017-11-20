@@ -31,6 +31,8 @@ class dotdict(dict):
 
 # address support stuff
 def is_address(addr):
+    if addr[:2] == ('tb' if sqc.testnet else 'bc'):
+        return bech32decode(addr) != None
     try:
         n = 0
         for c in addr:
@@ -45,9 +47,11 @@ def mkpkh(pk):
     rmd.update(sha256(pk).digest())
     return rmd.digest()
 
-def addr2pkh(v):
+def addr2pkh(addr):
+    if addr[:2] == ('tb' if sqc.testnet else 'bc'):
+        return bech32decode(addr)
     long_value = 0L
-    for (i, c) in enumerate(v[::-1]):
+    for (i, c) in enumerate(addr[::-1]):
         long_value += b58.find(c) * (58**i)
     result = ''
     while long_value >= 256:
@@ -62,9 +66,11 @@ def addr2pkh(v):
     result = chr(0)*nPad + result
     return result[1:-4]
     
-def mkaddr(pkh, aid=None, p2sh=False):
+def mkaddr(pkh, aid=None, p2sh=False, bech32=False):
     if pkh == '\0'*20 and aid==0:
         return '' # pkh==0 id==0, special case for null address when op_return or non-std script
+    if (aid and (aid & 0x20000000000 != 0)) or bech32:
+        return bech32encode('tb' if sqc.testnet else 'bc', pkh)
     pad = ''
     an = chr((111 if sqc.testnet else 0) if (aid is None and not p2sh) or (aid is not None and aid%2==0) else (196 if sqc.testnet else 5)) + str(pkh)
     for c in an:
@@ -77,25 +83,34 @@ def mkaddr(pkh, aid=None, p2sh=False):
         out = b58[m] + out
     return pad + b58[num] + out 
 
+def is_BL32(addr_id):
+    return (addr_id & 0x20000000001) == 0x20000000001
+    
 def addr2id(addr, cur=None, rtnPKH=False):
     pkh = addr2pkh(addr)
     addr_id, = unpack('<q', sha256(pkh).digest()[:5]+'\0'*3) 
     addr_id *= 2
-    if addr[0] in '32': # encode P2SH as odd id, P2PKH as even id
+    if addr[:2] == ('tb' if sqc.testnet else 'bc'): # bech32 has bit 42 set, >20 byte as odd id and stored in bech32 table
+        addr_id |= 0x20000000000
+        if len(pkh) > 22:
+            addr_id += 1
+    elif addr[0] in '32': # encode P2SH as odd id, P2PKH as even id
         addr_id += 1
     if cur:
-        cur.execute("select id from address where id>=%s and id<%s+32 and addr=%s limit 1;", (addr_id,addr_id,pkh))
+        cur.execute("select id from %s where id>=%s and id<%s+32 and addr=%s limit 1;", ('bech32' if is_BL32(addr_id) else 'address',addr_id,addr_id,pkh))
         row = cur.fetchone()
         return row[0] if row else None
     return addr_id,pkh if rtnPKH else addr_id
 
 # script support stuff
-def mkSPK(addr, addr_id):
-    return ('\x19','\x76\xa9\x14%s\x88\xac'%addr) if addr_id % 2 == 0 else ('\x17','\xa9\x14%s\x87'%addr)
+def mkSPK(pkh, addr_id):
+    if addr_id & 0x200000000000: # bech32 id have witness spk
+        return ('\x16','\x00\x14%s'%pkh) if addr_id % 2 == 0 else ('\x22','\x00\x20%s'%pkh)
+    return ('\x19','\x76\xa9\x14%s\x88\xac'%pkh) if addr_id % 2 == 0 else ('\x17','\xa9\x14%s\x87'%pkh)
     
 def decodeScriptPK(data):
     if len(data) > 1:
-        if len(data) == 26 and data[:3] == '\x76\xa9\x14' and data[23:25] == '\x88\xac': # P2PKH
+        if len(data) == 25 and data[:3] == '\x76\xa9\x14' and data[23:25] == '\x88\xac': # P2PKH
             return { 'type':'p2pkh', 'data':'', 'addr':mkaddr(data[3:23]) };
         if len(data) == 23 and data[:2] == '\xa9\x14' and data[22] == '\x87': # P2SH
             return { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[2:22],p2sh=True)};
@@ -103,6 +118,10 @@ def decodeScriptPK(data):
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) };
         if len(data) >= 35 and data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
             return { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:34])) };
+        if len(data) == 22 and data[:2] == '\x00\x14': # P2WPKH
+            return { 'type':'p2wpkh', 'data':'', 'addr':mkaddr(data[2:22],bech32=True) };
+        if len(data) == 34 and data[:2] == '\x00\x20': # P2WSH
+            return { 'type':'p2wsh', 'data':'', 'addr':mkaddr(data[2:34],bech32=True) };
         if len(data) >= 38 and data[:6] == '\x6a\x24\aa\21\a9\ed': # witness commitment
             return { 'type':'witness', 'hash':data[6:38], 'data':data[38:] };
         if len(data) <= 41 and data[0] == '\x6a': # OP_RETURN
@@ -172,6 +191,60 @@ def encodeVarInt(v):
         return '\xfe' + pack('<I', v)
     return '\xff' + pack('<Q', v)
 
+# bech32 support stuff
+BECH_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+def bech32polymod(values):
+    generator = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3]
+    chk = 1
+    for value in values:
+        top = chk >> 25
+        chk = (chk & 0x1ffffff) << 5 ^ value
+        for i in range(5):
+            chk ^= generator[i] if ((top >> i) & 1) else 0
+    return chk
+
+def bech32checksum(hrp, data):
+    values = [ord(x) >> 5 for x in hrp] + [0] + [ord(x) & 31 for x in hrp] + data
+    polymod = bech32polymod(values + [0, 0, 0, 0, 0, 0]) ^ 1
+    return [(polymod >> 5 * (5 - i)) & 31 for i in range(6)]
+    
+def base2cvt(data, frombits, tobits, pad=True):
+    acc = 0
+    bits = 0
+    ret = []
+    maxv = (1 << tobits) - 1
+    max_acc = (1 << (frombits + tobits - 1)) - 1
+    for value in data:
+        if value < 0 or (value >> frombits):
+            return None
+        acc = ((acc << frombits) | value) & max_acc
+        bits += frombits
+        while bits >= tobits:
+            bits -= tobits
+            ret.append((acc >> bits) & maxv)
+    if pad:
+        if bits:
+            ret.append((acc << (tobits - bits)) & maxv)
+    elif bits >= frombits or ((acc << (tobits - bits)) & maxv):
+        return None
+    return ret
+
+def bech32verify(hrp, data):
+    return bech32polymod([ord(x) >> 5 for x in hrp] + [0] + [ord(x) & 31 for x in hrp] + data) == 1
+    
+def bech32encode(hrp, witprog, witver=0):
+    data = [witver] + base2cvt(witprog, 8, 5)
+    combined = data + bech32checksum(hrp, data)
+    return hrp + '1' + ''.join([BECH_CHARSET[d] for d in combined])
+    
+def bech32decode(addr):
+    pos = addr.rfind('1')
+    data = [BECH_CHARSET.find(x) for x in addr[pos+1:]]
+    keyhash = base2cvt(data[1:-6], 5, 8, False)
+    witver = data[0]+0x50 if data[0] > 0 else 0
+    return bytearray([witver,len(keyhash)] + keyhash) if bech32verify(addr[:pos], data) else None
+
 # sqlchain ids support stuff
 def txh2id(txh):
     return ( unpack('<q', txh[:5]+'\0'*3)[0] >> 3 )
@@ -180,13 +253,14 @@ addr_lock = threading.Lock()
 
 def insertAddress(cur, addr):
     addr_id,pkh = addr2id(addr, rtnPKH=True)
+    tbl = 'bech32' if is_BL32(addr_id) else 'address'
     start_id = addr_id
     with addr_lock:
         while True:
-            cur.execute("select addr from address where id=%s", (addr_id,))
+            cur.execute("select addr from %s where id=%s", (tbl,addr_id))
             row = cur.fetchone()
             if row == None:
-                cur.execute("insert into address (id,addr) values(%s,%s)", (addr_id, pkh))
+                cur.execute("insert into %s (id,addr) values(%s,%s)", (tbl,addr_id,pkh))
                 return addr_id
             elif str(row[0]) == str(pkh):
                 return addr_id

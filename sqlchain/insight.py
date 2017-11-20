@@ -242,25 +242,31 @@ def apiInputs(cur, height, blob, ins):
         else:
             for n in range(ins):
                 in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
-                cur.execute("select value,addr,addr_id,hash from outputs o, address a, trxs t where o.id=%s and a.id=o.addr_id and t.id=%s limit 1;", (in_id, in_id/MAX_IO_TX))
-                for value,addr,aid,txhash in cur:
-                    btc = float(value)/1e8
-                    data.append({ 'n':n, 'vout':in_id%MAX_IO_TX, 'value':round(btc,8), 'valueSat':int(value), 'txid':txhash[::-1].encode('hex'), 'addr':mkaddr(addr,aid) })
-                    total += btc
+                cur.execute("select value,addr_id,hash from outputs o, trxs t where o.id=%s and t.id=%s limit 1;", (in_id, in_id/MAX_IO_TX))
+                outs = cur.fetchall()
+                for value,aid,txhash in outs:
+                    cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+                    for addr, in cur:
+                        btc = float(value)/1e8
+                        data.append({ 'n':n, 'vout':in_id%MAX_IO_TX, 'value':round(btc,8), 'valueSat':int(value), 'txid':txhash[::-1].encode('hex'), 'addr':mkaddr(addr,aid) })
+                        total += btc
     return round(total,8),data
     
 def apiOutputs(cur, txid, blob):
     total = 0
     data = []
-    cur.execute("select o.id,o.id%%{0},value,addr,addr_id,o.tx_id from outputs o, address a where o.id>=%s*{0} and o.id<%s*{0} and a.id=o.addr_id;".format(MAX_IO_TX), (txid,txid+1))
-    for out_id,n,value,addr,aid,in_id, in cur:
-        btc = float(value)/1e8
-        total += btc
-        vout = { 'n':int(n), 'value':"%1.8f" % btc }
-        vout['scriptPubKey'] = { 'addresses':[ mkaddr(addr,aid) ] }
-        if in_id:
-            vout.update(apiSpent(cur, int(in_id), int(out_id)))
-        data.append(vout)
+    cur.execute("select o.id,o.id%%{0},value,addr_id,o.tx_id from outputs o where o.id>=%s*{0} and o.id<%s*{0};".format(MAX_IO_TX), (txid,txid+1))
+    outs = cur.fetchall()
+    for out_id,n,value,aid,in_id, in outs:
+        cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) 'address',aid))
+        for addr, in cur:
+            btc = float(value)/1e8
+            total += btc
+            vout = { 'n':int(n), 'value':"%1.8f" % btc }
+            vout['scriptPubKey'] = { 'addresses':[ mkaddr(addr,aid) ] }
+            if in_id:
+                vout.update(apiSpent(cur, int(in_id), int(out_id)))
+            data.append(vout)
     return round(total,8),data
     
 def apiSpent(cur, txid, out_id):
@@ -280,16 +286,23 @@ def apiSpent(cur, txid, out_id):
 
 def txoAddr(cur, txhash, n):
     txid = txh2id(txhash.decode('hex')[::-1])
-    cur.execute("select addr,addr_id from outputs o, address a where o.id>=%s*{0} and o.id<%s*{0} and o.id%%{0}=%s and a.id=o.addr_id limit 1;".format(MAX_IO_TX), (txid,txid+1,int(n)))
-    row = cur.fetchone()
-    return mkaddr(row[0],row[1]) if row else None
+    cur.execute("select addr_id from outputs o where o.id>=%s*{0} and o.id<%s*{0} and o.id%%{0}=%s limit 1;".format(MAX_IO_TX), (txid,txid+1,int(n)))
+    aids = cur.fetchall()
+    for aid, in aids:
+        cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+        addr = cur.fetchone()[0]
+        return mkaddr(addr,aid) 
+    return None
     
 def txAddrs(cur, txhash):
     data = []
     txid = txh2id(txhash.decode('hex')[::-1])
-    cur.execute("select addr,addr_id from outputs o, address a where o.id>=%s*{0} and o.id<%s*{0} and a.id=o.addr_id;".format(MAX_IO_TX), (txid,txid+1))
-    for pkh,aid in cur:
-        data.append(mkaddr(pkh,aid))
+    cur.execute("select addr_id from outputs o where o.id>=%s*{0} and o.id<%s*{0};".format(MAX_IO_TX), (txid,txid+1))
+    outs = cur.fetchall()
+    for aid, in outs:
+        cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+        addr = cur.fetchone()[0]
+        data.append( mkaddr(addr,aid) )
     cur.execute("select txdata,ins from trxs where id=%s limit 1;", (txid,))
     for blob,ins in cur:
         hdr = getBlobHdr(int(blob), sqc.cfg['path'])
@@ -303,9 +316,12 @@ def txAddrs(cur, txhash):
                 return [ 'missing-data' ]
             for n in range(ins):
                 in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
-                cur.execute("select addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (in_id,))
-                for pkh,aid in cur:
-                    data.append(mkaddr(pkh,aid))
+                cur.execute("select addr_id from outputs o where o.id=%s limit 1;", (in_id,))
+                ins = cur.fetchall()
+                for aid, in ins:
+                    cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+                    addr = cur.fetchone()[0]
+                    data.append(mkaddr(addr,aid))
     return data
 
 def apiMerkle(cur, txhash):
@@ -377,12 +393,15 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
                 vpos += off+vsz+(0 if hdr[6] else 4)
     out += encodeVarInt(outs)
     for n in range(outs):
-        cur.execute("select value,addr,addr_id from outputs o, address a where o.id=%s and a.id=o.addr_id limit 1;", (txid*MAX_IO_TX + n,))
-        value,addr,addr_id = cur.fetchone()
-        out += [ pack('<Q', int(value)) ]
-        vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path']))
-        pkbuf = readBlob(vpos, off+vsz, sqc.cfg['path'])
-        out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, addr_id)
+        cur.execute("select value,addr_id from outputs o where o.id=%s limit 1;", (txid*MAX_IO_TX + n,))
+        outs = cur.fetchall()
+        for value,aid in outs:
+            cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+            addr = cur.fetchone()[0]
+            out += [ pack('<Q', int(value)) ]
+            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path']))
+            pkbuf = readBlob(vpos, off+vsz, sqc.cfg['path'])
+            out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, aid)
     out += [ pack('<I', hdr[5]) ]
     return rawHTML(out, ins, outs) if 'html' in args else ''.join(out).encode('hex') 
 

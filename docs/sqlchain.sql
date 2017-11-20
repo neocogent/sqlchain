@@ -24,6 +24,12 @@ CREATE TABLE IF NOT EXISTS `address` (
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
+CREATE TABLE IF NOT EXISTS `bech32` (
+  `id` decimal(13) NOT NULL,
+  `addr` binary(32) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
 CREATE TABLE IF NOT EXISTS `trxs` (
   `id` decimal(13) NOT NULL,
   `hash` binary(32) NOT NULL,
