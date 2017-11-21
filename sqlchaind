@@ -16,7 +16,7 @@ from sqlchain.blkdat import BlkDatHandler
 
 __builtins__.sqc = dotdict()  # container for super globals
 
-cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain' } 
+cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain', 'cointype':'bitcoin' } 
 blksecs = []
 memPool = set()
 maxblk = 120000
@@ -25,16 +25,21 @@ def getBlocks(blk):
     global maxblk
     sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
+    cur.execute("show tables like bech32;") # test if old db version and abort with log msg
+    if cur.rowcount == 0:
+        log("sqlChain Database upgrade required for this daemon version.\nCannot continue. Run sqlchain-upgrade-db.")
+        sqc.done.set()
+        return 0
     if blk == 0:
         cur.execute('select ifnull(max(id), -1) from blocks')
         blk = int(cur.fetchone()[0] + 1)
     startblk = blk
     blkinfo = sqc.rpc.getblockchaininfo()
     maxblk = blkinfo['headers']
-    if 'blkdat' in cfg and (maxblk - startblk) > (500 if not sqc.testnet else 8000):
+    if 'blkdat' in cfg and (maxblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     if not sqc.done.isSet():
-        log("Using rpc mode. Monitoring blocks / mempool on "+("testnet." if sqc.testnet else "mainnet."))
+        log("Using rpc mode. Monitoring blocks / mempool on " + sqc.cfg['cointype'])
     poll_delay = 0.05
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
@@ -75,7 +80,7 @@ def getBlocksDirect(cur, blk):
             time.sleep(0.01)
             continue
         chkPruning(blk - blockQ.qsize())
-        if (maxblk - blk) < (500 if not sqc.testnet else 8000):
+        if (maxblk - blk) < coincfg(BLKDAT_NEAR_SYNC):
             logts("Near sync %d. Aborting direct mode" % blk)
             return blk
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
@@ -86,7 +91,7 @@ def getBlocksDirect(cur, blk):
             with open(cfg['blkdat'] + "/blocks/blk%05d.dat" % filenum, 'rb') as fd:
                 fd.seek(pos)
                 magic,blksize = unpack('<II', fd.read(8))
-                if magic != ( 0xD9B4BEF9 if not sqc.testnet else 0x0709110B ):
+                if magic != coincfg(BLKDAT_MAGIC):
                     logts("Error reading block %d - bad blkdat index. Aborting direct mode" % blk)
                     return blk
                 data = decodeBlock(fd.read(blksize))
@@ -417,7 +422,6 @@ if __name__ == '__main__':
     options(cfg)
     drop2user(cfg)
     
-    sqc.testnet = (('testnet' in cfg) and cfg['testnet']) or (('rpc' in cfg) and cfg['rpc'].find('18332') != -1 )
     sqc.rpc = rpcPool(cfg)
     
     if cfg['debug']:

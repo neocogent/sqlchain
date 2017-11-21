@@ -16,6 +16,8 @@
 
 #### Recent Updates
 
+Added **bech32** address support. This requires a database upgrade and sqlchain-upgrade-db has been provided for this. sqlchaind will detect and stop on old versions databases. The upgrade may take some time and if you cannot wait then revert your version (< 0.2.5). The same upgrade also adds support for multiple blockchains and move generalizes testnet to be handled the same way.
+
 Testnet and first partial SegWit support added. Still testing but should be ignored except on testnet where segwit txs exist. Currently decodes and stores witness data but the API doesn't yet return segwit status or witness data. That will come.
 
 Pruning mode now supported with bitcoind >= 0.14.1 with manual pruning mode. This allows deleting block files as they are processed by sqlchain and cuts down on total disk usage by about 50%. Most of the "witness" data is stored in the sqlchain blob file(s). 
@@ -41,5 +43,6 @@ You can try it on Testnet and it doesn't take much time or resources. Even a 1vC
 - more testing on Electrum server and testnet operation  
 - look further into pruning spent outputs (most of blob.dat) for a wallet api with even lower storage needs
 - add segwit specific API data
+
 
 

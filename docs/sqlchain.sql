@@ -1,8 +1,8 @@
 -- create new database after install
 -- need to do these as mysql root user
 
-----CREATE USER 'btc'@'localhost' IDENTIFIED BY 'sqlpwd';
---GRANT ALL PRIVILEGES ON bitcoin.* TO 'btc'@'localhost' IDENTIFIED BY 'sqlpwd';
+----CREATE USER 'sqluser'@'localhost' IDENTIFIED BY 'sqlpwd';
+--GRANT ALL PRIVILEGES ON bitcoin.* TO 'sqluser'@'localhost' IDENTIFIED BY 'sqlpwd';
 --FLUSH PRIVILEGES;
 
 -- disabled for safety

@@ -10,6 +10,8 @@ from struct import pack, unpack, unpack_from
 from datetime import datetime
 from hashlib import sha256
 
+from version import *
+
 tidylog = threading.Lock()
 
 # cannot change these without first updating existing table schema and data
@@ -31,7 +33,7 @@ class dotdict(dict):
 
 # address support stuff
 def is_address(addr):
-    if addr[:2] == ('tb' if sqc.testnet else 'bc'):
+    if addr[:2] == coincfg[BECH_HRP]:
         return bech32decode(addr) != None
     try:
         n = 0
@@ -48,7 +50,7 @@ def mkpkh(pk):
     return rmd.digest()
 
 def addr2pkh(addr):
-    if addr[:2] == ('tb' if sqc.testnet else 'bc'):
+    if addr[:2] == coincfg[BECH_HRP]:
         return bech32decode(addr)
     long_value = 0L
     for (i, c) in enumerate(addr[::-1]):
@@ -69,10 +71,10 @@ def addr2pkh(addr):
 def mkaddr(pkh, aid=None, p2sh=False, bech32=False):
     if pkh == '\0'*20 and aid==0:
         return '' # pkh==0 id==0, special case for null address when op_return or non-std script
-    if (aid and (aid & 0x20000000000 != 0)) or bech32:
-        return bech32encode('tb' if sqc.testnet else 'bc', pkh)
+    if (aid and (aid & BECH32_FLAG != 0)) or bech32:
+        return bech32encode(coincfg[BECH_HRP], pkh)
     pad = ''
-    an = chr((111 if sqc.testnet else 0) if (aid is None and not p2sh) or (aid is not None and aid%2==0) else (196 if sqc.testnet else 5)) + str(pkh)
+    an = chr(coincfg[ADDR_PREFIX] if (aid is None and not p2sh) or (aid is not None and (aid & P2SH_FLAG != P2SH_FLAG)) else coincfg[P2SH_PREFIX]) + str(pkh)
     for c in an:
         if c == '\0': pad += '1'
         else: break
@@ -84,18 +86,17 @@ def mkaddr(pkh, aid=None, p2sh=False, bech32=False):
     return pad + b58[num] + out 
 
 def is_BL32(addr_id):
-    return (addr_id & 0x20000000001) == 0x20000000001
+    return (addr_id & BECH32_LONG) == BECH32_LONG
     
 def addr2id(addr, cur=None, rtnPKH=False):
     pkh = addr2pkh(addr)
     addr_id, = unpack('<q', sha256(pkh).digest()[:5]+'\0'*3) 
-    addr_id *= 2
-    if addr[:2] == ('tb' if sqc.testnet else 'bc'): # bech32 has bit 42 set, >20 byte as odd id and stored in bech32 table
-        addr_id |= 0x20000000000
-        if len(pkh) > 22:
-            addr_id += 1
-    elif addr[0] in '32': # encode P2SH as odd id, P2PKH as even id
-        addr_id += 1
+    if addr[:2] == coincfg[BECH_HRP]: # bech32 has bit 42 set, >20 byte, encode as odd id and stored in bech32 table
+        addr_id |= BECH32_FLAG
+        if len(pkh) > 20:
+            addr_id |= P2SH_FLAG
+    elif addr[0] in coincfg[P2SH_CHAR]: # encode P2SH flag
+        addr_id |= P2SH_FLAG
     if cur:
         cur.execute("select id from %s where id>=%s and id<%s+32 and addr=%s limit 1;", ('bech32' if is_BL32(addr_id) else 'address',addr_id,addr_id,pkh))
         row = cur.fetchone()
@@ -104,9 +105,9 @@ def addr2id(addr, cur=None, rtnPKH=False):
 
 # script support stuff
 def mkSPK(pkh, addr_id):
-    if addr_id & 0x200000000000: # bech32 id have witness spk
-        return ('\x16','\x00\x14%s'%pkh) if addr_id % 2 == 0 else ('\x22','\x00\x20%s'%pkh)
-    return ('\x19','\x76\xa9\x14%s\x88\xac'%pkh) if addr_id % 2 == 0 else ('\x17','\xa9\x14%s\x87'%pkh)
+    if addr_id & BECH32_FLAG: # bech32 id have witness spk
+        return ('\x16','\x00\x14%s'%pkh) if (addr_id & P2SH_FLAG != P2SH_FLAG) else ('\x22','\x00\x20%s'%pkh)
+    return ('\x19','\x76\xa9\x14%s\x88\xac'%pkh) if (addr_id & P2SH_FLAG != P2SH_FLAG) else ('\x17','\xa9\x14%s\x87'%pkh)
     
 def decodeScriptPK(data):
     if len(data) > 1:
@@ -264,7 +265,7 @@ def insertAddress(cur, addr):
                 return addr_id
             elif str(row[0]) == str(pkh):
                 return addr_id
-            addr_id += 2
+            addr_id += 1
         
 def findTx(cur, txhash, mkNew=False, limit=32):
     tx_id = txh2id(txhash)

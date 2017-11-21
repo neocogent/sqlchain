@@ -73,14 +73,9 @@ should do the trick. Bitcoin will get updated by the Ubuntu PPA package system (
 
 If you select "pruning" mode in the sqlchain-init questions then it will send rpc calls to bitcoin to let it know when a block is processed. Bitcoin prunes in "block file units", each one being ~128MB. So when sqlchaind has completed all blocks in a given block file it is deleted. The pruning only works in manual mode and this is available in bitcoind >= 0.14.1 (otherwise you need to custom build bitcoind).
 
-### Testnet
+### Testnet / Other blockchains (as of version 0.2.5)
 
-You can use sqlchain with Bitcoin testnet. Just update bitcoin.conf with `testnet=1` and sqlchaind.cfg:
-  
-- update rpc port to 18332 instead of 8332
-- if using blkdat mode be sure blkdat path includes testnet3 subdirectory
-
-I haven't tested this much yet but expect to do more when I test the electrum server.
+sqlChain and the sqlchain-init script now support multiple blockchains. Currently bitcoin and testnet have config settings and have been tested. I expect to add more coins as I get time to install and test.
 
 ### Other Details
 
