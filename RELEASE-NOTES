@@ -1,3 +1,4 @@
+v0.2.3  - fix script decode index error
 v0.1.40 - alpha 1 release, update readme and release notes
 v0.1.39 - make split blobs default, update install docs
 v0.1.36 - fix s3 ranges, insight db status
