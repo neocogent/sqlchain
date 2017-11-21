@@ -1,0 +1,97 @@
+#!/usr/bin/env python
+#
+#   sqlchain - upgrade database to support bech32 table and use revised addr id encoding
+#
+#   This is less than perfect. Ideally sqlchain would be re-synced from the first segwit block as it's possible 
+#   bech32 addresses may have been used from that time which would not be in the current address tables. But in 
+#   a test application where bech32 is not important/critical it may suffice to enable them from this time forward.
+#
+#   Old: addr_id columns had P2SH encoded as odd values, regular addresses as even.
+#   New: addr_id columns has P2SH encoded with high bit, and new high bit for bech32, short (20 byte) and long addresses (32 byte).
+#   This should result in better division of address indices since p2sh not interleaved with p2pkh.
+#   
+#   Max addr id values and future high bit flags:
+#       currently addr ids are decimal(13) which takes 6 bytes and has a maximum value of 9,999,999,999,999 = 0x9184E729FFF
+#       only 5 bytes are used from the hashed address so bits above that can be flags, 0x9xxxxxxxxxx allows 3 bits, 2 now used for bech,p2sh
+#
+#   Long bech32 hashes are stored in a new table (bech32) but the short ones stay in the normal address table.
+#   
+#   See version module updated for definitions that support coin dependent values and flags
+#
+#   This program checks if a bech32 table exists and does not proceed assuming it has been upgraded already. 
+#
+#   Overview: 
+#       fix address table ids
+#       update addr_ids in output table likewise
+#       add new bech32 table 
+#       scan blocks since 481,824 (first segwit)(testnet 834,624) and insert any missing addresses, update outputs 
+#           (fixes missing bech32 and also bug in v0.2.2)
+#
+
+import os, sys
+import MySQLdb as db
+
+from sqlchain.util import *
+
+if len(sys.argv) < 2:
+    print "Usage: %s <cfg file path>\n" % sys.argv[0]
+    sys.exit(0)
+
+# addr id flags
+P2SH_FLAG = 0x10000000000
+BECH32_FLAG = 0x20000000000
+BECH32_LONG = 0x30000000000
+    
+cfg = {}
+
+loadcfg(cfg)
+
+sql = db.connect(*cfg['db'].split(':'))
+cur = sql.cursor()
+
+cur.execute("show tables like bech32;") # test if old db version and abort with log msg
+if cur.rowcount > 0:
+    log("sqlChain Database already upgraded.")
+    sys.exit(1)
+
+print "Updating address table - id"
+cur.execute("update address set id = if(id%2==0, id/2, (id/2)|0x10000000000) where 1;")
+
+print "Updating outputs table - addr_id"
+cur.execute("update outputs set addr_id = if(addr_id%2=0, addr_id/2, (addr_id/2)|0x10000000000) where 1;")
+
+print "Adding new bech32 table"
+cur.execute("CREATE TABLE IF NOT EXISTS `bech32` (`id` decimal(13) NOT NULL, `addr` binary(32) NOT NULL, PRIMARY KEY (`id`)) ENGINE=MyISAM DEFAULT CHARSET=latin1;")
+
+first_block = 834624 if cfg['testnet'] else 481824
+
+print "Scanning for outputs with zero addr_id to fix"
+cur.execute("select o.id,t.txdata,t.ins,t.outs from trxs t left join outputs o on t.id=floor(o.id/%s) or t.id=o.tx_id where o.addr_id=0 and t.block_id >= %s;", (MAX_IO_TX, first_block*MAX_TX_BLK))
+zeroaddrs = cur.fetchall()
+
+for oid,txdata,ins,outs in zeroaddrs:
+    tx_n = oid % MAX_IO_TX
+    hdr = getBlobHdr(txdata, cfg['path'])
+    if ins >= 0xC0:
+        ins = (ins&0x3F)<<8 + hdr[1] 
+    if outs >= 0xC0:
+        outs = (outs&0x3F)<<8 + hdr[2] 
+    vpos = int(txdata) + hdr[0] + ins*7
+    for n in range(ins):
+        vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path'])) if not hdr[7] else (0,0) # no-sigs flag
+        vpos += off+vsz+(0 if hdr[6] else 4)
+    for n in range(outs):
+        vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path']))
+        if n == tx_n:
+            out = decodeScriptPK( readBlob(vpos+off, vsz, sqc.cfg['path']) )
+            if 'addr' in out:
+                addr_id = insertAddress(cur, out['addr'])
+                cur.execute("update outputs set addr_id=%s where id=%s limit 1;", (addr_id,oid))
+            break
+        vpos += off+vsz
+
+print "All Done."
+
+
+
+

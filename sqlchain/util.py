@@ -98,7 +98,8 @@ def addr2id(addr, cur=None, rtnPKH=False):
     elif addr[0] in coincfg[P2SH_CHAR]: # encode P2SH flag
         addr_id |= P2SH_FLAG
     if cur:
-        cur.execute("select id from %s where id>=%s and id<%s+32 and addr=%s limit 1;", ('bech32' if is_BL32(addr_id) else 'address',addr_id,addr_id,pkh))
+        tbl = 'bech32' if is_BL32(addr_id) else 'address'
+        cur.execute("select id from %s where id>=%s and id<%s+32 and addr=%s limit 1;", (tbl,addr_id,addr_id,pkh))
         row = cur.fetchone()
         return row[0] if row else None
     return addr_id,pkh if rtnPKH else addr_id
