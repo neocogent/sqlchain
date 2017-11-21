@@ -68,7 +68,7 @@ first_block = 834624 if cfg['testnet'] else 481824
 print "Scanning for outputs with zero addr_id to fix"
 cur.execute("select o.id,t.txdata,t.ins,t.outs from trxs t left join outputs o on t.id=floor(o.id/%s) or t.id=o.tx_id where o.addr_id=0 and t.block_id >= %s;", (MAX_IO_TX, first_block*MAX_TX_BLK))
 zeroaddrs = cur.fetchall()
-
+count = 0
 for oid,txdata,ins,outs in zeroaddrs:
     tx_n = oid % MAX_IO_TX
     hdr = getBlobHdr(txdata, cfg['path'])
@@ -87,10 +87,11 @@ for oid,txdata,ins,outs in zeroaddrs:
             if 'addr' in out:
                 addr_id = insertAddress(cur, out['addr'])
                 cur.execute("update outputs set addr_id=%s where id=%s limit 1;", (addr_id,oid))
+                count += 1
             break
         vpos += off+vsz
 
-print "All Done."
+print "%d output records fixed.\nAll Done." % count
 
 
 

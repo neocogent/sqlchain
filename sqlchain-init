@@ -55,7 +55,7 @@ if cointype == 'bitcoin':
     available then do not enable pruning as blocks could be pruned before being processed by sqlchaind.\n"""
     coinprune = raw_input( "Run bitcoind in pruning mode Y/[N]:" ) or 'N'
 
-print """\nsqlchaind can parse block files directly, bypassing RPC calls. This is faster during intial sync and the RPC
+print """\nsqlchaind can parse block files directly, bypassing RPC calls. This is faster during intial sync when the RPC
 response can be very slow. Direct mode is currently experimnetal and may not be as safe.\n"""
 blkdat = raw_input( "Run sqlchaind in direct mode Y/[N]:" ) or 'N'
 
