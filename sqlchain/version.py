@@ -14,8 +14,9 @@ BLKDAT_MAGIC = 5
 BLKDAT_NEAR_SYNC = 6
 
 coin_cfg = { 
-    'bitcoin': [ 0, '1', 111, '3', 'bc', 0xD9B4BEF9, 500 ],
-    'testnet': [ 5, 'mn', 196, '2', 'tb', 0x0709110B, 8000 ]
+    'bitcoin': [ '1', 0, '3', 5, 'bc', 0xD9B4BEF9, 500 ],
+    'testnet': [ 'mn', 111, '2', 196, 'tb', 0x0709110B, 8000 ],
+    'litecoin': [ 'L', 48, '3M', 50, 'ltc', 0xDBB6C0FB, 500 ]
 }
 
 def coincfg(IDX):

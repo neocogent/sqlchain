@@ -36,12 +36,7 @@ from sqlchain.util import *
 if len(sys.argv) < 2:
     print "Usage: %s <cfg file path>\n" % sys.argv[0]
     sys.exit(0)
-
-# addr id flags
-P2SH_FLAG = 0x10000000000
-BECH32_FLAG = 0x20000000000
-BECH32_LONG = 0x30000000000
-    
+   
 cfg = {}
 
 loadcfg(cfg)

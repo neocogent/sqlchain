@@ -14,7 +14,8 @@ DEF_API_PORT = 5
 
 coin_setup = { 
     'bitcoin': [ 'bitcoin', '', 'bitcoind', 'btc', 8332, 8085 ],
-    'testnet': [ 'testnet', 'testnet3', 'bitcoind', 'btc',18332, 18085 ]
+    'testnet': [ 'testnet', 'testnet3', 'bitcoind', 'btc',18332, 18085 ],
+    'litecoin': [ 'litecoin', '', 'litecoind', 'ltc', 10332, 8086 ]
 }
 
 def sigterm_handler(_signo, _stack_frame):
