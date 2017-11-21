@@ -367,14 +367,13 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
         ins = (ins&0x3F)<<8 + hdr[1] 
     if outs >= 0xC0:
         outs = (outs&0x3F)<<8 + hdr[2] 
+    vpos = int(txdata) + hdr[0]
     if ins == 0:
         cur.execute("select coinbase from blocks where id=%s;", (blkid,))
         cb = cur.fetchone()[0]
         out += [ '\x01', '\0'*32, '\xff'*4, encodeVarInt(len(cb)), cb, '\0'*4 ]
-        vpos = 0 # BUG? int(txdata) + hdr[0]
     else:
         out += encodeVarInt(ins)
-        vpos = int(txdata) + hdr[0]
         buf = readBlob(vpos, ins*7, sqc.cfg['path'])
         if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
             for n in range(ins):
@@ -392,14 +391,15 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
     out += encodeVarInt(outs)
     for n in range(outs):
         cur.execute("select value,addr_id from outputs o where o.id=%s limit 1;", (txid*MAX_IO_TX + n,))
-        outs = cur.fetchall()
-        for value,aid in outs:
+        row = cur.fetchall()
+        for value,aid in row:
             cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
             addr = cur.fetchone()[0]
             out += [ pack('<Q', int(value)) ]
             vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path']))
             pkbuf = readBlob(vpos, off+vsz, sqc.cfg['path'])
-            out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, aid) # BUG? vpos += off+vsz
+            out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, aid)  
+            vpos += off+vsz
     out += [ pack('<I', hdr[5]) ]
     return rawHTML(out, ins, outs) if 'html' in args else ''.join(out).encode('hex') 
 
