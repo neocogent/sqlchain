@@ -121,9 +121,7 @@ def addrTXs(cur, addr_id, addr, args, get):
     sums = [[0,0],[0,0]]
     untxs = 0
     count = 0
-    cur.execute("select value,t.id,tx_id,hash,block_id from trxs t left join outputs o on t.id=floor(o.id/{0}) or t.id=o.tx_id where addr_id=%s order by block_id desc;".format(MAX_IO_TX), (addr_id,))    
-    #cur.execute("select * from (select value,t.id,tx_id,hash,block_id from trxs t left join outputs o on t.id=floor(o.id/{0}) or t.id=o.tx_id where addr_id=%s) r order by block_id limit {1},{2};".format(MAX_IO_TX,offset,limit), (addr_id,))
-    #cur.execute("select value,t.id,tx_id,hash,block_id from trxs t left join outputs o on t.id=floor(o.id/{0}) or t.id=o.tx_id where addr_id=%s order by block_id limit {1},{2};".format(MAX_IO_TX,offset,limit), (addr_id,))
+    cur.execute("select value,t.id,tx_id,hash,block_id from trxs t left join outputs o on t.id=floor(o.id/{0}) or t.id=o.tx_id where addr_id=%s order by block_id desc;".format(MAX_IO_TX), (addr_id,))
     for value,tx_id,spend_id,txhash,blk in cur:
         uncfmd = 1 if blk < 0 else 0
         untxs += uncfmd
@@ -373,7 +371,7 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
         cur.execute("select coinbase from blocks where id=%s;", (blkid,))
         cb = cur.fetchone()[0]
         out += [ '\x01', '\0'*32, '\xff'*4, encodeVarInt(len(cb)), cb, '\0'*4 ]
-        vpos = 0
+        vpos = 0 # BUG? int(txdata) + hdr[0]
     else:
         out += encodeVarInt(ins)
         vpos = int(txdata) + hdr[0]
@@ -401,7 +399,7 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
             out += [ pack('<Q', int(value)) ]
             vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path']))
             pkbuf = readBlob(vpos, off+vsz, sqc.cfg['path'])
-            out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, aid)
+            out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, aid) # BUG? vpos += off+vsz
     out += [ pack('<I', hdr[5]) ]
     return rawHTML(out, ins, outs) if 'html' in args else ''.join(out).encode('hex') 
 

@@ -84,7 +84,7 @@ print ""
 
 os.chdir('/usr/local/share/sqlchain')
 
-## Create user for running bitcoin and sqlchain daemons
+## Create user for running coin and sqlchain daemons
 try:
     pwd = pwd.getpwnam(coinuser)
 except KeyError:
@@ -134,7 +134,7 @@ print "Creating MySQL database:", dbname
 try:
     sqlsrc = open('docs/sqlchain.sql').read()
     sqlcode = ''
-    for k,v in [('--CREATE','CREATE'),('--GRANT','GRANT'),('--FLUSH','FLUSH'),('bitcoin',dbname),('sqlpwd',dbpwd),('sqluser',dbuser)]:
+    for k,v in [('--CREATE','CREATE'),('--GRANT','GRANT'),('--FLUSH','FLUSH'),('coindb',dbname),('sqlpwd',dbpwd),('sqluser',dbuser)]:
         sqlsrc = sqlsrc.replace(k, v)
     for line in sqlsrc.splitlines():
         if line != '' and line[:2] != '--':

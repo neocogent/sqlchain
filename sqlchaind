@@ -365,7 +365,7 @@ def options(cfg):
 def usage():
     print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
 -b,--block\tStart at block number (instead of from last block done)
--f,--blkdat\tSet path to bitcoin data and use direct file access (no mempool/re-org)
+-f,--blkdat\tSet path to block data and use direct file access (no mempool/re-org)
 --debug\t\tRun in foreground with logging to console
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
 \nThese options get saved in cfg file as defaults.

@@ -2,14 +2,14 @@
 -- need to do these as mysql root user
 
 ----CREATE USER 'sqluser'@'localhost' IDENTIFIED BY 'sqlpwd';
---GRANT ALL PRIVILEGES ON bitcoin.* TO 'sqluser'@'localhost' IDENTIFIED BY 'sqlpwd';
+--GRANT ALL PRIVILEGES ON coindb.* TO 'sqluser'@'localhost' IDENTIFIED BY 'sqlpwd';
 --FLUSH PRIVILEGES;
 
 -- disabled for safety
--- DROP DATABASE IF EXISTS bitcoin;
+-- DROP DATABASE IF EXISTS coindb;
 
-CREATE DATABASE IF NOT EXISTS bitcoin;
-USE bitcoin;
+CREATE DATABASE IF NOT EXISTS coindb;
+USE coindb;
 
 CREATE TABLE IF NOT EXISTS `blocks` (
   `id` int(11) NOT NULL,
