@@ -51,7 +51,8 @@ def mkpkh(pk):
 
 def addr2pkh(addr):
     if addr[:2] == coincfg[BECH_HRP]:
-        return bech32decode(addr)
+        pkh = bech32decode(addr)
+        return pkh[2:] if pkh else None
     long_value = 0L
     for (i, c) in enumerate(addr[::-1]):
         long_value += b58.find(c) * (58**i)
@@ -86,10 +87,12 @@ def mkaddr(pkh, aid=None, p2sh=False, bech32=False):
     return pad + b58[num] + out 
 
 def is_BL32(addr_id):
-    return (addr_id & BECH32_LONG) == BECH32_LONG
+    return addr_id and (addr_id & BECH32_LONG) == BECH32_LONG
     
 def addr2id(addr, cur=None, rtnPKH=False):
     pkh = addr2pkh(addr)
+    if not pkh:
+        return None,'' if rtnPKH else None
     addr_id, = unpack('<q', sha256(pkh).digest()[:5]+'\0'*3) 
     if addr[:2] == coincfg[BECH_HRP]: # bech32 has bit 42 set, >20 byte, encode as odd id and stored in bech32 table
         addr_id |= BECH32_FLAG
@@ -255,6 +258,8 @@ addr_lock = threading.Lock()
 
 def insertAddress(cur, addr):
     addr_id,pkh = addr2id(addr, rtnPKH=True)
+    if not addr_id:
+        return 0
     tbl = 'bech32' if is_BL32(addr_id) else 'address'
     start_id = addr_id
     with addr_lock:
