@@ -33,7 +33,7 @@ class dotdict(dict):
 
 # address support stuff
 def is_address(addr):
-    if addr[:2] == coincfg[BECH_HRP]:
+    if addr[:2] == coincfg(BECH_HRP):
         return bech32decode(addr) != None
     try:
         n = 0
@@ -50,7 +50,7 @@ def mkpkh(pk):
     return rmd.digest()
 
 def addr2pkh(addr):
-    if addr[:2] == coincfg[BECH_HRP]:
+    if addr[:2] == coincfg(BECH_HRP):
         pkh = bech32decode(addr)
         return pkh[2:] if pkh else None
     long_value = 0L
@@ -72,10 +72,10 @@ def addr2pkh(addr):
 def mkaddr(pkh, aid=None, p2sh=False, bech32=False):
     if pkh == '\0'*20 and aid==0:
         return '' # pkh==0 id==0, special case for null address when op_return or non-std script
-    if (aid and (aid & BECH32_FLAG != 0)) or bech32:
-        return bech32encode(coincfg[BECH_HRP], pkh)
+    if bech32 or (aid and (aid & BECH32_FLAG != 0)):
+        return bech32encode(coincfg(BECH_HRP), pkh)
     pad = ''
-    an = chr(coincfg[ADDR_PREFIX] if (aid is None and not p2sh) or (aid is not None and (aid & P2SH_FLAG != P2SH_FLAG)) else coincfg[P2SH_PREFIX]) + str(pkh)
+    an = chr(coincfg(ADDR_PREFIX) if (aid is None and not p2sh) or (aid is not None and (aid & P2SH_FLAG != P2SH_FLAG)) else coincfg(P2SH_PREFIX)) + str(pkh)
     for c in an:
         if c == '\0': pad += '1'
         else: break
@@ -94,15 +94,15 @@ def addr2id(addr, cur=None, rtnPKH=False):
     if not pkh:
         return None,'' if rtnPKH else None
     addr_id, = unpack('<q', sha256(pkh).digest()[:5]+'\0'*3) 
-    if addr[:2] == coincfg[BECH_HRP]: # bech32 has bit 42 set, >20 byte, encode as odd id and stored in bech32 table
+    if addr[:2] == coincfg(BECH_HRP): # bech32 has bit 42 set, >20 byte, encode as odd id and stored in bech32 table
         addr_id |= BECH32_FLAG
         if len(pkh) > 20:
             addr_id |= P2SH_FLAG
-    elif addr[0] in coincfg[P2SH_CHAR]: # encode P2SH flag
+    elif addr[0] in coincfg(P2SH_CHAR): # encode P2SH flag
         addr_id |= P2SH_FLAG
     if cur:
         tbl = 'bech32' if is_BL32(addr_id) else 'address'
-        cur.execute("select id from %s where id>=%s and id<%s+32 and addr=%s limit 1;", (tbl,addr_id,addr_id,pkh))
+        cur.execute("select id from {0} where id>=%s and id<%s+32 and addr=%s limit 1;".format(tbl), (addr_id,addr_id,pkh))
         row = cur.fetchone()
         return row[0] if row else None
     return addr_id,pkh if rtnPKH else addr_id
@@ -239,7 +239,7 @@ def bech32verify(hrp, data):
     return bech32polymod([ord(x) >> 5 for x in hrp] + [0] + [ord(x) & 31 for x in hrp] + data) == 1
     
 def bech32encode(hrp, witprog, witver=0):
-    data = [witver] + base2cvt(witprog, 8, 5)
+    data = [witver] + base2cvt(bytearray(witprog), 8, 5)
     combined = data + bech32checksum(hrp, data)
     return hrp + '1' + ''.join([BECH_CHARSET[d] for d in combined])
     
@@ -264,10 +264,10 @@ def insertAddress(cur, addr):
     start_id = addr_id
     with addr_lock:
         while True:
-            cur.execute("select addr from %s where id=%s", (tbl,addr_id))
+            cur.execute("select addr from {0} where id=%s".format(tbl), (addr_id,))
             row = cur.fetchone()
             if row == None:
-                cur.execute("insert into %s (id,addr) values(%s,%s)", (tbl,addr_id,pkh))
+                cur.execute("insert into {0} (id,addr) values(%s,%s)".format(tbl), (addr_id,pkh))
                 return addr_id
             elif str(row[0]) == str(pkh):
                 return addr_id
