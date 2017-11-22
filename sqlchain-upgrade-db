@@ -33,61 +33,90 @@ import MySQLdb as db
 
 from sqlchain.util import *
 
+__builtins__.sqc = dotdict()  # container for super globals
+
 if len(sys.argv) < 2:
     print "Usage: %s <cfg file path>\n" % sys.argv[0]
     sys.exit(0)
    
-cfg = {}
+sqc.cfg = {}
+loadcfg(sqc.cfg)
+sqc.cfg['cointype'] = 'testnet' if sqc.cfg['testnet'] else 'bitcoin'
 
-loadcfg(cfg)
+print "\nUpdating cfg for cointype: %s" % sqc.cfg['cointype']
+savecfg(sqc.cfg)
 
-sql = db.connect(*cfg['db'].split(':'))
+sql = db.connect(*sqc.cfg['db'].split(':'))
 cur = sql.cursor()
+sql2 = db.connect(*sqc.cfg['db'].split(':'))
+cur2 = sql2.cursor(db.cursors.SSCursor)
 
-cur.execute("show tables like bech32;") # test if old db version and abort with log msg
-if cur.rowcount > 0:
-    log("sqlChain Database already upgraded.")
-    sys.exit(1)
+cur.execute("show tables like 'bech32';") # test if old db version and abort with log msg
+if cur.rowcount == 0:
+    log("Updating address table - id, step 1/5.")
+    cur.execute("update address set id = if(id%2=0, (id/2)|0x40000000000, (id/2)|0x50000000000) where 1;")
 
-print "Updating address table - id"
-cur.execute("update address set id = if(id%2==0, id/2, (id/2)|0x10000000000) where 1;")
+    log("Updating address table - id, step 2/5.")
+    cur.execute("update address set id = (id & 0x1FFFFFFFFFF) where 1;")
 
-print "Updating outputs table - addr_id"
-cur.execute("update outputs set addr_id = if(addr_id%2=0, addr_id/2, (addr_id/2)|0x10000000000) where 1;")
+    log("Updating outputs table - addr_id, step 3/5.")
+    cur.execute("update outputs set addr_id = if(addr_id%2=0, (addr_id/2)|0x40000000000, (addr_id/2)|0x50000000000) where 1;")
 
-print "Adding new bech32 table"
-cur.execute("CREATE TABLE IF NOT EXISTS `bech32` (`id` decimal(13) NOT NULL, `addr` binary(32) NOT NULL, PRIMARY KEY (`id`)) ENGINE=MyISAM DEFAULT CHARSET=latin1;")
+    log("Updating outputs table - addr_id, step 4/5.")
+    cur.execute("update outputs set addr_id = (addr_id & 0x1FFFFFFFFFF) where 1;")
 
-first_block = 834624 if cfg['testnet'] else 481824
+    log("Adding new bech32 table.")
+    cur.execute("CREATE TABLE IF NOT EXISTS `bech32` (`id` decimal(13) NOT NULL, `addr` binary(32) NOT NULL, PRIMARY KEY (`id`)) ENGINE=MyISAM DEFAULT CHARSET=latin1;")
+else:
+    log("Database already upgraded. Skipping to fix up - restart.")
 
-print "Scanning for outputs with zero addr_id to fix"
-cur.execute("select o.id,t.txdata,t.ins,t.outs from trxs t left join outputs o on t.id=floor(o.id/%s) or t.id=o.tx_id where o.addr_id=0 and t.block_id >= %s;", (MAX_IO_TX, first_block*MAX_TX_BLK))
-zeroaddrs = cur.fetchall()
-count = 0
-for oid,txdata,ins,outs in zeroaddrs:
-    tx_n = oid % MAX_IO_TX
-    hdr = getBlobHdr(txdata, cfg['path'])
-    if ins >= 0xC0:
-        ins = (ins&0x3F)<<8 + hdr[1] 
-    if outs >= 0xC0:
-        outs = (outs&0x3F)<<8 + hdr[2] 
-    vpos = int(txdata) + hdr[0] + ins*7
-    for n in range(ins):
-        vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path'])) if not hdr[7] else (0,0) # no-sigs flag
-        vpos += off+vsz+(0 if hdr[6] else 4)
-    for n in range(outs):
-        vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path']))
-        if n == tx_n:
-            out = decodeScriptPK( readBlob(vpos+off, vsz, sqc.cfg['path']) )
-            if 'addr' in out:
-                addr_id = insertAddress(cur, out['addr'])
-                cur.execute("update outputs set addr_id=%s where id=%s limit 1;", (addr_id,oid))
-                count += 1
-            break
-        vpos += off+vsz
+count,first_block = 1,834624 if sqc.cfg['testnet'] else 481824 # first segwit blocks
+cur.execute("select count(*) from blocks;")
+blks = cur.fetchone()[0]
+chunksz = (blks-first_block)/100
 
-print "%d output records fixed.\nAll Done." % count
+try:
+    with open('upgrade.state', 'r') as f:
+        count,first_block,chunksz = [int(x) for x in next(f).split()]
+except IOError:
+    pass
 
+log("Unknown outputs (like bech32) were stored as zero id.")
+log("Scanning zero ids to fix up with new address coding.")
+log("Starting at %d, 100 chunks of %d blocks" % (first_block,chunksz))
+while first_block <= blks:
+    fixlist = []
+    last_block = first_block + chunksz
+    cur2.execute("select o.id,t.txdata,t.ins,t.outs from trxs t left join outputs o on t.id=floor(o.id/%s) where o.addr_id=0 and t.block_id >= %s and t.block_id < %s;", (MAX_IO_TX, first_block*MAX_TX_BLK, last_block*MAX_TX_BLK))
+    for oid,txdata,ins,outs in cur2:
+        tx_n = oid % MAX_IO_TX
+        hdr = getBlobHdr(txdata, sqc.cfg['path'])
+        if ins >= 0xC0:
+            ins = ((ins&0x3F)<<8) + hdr[1] 
+        if outs >= 0xC0:
+            outs = ((outs&0x3F)<<8) + hdr[2] 
+        vpos = int(txdata) + hdr[0] + ins*7
+        for n in range(ins):
+            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path'])) if not hdr[7] else (0,0) # no-sigs flag
+            vpos += off+vsz+(0 if hdr[6] else 4)
+        for n in range(outs):
+            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path']))
+            if n == tx_n:
+                spk = decodeScriptPK( readBlob(vpos+off, vsz, sqc.cfg['path']) )
+                if 'addr' in spk:
+                    addr_id = insertAddress(cur, spk['addr'])
+                    fixlist.append((addr_id,oid))
+                break
+            vpos += off+vsz
+            
+    log("CHK %02d: %d-%d, %d fixes." % (count,first_block,last_block,len(fixlist)))
+    cur.executemany("update outputs set addr_id=%s where id=%s limit 1;", fixlist)
+    with open('upgrade.state', 'w') as f:
+        f.write('%d %d %d' % (count,last_block,chunksz))
+    first_block = last_block
+
+log("Upgrade complete.")
+os.unlink('upgrade.state')
 
 
 
