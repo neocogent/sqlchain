@@ -364,9 +364,9 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
     hdr = getBlobHdr(txdata, sqc.cfg['path'])
     out = [ pack('<I', hdr[4]) ]
     if ins >= 0xC0:
-        ins = (ins&0x3F)<<8 + hdr[1] 
+        ins = ((ins&0x3F)<<8) + hdr[1] 
     if outs >= 0xC0:
-        outs = (outs&0x3F)<<8 + hdr[2] 
+        outs = ((outs&0x3F)<<8) + hdr[2] 
     vpos = int(txdata) + hdr[0]
     if ins == 0:
         cur.execute("select coinbase from blocks where id=%s;", (blkid,))
