@@ -38,7 +38,7 @@ setup(
     keywords='bitcoin sql blockchain api websocket rpc server',
     description='Compact SQL layer for Bitcoin blockchain.',
     long_description=readme_md,
-    scripts=['sqlchaind','sqlchain-api','sqlchain-electrum','sqlchain-init'],
+    scripts=['sqlchaind','sqlchain-api','sqlchain-electrum','sqlchain-init','sqlchain-upgrade-db'],
     install_requires=[
         "gevent >= 1.2.0",
         "gevent-websocket >= 0.9.5",
