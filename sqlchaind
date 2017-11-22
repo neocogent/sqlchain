@@ -25,7 +25,7 @@ def getBlocks(blk):
     global maxblk
     sql = db.connect(*cfg['db'].split(':'))
     cur = sql.cursor()
-    cur.execute("show tables like bech32;") # test if old db version and abort with log msg
+    cur.execute("show tables like 'bech32';") # test if old db version and abort with log msg
     if cur.rowcount == 0:
         log("sqlChain Database upgrade required for this daemon version.\nCannot continue. Run sqlchain-upgrade-db.")
         sqc.done.set()
