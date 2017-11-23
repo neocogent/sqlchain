@@ -208,11 +208,11 @@ def apiTx(cur, txhash, args):
         if [i for i in ['raw','html'] if i in args]:
             return mkRawTx(cur, args, tid, txh, blob, blkid, ins, outs)
         data['confirmations'] = sqc.cfg['block'] - int(blkid)/MAX_TX_BLK + 1 if blkid >= 0 else 0
-        data['version'],data['locktime'] = getBlobHdr(blob, sqc.cfg['path'])[4:6]
+        data['version'],data['locktime'] = getBlobHdr(blob, sqc.cfg)[4:6]
         data['valueIn'],data['vin'] = apiInputs(cur, blkid/MAX_TX_BLK, int(blob), ins)
         data['valueOut'],data['vout'] = apiOutputs(cur, int(tid), int(blob))
         data['fees'] = round(data['valueIn'] - data['valueOut'],8)
-        data['size'] = txsize if txsize < 0xFF00 else (txsize&0xFF)<<16 + getBlobHdr(blob, sqc.cfg['path'])[3]
+        data['size'] = txsize if txsize < 0xFF00 else (txsize&0xFF)<<16 + getBlobHdr(blob, sqc.cfg)[3]
         cur.execute("select hash from blocks where id=%s limit 1;", (int(blkid)/MAX_TX_BLK,))
         for txhash, in cur:
             data['blockhash'] = txhash[::-1].encode('hex')
@@ -227,14 +227,14 @@ def apiTx(cur, txhash, args):
 def apiInputs(cur, height, blob, ins):
     total = 0
     data = []
-    hdr = getBlobHdr(blob, sqc.cfg['path'])
+    hdr = getBlobHdr(blob, sqc.cfg)
     if ins >= 192:
         ins = (ins & 63)*256 + hdr[1]  
     if ins == 0: # no inputs, assume coinbase
         cur.execute("select coinbase from blocks where id=%s;", (height,))
         data.append({ 'n':0, 'coinbase':cur.fetchone()[0].encode('hex') })
     else:
-        buf = readBlob(blob+hdr[0], ins*7, sqc.cfg['path'])
+        buf = readBlob(blob+hdr[0], ins*7, sqc.cfg)
         if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
             data.append({ 'error':'missing data' })
         else:
@@ -270,10 +270,10 @@ def apiOutputs(cur, txid, blob):
 def apiSpent(cur, txid, out_id):
     cur.execute("select txdata,hash,block_id/{0},ins from trxs where id=%s limit 1;".format(MAX_TX_BLK), (txid,))
     for blob,txh,blk,ins in cur:
-        hdr = getBlobHdr(int(blob), sqc.cfg['path'])
+        hdr = getBlobHdr(int(blob), sqc.cfg)
         if ins >= 192:
             ins = (ins & 63)*256 + hdr[1]  
-        buf = readBlob(int(blob)+hdr[0], ins*7, sqc.cfg['path'])
+        buf = readBlob(int(blob)+hdr[0], ins*7, sqc.cfg)
         if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
             return { 'error':'missing data' }
         for n in range(ins):
@@ -303,13 +303,13 @@ def txAddrs(cur, txhash):
         data.append( mkaddr(addr,aid) )
     cur.execute("select txdata,ins from trxs where id=%s limit 1;", (txid,))
     for blob,ins in cur:
-        hdr = getBlobHdr(int(blob), sqc.cfg['path'])
+        hdr = getBlobHdr(int(blob), sqc.cfg)
         if hdr[3] == 0: # txsize = 0, means missing blob data
             return []
         if ins > 0:
             if ins >= 0xC0:
                 ins = (ins&0x3F)<<8 + hdr[1] 
-            buf = readBlob(int(blob)+hdr[0], ins*7, sqc.cfg['path'])
+            buf = readBlob(int(blob)+hdr[0], ins*7, sqc.cfg)
             if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
                 return [ 'missing-data' ]
             for n in range(ins):
@@ -361,7 +361,7 @@ def rawHTML(out, vi, vo):
     return "<table class='rawtx'><tr>"+"</tr><tr>".join(['<td>%s</td><td>%s</td>' % (k,v) for k,v in zip(tags,outhex) ])+"</tr></table>"
     
 def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
-    hdr = getBlobHdr(txdata, sqc.cfg['path'])
+    hdr = getBlobHdr(txdata, sqc.cfg)
     out = [ pack('<I', hdr[4]) ]
     if ins >= 0xC0:
         ins = ((ins&0x3F)<<8) + hdr[1] 
@@ -374,7 +374,7 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
         out += [ '\x01', '\0'*32, '\xff'*4, encodeVarInt(len(cb)), cb, '\0'*4 ]
     else:
         out += encodeVarInt(ins)
-        buf = readBlob(vpos, ins*7, sqc.cfg['path'])
+        buf = readBlob(vpos, ins*7, sqc.cfg)
         if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
             for n in range(ins):
                 out += [ '\0'*32, '\0'*4, '', '', '' ]
@@ -384,8 +384,8 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
                 in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
                 cur.execute("select hash from trxs where id=%s limit 1;", (in_id / MAX_IO_TX,))
                 out += [ cur.fetchone()[0][:32], pack('<I', in_id % MAX_IO_TX) ]
-                vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path'])) if not hdr[7] else (0,0) # no-sigs flag
-                sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4), sqc.cfg['path']) 
+                vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg)) if not hdr[7] else (0,0) # no-sigs flag
+                sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4), sqc.cfg) 
                 out += [ sigbuf[:off], sigbuf[off:off+vsz], ('\xFF'*4 if hdr[6] else sigbuf[off+vsz:]) ] 
                 vpos += off+vsz+(0 if hdr[6] else 4)
     out += encodeVarInt(outs)
@@ -396,8 +396,8 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
             cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
             addr = cur.fetchone()[0]
             out += [ pack('<Q', int(value)) ]
-            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path']))
-            pkbuf = readBlob(vpos, off+vsz, sqc.cfg['path'])
+            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))
+            pkbuf = readBlob(vpos, off+vsz, sqc.cfg)
             out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, aid)  
             vpos += off+vsz
     out += [ pack('<I', hdr[5]) ]

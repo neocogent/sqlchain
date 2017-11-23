@@ -116,12 +116,12 @@ while first_block <= blks:
             outs = ((outs&0x3F)<<8) + hdr[2] 
         vpos = int(txdata) + hdr[0] + ins*7
         for n in range(ins):
-            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path'])) if not hdr[7] else (0,0) # no-sigs flag
+            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg)) if not hdr[7] else (0,0) # no-sigs flag
             vpos += off+vsz+(0 if hdr[6] else 4)
         for n in range(outs):
-            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg['path']))
+            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))
             if n == tx_n:
-                spk = decodeScriptPK( readBlob(vpos+off, vsz, sqc.cfg['path']) )
+                spk = decodeScriptPK( readBlob(vpos+off, vsz, sqc.cfg) )
                 if 'addr' in spk:
                     addr_id = insertAddress(cur, spk['addr'])
                     fixlist.append((addr_id,oid))

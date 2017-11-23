@@ -313,8 +313,8 @@ def getChunk(chunk, path='/var/data'):
 def bits2diff(bits):
     return (0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))))
     
-def getBlobHdr(pos, path='/var/data'):
-    buf = readBlob(int(pos), 13, path) 
+def getBlobHdr(pos, cfg):
+    buf = readBlob(int(pos), 13, cfg) 
     bits = [ (1,'B',0), (1,'B',0), (2,'H',0), (4,'I',1), (4,'I',0) ]  # ins,outs,tx size,version,locktime
     out,mask = [1],0x80 
     for sz,typ,default in bits:
@@ -387,18 +387,18 @@ def insertBlob(data, path='/var/data'):
         return rtnpos if 'rtnpos' in locals() else newpos
 
 
-def readBlob(pos, sz, path='/var/data'):
+def readBlob(pos, sz, cfg):
     if sz == 0:
         return ''
     fn = '/blobs.dat'
-    if not os.path.exists(path+fn): # support split blobs
+    if not os.path.exists(cfg['path']+fn): # support split blobs
         fn = '/blobs.%d.dat' % (pos//BLOB_SPLIT_SIZE)
         pos = pos % BLOB_SPLIT_SIZE
-    if not os.path.exists(path+fn): # file missing, try s3 if available
-        if sqc and 'cfg' in sqc and 's3' in sqc.cfg:
-            return s3get(sqc.cfg['s3']+fn, pos, sz)
+    if not os.path.exists(cfg['path']+fn): # file missing, try s3 if available
+        if 's3' in cfg:
+            return s3get(cfg['s3']+fn, pos, sz)
         return '\0'*sz  # data missing, return zeros as null data (not ideal)
-    with open(path+fn, 'rb') as blob:
+    with open(cfg['path']+fn, 'rb') as blob:
         blob.seek(pos)
         return blob.read(sz)
         

@@ -133,7 +133,7 @@ def bciTx(cur, txhash):
     txh = txhash.decode('hex')[::-1]
     cur.execute("select id,txdata,floor(block_id/{0}),ins,txsize from trxs where id>=%s and hash=%s limit 1;".format(MAX_TX_BLK), (txh2id(txh), txh))
     for txid,blob,blkid,ins,txsize in cur:
-        hdr = getBlobHdr(int(blob), sqc.cfg['path'])
+        hdr = getBlobHdr(int(blob), sqc.cfg)
         data['tx_index'] = int(txid)
         data['block_height'] = int(blkid)
         data['ver'],data['lock_time'] = hdr[4:6]
@@ -146,13 +146,13 @@ def bciTx(cur, txhash):
 
 def bciInputs(cur, blob, ins):
     data = []
-    hdr = getBlobHdr(blob, sqc.cfg['path']) # hdrsz,ins,outs,size,version,locktime,stdSeq,nosigs
+    hdr = getBlobHdr(blob, sqc.cfg) # hdrsz,ins,outs,size,version,locktime,stdSeq,nosigs
     if ins >= 192:
         ins = (ins & 63)*256 + hdr[1] 
     if (ins == 0):  # no inputs
         return [{}],ins # only sequence and script here        
     else:
-        buf = readBlob(blob+hdr[0], ins*7, sqc.cfg['path'])
+        buf = readBlob(blob+hdr[0], ins*7, sqc.cfg)
         if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
             return [{ 'error':'missing data' }],ins
         for n in range(ins):
