@@ -19,9 +19,9 @@ def do_RPC(env, send_resp):
     if args[0] == "getblockcount":
         return json.dumps(sqc.cfg['block'])
     if args[0] == "getinfo":
-        return json.dumps( { 'blocks':sqc.cfg['block'], 'difficulty':bits2diff(gethdr(sqc.cfg['block'], 'bits', sqc.cfg['path'])) } )
+        return json.dumps( { 'blocks':sqc.cfg['block'], 'difficulty':bits2diff(gethdr(sqc.cfg['block'], 'bits', sqc.cfg)) } )
     if args[0] == "getdifficulty":
-        return json.dumps( bits2diff(gethdr(sqc.cfg['block'], 'bits', sqc.cfg['path'])) )
+        return json.dumps( bits2diff(gethdr(sqc.cfg['block'], 'bits', sqc.cfg)) )
         
     rpc = AuthServiceProxy(sqc.cfg['rpc'])
     if args[0] == "getblock":

@@ -160,7 +160,7 @@ def checkMemPool(cur):
 def addOrphan(cur, height):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
     sync_id = cur.fetchone()[0]
-    hdr = gethdr(height, 'raw', sqc.cfg['path'])
+    hdr = gethdr(height, 'raw', sqc.cfg)
     cur.execute("select hash,coinbase from blocks where id=%s limit 1;", (height,))
     for blkhash,coinbase in cur:
         cur.execute("insert into orphans (sync_id,block_id,hash,hdr,coinbase) values(%s,%s,%s,%s,%s);", (sync_id,height,blkhash,hdr,coinbase))
@@ -259,7 +259,7 @@ def checkReOrg(cur, data):
                         insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan block
                 addOrphan(cur, height)
                 cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
-                puthdr(data['height'], data['hdr'], sqc.cfg['path'])
+                puthdr(data['height'], data['hdr'], sqc.cfg)
             height += 1
        
 def insertTxMemPool(cur, tx, sync_id):
@@ -298,7 +298,7 @@ def insertTx(cur, tx, tx_id, blk_id):
     if (not sqc.cfg['no-sigs']) and tx['segwit']:
         txdata += tx['witness']
     cur.execute("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", 
-        ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, sqc.cfg['path']), blk_id ))    
+        ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, sqc.cfg), blk_id ))    
             
 def insertBlock(cur, data):
     checkReOrg(cur, data)
@@ -316,7 +316,7 @@ def insertBlock(cur, data):
         insertTx(cur, tx, tx_id, blk_id + n)
         
     cur.execute("insert ignore into blocks (id,hash,coinbase) values (%s,%s,%s);", (data['height'], data['hash'], data['coinbase']))
-    puthdr(data['height'], data['hdr'], sqc.cfg['path'])
+    puthdr(data['height'], data['hdr'], sqc.cfg)
     
     blktime = time.time() - blkstart
     log("Block %d [ Q:%d %4d txs - %s - %3.0fms %2.1fs %3.0f tx/s]" % ( data['height'], blockQ.qsize(), 
@@ -369,7 +369,7 @@ def usage():
 --debug\t\tRun in foreground with logging to console
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
 \nThese options get saved in cfg file as defaults.
--p,--path\tSet path for blob and block header data file (/var/data)
+-p,--path\tSet path for blob and block header data file (/var/data/sqlchain)
 -q,--queue\tSet block queue size (8)\n-u,--user\tSet user to run as\n-d,--db  \tSet mysql db connection, "host:user:pwd:dbname"
 -l,--log\tSet log file path\n-r,--rpc\tSet rpc connection, "http://user:pwd@host:port"
 --no-sigs\tDo not store input sigScript data """.format(sys.argv[0])

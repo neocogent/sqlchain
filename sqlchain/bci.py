@@ -37,7 +37,7 @@ def bciBlockWS(cur, block): # inconsistent websocket sub has different labels
     cur.execute("select hash from blocks where id=%s limit 1;", (block,))
     for data['hash'], in cur:
         data['hash'] = data['hash'][::-1].encode('hex')
-        hdr = gethdr(data['height'], None, sqc.cfg['path'])
+        hdr = gethdr(data['height'], None, sqc.cfg)
         data['blockIndex'] = data['height']
         data['version'] = hdr['version']
         data['time'] = hdr['time']
@@ -66,7 +66,7 @@ def bciBlock(cur, blkhash):
     cur.execute("select id from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
     for blkid, in cur:
         data['height'] = data['block_index'] = int(blkid)
-        hdr = gethdr(data['height'], None, sqc.cfg['path'])
+        hdr = gethdr(data['height'], None, sqc.cfg)
         data['ver'] = hdr['version']
         data['time'] = hdr['time']
         data['prev_block'] = hdr['previousblockhash'][::-1].encode('hex')
@@ -139,7 +139,7 @@ def bciTx(cur, txhash):
         data['ver'],data['lock_time'] = hdr[4:6]
         data['inputs'],data['vin_sz'] = bciInputs(cur, int(blob), ins)
         data['out'],data['vout_sz'] = bciOutputs(cur, int(txid), int(blob))
-        data['time'] = gethdr(data['block_height'], 'time', sqc.cfg['path']) if int(blkid) > -1 else 0
+        data['time'] = gethdr(data['block_height'], 'time', sqc.cfg) if int(blkid) > -1 else 0
         data['size'] = txsize if txsize < 0xFF00 else (txsize&0xFF)<<16 + hdr[3]
         return data
     return None

@@ -67,7 +67,7 @@ def apiHeader(cur, blk, args):
     else:
         cur.execute("select id,hash from blocks order by id desc limit 1;")
     for blkid,blkhash in cur:
-        hdr = gethdr(int(blkid), None, sqc.cfg['path'])
+        hdr = gethdr(int(blkid), None, sqc.cfg)
         if 'electrum' in args:
             return { 'block_height':int(blkid), 'version':hdr['version'], 'time':hdr['time'], 'bits':hdr['bits'], 'nonce':hdr['nonce'],
                      'merkle_root':hdr['merkleroot'][::-1].encode('hex'), 'prev_block_hash':hdr['previousblockhash'][::-1].encode('hex') }
@@ -84,7 +84,7 @@ def apiBlock(cur, blkhash):
     for blk, in cur:
         data['height'] = int(blk)
         data['confirmations'] = sqc.cfg['block'] - data['height'] + 1
-        data.update(gethdr(data['height'], None, sqc.cfg['path']))
+        data.update(gethdr(data['height'], None, sqc.cfg))
         data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
         data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
         data['difficulty'] = bits2diff(data['bits'])
@@ -155,7 +155,7 @@ def addrUTXOs(cur, addr_id, addr):
     #cur.execute("select value,o.id,t.hash,block_id/{1} from outputs o, trxs t, blocks b where tx_id is null and addr_id=%s and t.id=floor(o.id/{0}) and b.id=t.block_id/{0};".format(MAX_IO_TX,MAX_TX_BLK), (addr_id,))
     for value,out_id,txhash,blk in cur:
         data.append({ 'address':addr, 'txid':txhash[::-1].encode('hex'), 'vout':int(out_id)%MAX_IO_TX, 'amount':float(value)/1e8, 
-                      'confirmations':sqc.cfg['block']-int(blk)+1 if blk>=0 else 0, 'ts':gethdr(int(blk), 'time', sqc.cfg['path']) if blk>=0 else 0 })
+                      'confirmations':sqc.cfg['block']-int(blk)+1 if blk>=0 else 0, 'ts':gethdr(int(blk), 'time', sqc.cfg) if blk>=0 else 0 })
     return data
 
 def addrHistory(cur, addr, args):
@@ -216,7 +216,7 @@ def apiTx(cur, txhash, args):
         cur.execute("select hash from blocks where id=%s limit 1;", (int(blkid)/MAX_TX_BLK,))
         for txhash, in cur:
             data['blockhash'] = txhash[::-1].encode('hex')
-            data['time'] = data['blocktime'] = gethdr(int(blkid/MAX_TX_BLK), 'time', sqc.cfg['path'])
+            data['time'] = data['blocktime'] = gethdr(int(blkid/MAX_TX_BLK), 'time', sqc.cfg)
         if 'coinbase' in data['vin'][0]:
             del data['valueIn']
             del data['fees']
@@ -279,7 +279,7 @@ def apiSpent(cur, txid, out_id):
         for n in range(ins):
             in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
             if in_id == out_id:
-                return { 'spentTxId':txh[::-1].encode('hex'), 'spentIndex':n, 'spentTs':gethdr(int(blk),'time', sqc.cfg['path']) }
+                return { 'spentTxId':txh[::-1].encode('hex'), 'spentIndex':n, 'spentTs':gethdr(int(blk),'time', sqc.cfg) }
     return {}
 
 def txoAddr(cur, txhash, n):
@@ -336,7 +336,7 @@ def apiMerkle(cur, txhash):
             mkb.append(mkt[t-1][::-1].encode('hex') if t % 2 == 1 else mkt[t+1][::-1].encode('hex'))
             mkt = [ sha256(sha256(mkt[i]+mkt[i+1]).digest()).digest() for i in range(0,len(mkt),2) ]
             t //= 2
-        if mkt[0] != gethdr(blk, 'merkleroot', sqc.cfg['path']):
+        if mkt[0] != gethdr(blk, 'merkleroot', sqc.cfg):
             logts("Panic! Merkle tree failure, tx %s" % txhash )
         return { "block_height": blk, "merkle": mkb, "pos": pos }
     return None
@@ -476,7 +476,7 @@ def apiStatus(cur, cls='info', *args):
                     cur.execute("replace into info (class,`key`,value) values('db','{0}:rows',%s),('db','{0}:data-GB',%s),('db','{0}:idx-GB',%s),('db','{0}:total-GB',%s),('db','{0}:total-bytes',%s);".format(tbl[0]), 
                         (tbl[4], float("%.1f"%float(tbl[6]/1e9)), float("%.1f"%float(tbl[8]/1e9)), float("%.1f"%float(tbl[6]/1e9+tbl[8]/1e9)), tbl[6]+tbl[8]))
                 total_bytes += tbl[6]+tbl[8]
-            blobs_size = getBlobsSize(sqc.cfg['path'])
+            blobs_size = getBlobsSize(sqc.cfg)
             cur.execute("replace into info (class,`key`,value) values('db','outputs:max-io-tx',%s);", (MAX_IO_TX, ))
             cur.execute("replace into info (class,`key`,value) values('db','blocks:hdr-data',%s);", (os.stat(sqc.cfg['path']+'/hdrs.dat').st_size, ))
             cur.execute("replace into info (class,`key`,value) values('db','trxs:blob-data',%s);", (blobs_size, ))

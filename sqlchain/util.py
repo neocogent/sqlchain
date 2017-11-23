@@ -292,21 +292,21 @@ def findTx(cur, txhash, mkNew=False, limit=32):
         tx_id += 1
 
 # blob and header file support stuff 
-def puthdr(blk, hdr, path='/var/data'):
-    with open(path+'/hdrs.dat', 'r+b') as f:
+def puthdr(blk, hdr, cfg):
+    with open(cfg['path']+'/hdrs.dat', 'r+b') as f:
         f.seek(blk*80)
         f.write(hdr)
         f.flush()
         
-def gethdr(blk, var=None, path='/var/data'):
-    with open(path+'/hdrs.dat', 'rb') as f:
+def gethdr(blk, var=None, cfg):
+    with open(cfg['path']+'/hdrs.dat', 'rb') as f:
         f.seek(blk*80)
         data = f.read(80)
     hdr = dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
     return hdr if var == None else hdr[var] if var != 'raw' else data
 
-def getChunk(chunk, path='/var/data'):
-    with open(path+'/hdrs.dat', 'rb') as f:
+def getChunk(chunk, cfg):
+    with open(cfg['path']+'/hdrs.dat', 'rb') as f:
         f.seek(chunk*80*2016)
         return f.read(80*2016)
         
@@ -361,26 +361,26 @@ def mkBlobHdr(ins, outs, tx, stdSeq, nosigs, segwit):
 
 blob_lock = threading.Lock()
     
-def insertBlob(data, path='/var/data'):
+def insertBlob(data, cfg):
     if len(data) == 0:
         return 0
     fn = '/blobs.dat'
     pos,off = (0,2)
     with blob_lock:
-        if not os.path.exists(path+fn): # support split blobs
+        if not os.path.exists(cfg['path']+fn): # support split blobs
             try:
                 fn = '/blobs.%d.dat' % (insertBlob.nextpos//BLOB_SPLIT_SIZE,)
             except AttributeError:
                 n = 0
-                for f in glob.glob(path+'/blobs.*[0-9].dat'): # should happen only once as init
+                for f in glob.glob(cfg['path']+'/blobs.*[0-9].dat'): # should happen only once as init
                     n = max(n, int(re.findall('\d+', f)[0]))
-                pos = os.path.getsize(path+'/blobs.%d.dat' % n) if os.path.exists(path+'/blobs.%d.dat' % n) else 0
+                pos = os.path.getsize(cfg['path']+'/blobs.%d.dat' % n) if os.path.exists(cfg['path']+'/blobs.%d.dat' % n) else 0
                 insertBlob.nextpos =  n*BLOB_SPLIT_SIZE + pos
                 fn = '/blobs.%d.dat' % (insertBlob.nextpos//BLOB_SPLIT_SIZE,) # advances file number when pos > split size
             pos,off = (insertBlob.nextpos % BLOB_SPLIT_SIZE, 0)
             rtnpos = insertBlob.nextpos
             insertBlob.nextpos += len(data)
-        with open(path+fn, 'r+b' if os.path.exists(path+fn) else 'wb') as blob:
+        with open(cfg['path']+fn, 'r+b' if os.path.exists(cfg['path']+fn) else 'wb') as blob:
             blob.seek(pos,off)
             newpos = blob.tell()
             blob.write(data)
@@ -416,9 +416,9 @@ def s3blk(blob, blk):
     resp = urllib2.urlopen(req)
     return resp.read(S3_BLK_SIZE)
     
-def getBlobsSize(path='/var/data'):
+def getBlobsSize(cfg):
     sz = 0
-    for f in glob.glob(path+'/blobs*.dat'):
+    for f in glob.glob(cfg['path']+'/blobs*.dat'):
         sz += os.stat(f).st_size 
     return sz
 
