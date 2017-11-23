@@ -17,8 +17,8 @@ tidylog = threading.Lock()
 # cannot change these without first updating existing table schema and data
 # these are set to reasonable values for now - to increase, alter trxs.block_id or outputs.id column widths
 # and update data eg. update trxs set block_id=block_id/OLD_MAX*NEW_MAX + block_id%OLD_MAX
-MAX_TX_BLK = 10000  # allows 9,999,999 blocks with decimal(11)
-MAX_IO_TX = 4096    # allows 37 bit out_id value, (5 byte hash >> 3)*4096 in decimal(16), 7 bytes in blobs
+MAX_TX_BLK = 20000  # allows 9,999,999 blocks with decimal(11)
+MAX_IO_TX = 16384    # allows 37 bit out_id value, (5 byte hash >> 3)*16384 in decimal(16), 7 bytes in blobs
 BLOB_SPLIT_SIZE = int(5e9) # size limit for split blobs, approx. as may extend past if tx on boundary
 S3_BLK_SIZE = 4096 # s3 block size for caching
 
