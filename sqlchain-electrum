@@ -13,7 +13,8 @@ from urllib2 import urlopen, URLError
 from sqlchain.version import *
 from sqlchain.util import *
 
-cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api', 'banner':'docs/electrum.banner' }
+cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api', 
+        'banner':'docs/electrum.banner', 'path':'/var/data/sqlchain' }
 
 srvinfo = { 'version':version, 'banner':'', 'block':0, 'header':{} }
 subs = { 'numblocks':{}, 'headers':{}, 'address':{}, '_ip_':{} }
@@ -138,7 +139,7 @@ def blkHeader(fp, req):
     respQ.put((fp, req['id'], apicall('/block-index/'+req['params'][0]+'/electrum') ))
     
 def blkChunk(fp, req):
-    respQ.put((fp, req['id'], getChunk(int(req['params'][0]).encode('hex')) ))
+    respQ.put((fp, req['id'], getChunk(int(req['params'][0]).encode('hex'), cfg) ))
     
 def utxoAddress(fp, req):
     respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/output/%d' % req['params'][1]) ))
@@ -174,7 +175,7 @@ def getAddrs(tx):
     
 def options(cfg):
     try:                                
-        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:a:u:b:", 
+        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:s:a:u:b:", 
             ["help", "version", "debug", "db=", "log=", "listen=", "www=", "user=", "banner=", "defaults" ])
     except getopt.GetoptError:
         usage()
@@ -188,8 +189,10 @@ def options(cfg):
         elif opt in ("-l", "--log"):
             cfg['log'] = arg
         elif opt in ("-w", "--www"):
-            cfg['www'] = arg            
-        elif opt in ("-p", "--listen"):
+            cfg['www'] = arg  
+        elif opt in ("-p", "--path"):
+            cfg['path'] = arg  
+        elif opt in ("-s", "--listen"):
             cfg['listen'] = arg
         elif opt in ("-a", "--api"):
             cfg['api'] = arg
@@ -208,7 +211,8 @@ def usage():
 --debug\t\tRun in foreground with logging to console
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log 
 \nThese options get saved in cfg file as defaults.
--p,--listen\tSet host:port for Electrum server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
+-s,--listen\tSet host:port for Electrum server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
+-p,--path\tSet path for header data files (/var/data/sqlchain)
 -b,--banner\tSet file path for banner text\n-a,--api\tSet host:port for API connection\n-l,--log\tSet log file path""".format(sys.argv[0])
     sys.exit(2) 
 
