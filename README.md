@@ -16,9 +16,9 @@
 
 #### Recent Updates
 
-Added **bech32** address support (p2wpkh and p2sh). This requires a database upgrade and **sqlchain-upgrade-db** has been provided for this. sqlchaind will detect and stop on old version databases. The upgrade take quote some time and if you cannot wait then revert your version (< 0.2.5). The upgrade recodes how address ids are stored and expands max. tx/block and outputs/tx limits to better deal with segwit increases. Finally, the part which takes the longest (but can be killed/restarted) is retro-fixing any past bech32 tx outputs that were ignored.
+Added **bech32** address support (p2wpkh and p2sh). This requires a database upgrade and **sqlchain-upgrade-db** has been provided for this. sqlchaind will detect and stop on old version databases. The upgrade takes quite some time and if you cannot wait then revert your version (< 0.2.5). The upgrade re-encodes how address ids are stored and expands tx/block and outputs/tx limits to better deal with segwit increases. Finally, the part which takes the longest (but can be killed/restarted) is retro-fixing any past bech32 tx outputs that were ignored.
 
-Added support for multiple blockchains and generalize testnet to be handled as independent chain. Currently Litecoin has been coded in but not tested in actual use; hopefully will get that done soon and then see about adding more coins.
+Added support for multiple blockchains and generalized testnet to be handled in this context. Currently Litecoin has been added but not tested in actual use; hopefully will get that done soon and then see about adding more altcoins. Each coin requires it's own daemon process but the sqlchain-init has been upgraded to allow multiple installs to coexist.
 
 Testnet and first partial SegWit support added. Still testing but should be ignored except on testnet where segwit txs exist. Currently decodes and stores witness data but the API doesn't yet return segwit status or witness data. That will come.
 
