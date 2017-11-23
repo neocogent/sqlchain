@@ -2,30 +2,35 @@
 #
 #   sqlchain - upgrade database to support bech32 table and use revised addr id encoding
 #
-#   This is less than perfect. Ideally sqlchain would be re-synced from the first segwit block as it's possible 
-#   bech32 addresses may have been used from that time which would not be in the current address tables. But in 
-#   a test application where bech32 is not important/critical it may suffice to enable them from this time forward.
+#   This program should be run detached from console (as it is long running) and with ooutput piped to a log file.
+#       eg. sudo sqlchain-upgrade-db /etc/bitcoin/sqlchaind.cfg &>>upgrade.log & disown 
 #
 #   Old: addr_id columns had P2SH encoded as odd values, regular addresses as even.
-#   New: addr_id columns has P2SH encoded with high bit, and new high bit for bech32, short (20 byte) and long addresses (32 byte).
-#   This should result in better division of address indices since p2sh not interleaved with p2pkh.
+#   New: addr_id columns has P2SH encoded with high bit 41, and high bit 42 for bech32.
+#   This may also result in better division of address indices since p2sh are not interleaved with p2pkh.
 #   
 #   Max addr id values and future high bit flags:
 #       currently addr ids are decimal(13) which takes 6 bytes and has a maximum value of 9,999,999,999,999 = 0x9184E729FFF
-#       only 5 bytes are used from the hashed address so bits above that can be flags, 0x9xxxxxxxxxx allows 3 bits, 2 now used for bech,p2sh
+#       only 5 bytes are used from the hashed address so bits above that can be flags, 0x9xxxxxxxxxx allows 3 high bits
+#       these are now assigned as: [ 0, bech32, p2sh-p2wsh ]
+#   Max txs/block is doubled to 20,000:
+#       block.id and trxs.block_id are both decimal(11) which means a max of 99,999,999,999/20,000 or 4,999,999 blocks
+#   Max txo/tx is increased from 4096 (12 bits) to 16384 (16 bits):
+#       output ids are decimal(16) and tx ids are decimal(13). Actual tx_ids are a 5 byte truncation of the txhash, shifted 3 bits right.
+#       Max tx_id (37 bits) 137,438,953,500 giving a max output id 2,251,799,814,000,000 - still within decimal(16) and 7 byte blob id
 #
-#   Long bech32 hashes are stored in a new table (bech32) but the short ones stay in the normal address table.
+#   Long bech32 hashes (p2wsh) are stored in a new table (bech32) but the short ones (p2wpkh) are in the existing address table.
 #   
-#   See version module updated for definitions that support coin dependent values and flags
-#
-#   This program checks if a bech32 table exists and does not proceed assuming it has been upgraded already. 
+#   This program checks if the bech32 table exists as indicator of past table upgrade which repeating would corrupt. 
 #
 #   Overview: 
-#       fix address table ids
-#       update addr_ids in output table likewise
+#       fix address table ids - 2 pass
+#       update addr_ids in output table to match - 2 pass
+#       update block_ids for new limit
+#       update outputs id for new limit
 #       add new bech32 table 
-#       scan blocks since 481,824 (first segwit)(testnet 834,624) and insert any missing addresses, update outputs 
-#           (fixes missing bech32 and also bug in v0.2.2)
+#       scan blocks since 481,824 (testnet 834,624)(first segwit) and insert any missing addresses, update outputs 
+#           (fixes missing bech32 and also pkh detection bug in v0.2.2)
 #
 
 import os, sys
@@ -37,6 +42,8 @@ __builtins__.sqc = dotdict()  # container for super globals
 
 if len(sys.argv) < 2:
     print "Usage: %s <cfg file path>\n" % sys.argv[0]
+    print "Suggest backing up db files first if space available, and then run detached like this:"
+    print "\tsudo sqlchain-upgrade-db /etc/bitcoin/sqlchaind.cfg &>>upgrade.log & disown\n"
     sys.exit(0)
    
 sqc.cfg = {}
@@ -51,21 +58,32 @@ cur = sql.cursor()
 sql2 = db.connect(*sqc.cfg['db'].split(':'))
 cur2 = sql2.cursor(db.cursors.SSCursor)
 
-cur.execute("show tables like 'bech32';") # test if old db version and abort with log msg
+cur.execute("show tables like 'bech32';") # test if old db version and skip upgrade steps if exists
 if cur.rowcount == 0:
-    log("Updating address table - id, step 1/5.")
-    cur.execute("update address set id = if(id%2=0, (id/2)|0x40000000000, (id/2)|0x50000000000) where 1;")
+    log("\nDo not interrupt these steps or ids will be corrupted.\n")
+    
+    log("Updating address table - id, step 1/8. ")
+    cur.execute("update address set id = if(id%2=0, (id/2)|0x40000000000, (id/2)|0x50000000000);")
 
-    log("Updating address table - id, step 2/5.")
-    cur.execute("update address set id = (id & 0x1FFFFFFFFFF) where 1;")
+    log("Updating address table - mask, step 2/8.")
+    cur.execute("update address set id = (id & 0x1FFFFFFFFFF);")
 
-    log("Updating outputs table - addr_id, step 3/5.")
-    cur.execute("update outputs set addr_id = if(addr_id%2=0, (addr_id/2)|0x40000000000, (addr_id/2)|0x50000000000) where 1;")
+    log("Updating outputs table - addr_id, step 3/8.")
+    cur.execute("update outputs set addr_id = if(addr_id%2=0, (addr_id/2)|0x40000000000, (addr_id/2)|0x50000000000);")
+ 
+    log("Updating outputs table - mask, step 4/8.")
+    cur.execute("update outputs set addr_id = (addr_id & 0x1FFFFFFFFFF);")
+    
+    log("Updating trxs table - expand txs/block, step 5/8.")
+    cur.execute("update trxs set block_id = (block_id/10000*{0} + block_id%10000) where 1 order by block_id desc;".format(MAX_TX_BLK))
+    
+    log("Updating outputs table - expand outputs/tx, step 6/8.")
+    cur.execute("update outputs set id = (id/4096*{0} + id%4096)|0x10000000000000;".format(MAX_IO_TX))
 
-    log("Updating outputs table - addr_id, step 4/5.")
-    cur.execute("update outputs set addr_id = (addr_id & 0x1FFFFFFFFFF) where 1;")
+    log("Updating outputs table - mask, step 7/8.")
+    cur.execute("update outputs set id = id&0xFFFFFFFFFFFFF;")
 
-    log("Adding new bech32 table.")
+    log("Adding new bech32 table, step 8/8.")
     cur.execute("CREATE TABLE IF NOT EXISTS `bech32` (`id` decimal(13) NOT NULL, `addr` binary(32) NOT NULL, PRIMARY KEY (`id`)) ENGINE=MyISAM DEFAULT CHARSET=latin1;")
 else:
     log("Database already upgraded. Skipping to fix up - restart.")
@@ -81,9 +99,10 @@ try:
 except IOError:
     pass
 
-log("Unknown outputs (like bech32) were stored as zero id.")
-log("Scanning zero ids to fix up with new address coding.")
-log("Starting at %d, 100 chunks of %d blocks" % (first_block,chunksz))
+log("\nUnknown outputs (like bech32) were stored as zero id.")
+log("Scanning zero ids to fix up with new address ids.")
+log("\nThis (lengthy) process can be killed/restarted without data corruption.")
+log("\nStarting at %d, %d chunks of %d blocks:" % (first_block,101-count,chunksz))
 while first_block <= blks:
     fixlist = []
     last_block = first_block + chunksz
@@ -109,12 +128,14 @@ while first_block <= blks:
                 break
             vpos += off+vsz
             
-    log("CHK %02d: %d-%d, %d fixes." % (count,first_block,last_block,len(fixlist)))
+    log("CHK %02d: %d-%d, %d fixed." % (count,first_block,last_block,len(fixlist)))
     cur.executemany("update outputs set addr_id=%s where id=%s limit 1;", fixlist)
-    with open('upgrade.state', 'w') as f:
-        f.write('%d %d %d' % (count,last_block,chunksz))
     first_block = last_block
-
+    count += 1
+    
+    with open('upgrade.state', 'w') as f:
+        f.write('%d %d %d' % (count,first_block,chunksz))
+    
 log("Upgrade complete.")
 os.unlink('upgrade.state')
 
