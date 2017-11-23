@@ -16,14 +16,14 @@ from sqlchain.blkdat import BlkDatHandler
 
 __builtins__.sqc = dotdict()  # container for super globals
 
-cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain', 'cointype':'bitcoin' } 
+sqc.cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain', 'cointype':'bitcoin' } 
 blksecs = []
 memPool = set()
 maxblk = 120000
 
 def getBlocks(blk):
     global maxblk
-    sql = db.connect(*cfg['db'].split(':'))
+    sql = db.connect(*sqc.cfg['db'].split(':'))
     cur = sql.cursor()
     cur.execute("show tables like 'bech32';") # test if old db version and abort with log msg
     if cur.rowcount == 0:
@@ -36,7 +36,7 @@ def getBlocks(blk):
     startblk = blk
     blkinfo = sqc.rpc.getblockchaininfo()
     maxblk = blkinfo['headers']
-    if 'blkdat' in cfg and (maxblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
+    if 'blkdat' in sqc.cfg and (maxblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     if not sqc.done.isSet():
         log("Using rpc mode. Monitoring blocks / mempool on " + sqc.cfg['cointype'])
@@ -47,7 +47,7 @@ def getBlocks(blk):
             checkMemPool(cur)
             time.sleep(5)
             continue
-        if blockQ.qsize() >= cfg['queue']:
+        if blockQ.qsize() >= sqc.cfg['queue']:
             time.sleep(min(poll_delay,5))
             poll_delay *= 2
             continue
@@ -66,9 +66,9 @@ def getBlocks(blk):
 
 def getBlocksDirect(cur, blk):
     global maxblk
-    blkscan = threading.Thread(target = BlkDatHandler, args=(cfg,True))
+    blkscan = threading.Thread(target = BlkDatHandler, args=(sqc.cfg,True))
     blkscan.start()
-    log("Using blkdat mode: %s" % cfg['blkdat'])
+    log("Using blkdat mode: %s" % sqc.cfg['blkdat'])
     while not sqc.done.isSet():
         cur.execute("select count(1) from information_schema.tables where table_name='blkdat';")
         if cur.fetchone()[0]:
@@ -76,7 +76,7 @@ def getBlocksDirect(cur, blk):
         time.sleep(5)
         logts("Waiting for blkdat to be ready")
     while not sqc.done.isSet():
-        if blockQ.qsize() >= cfg['queue']:
+        if blockQ.qsize() >= sqc.cfg['queue']:
             time.sleep(0.01)
             continue
         chkPruning(blk - blockQ.qsize())
@@ -88,7 +88,7 @@ def getBlocksDirect(cur, blk):
         if row:
             filenum,pos = row
             started = time.time()
-            with open(cfg['blkdat'] + "/blocks/blk%05d.dat" % filenum, 'rb') as fd:
+            with open(sqc.cfg['blkdat'] + "/blocks/blk%05d.dat" % filenum, 'rb') as fd:
                 fd.seek(pos)
                 magic,blksize = unpack('<II', fd.read(8))
                 if magic != coincfg(BLKDAT_MAGIC):
@@ -114,14 +114,14 @@ def chkPruning(blk):
         maxblk = blkinfo['headers']
     
 def BlockHandler():
-    sql = db.connect(*cfg['db'].split(':'))
+    sql = db.connect(*sqc.cfg['db'].split(':'))
     cur = sql.cursor()
     while not sqc.done.isSet():
         try: insertBlock(cur, blockQ.get(True, 5))
         except Empty: pass
 
 def OutputHandler():
-    sql = db.connect(*cfg['db'].split(':'))
+    sql = db.connect(*sqc.cfg['db'].split(':'))
     cur = sql.cursor()
     ins,outs = [],[]
     while True:
@@ -160,7 +160,7 @@ def checkMemPool(cur):
 def addOrphan(cur, height):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
     sync_id = cur.fetchone()[0]
-    hdr = gethdr(height, 'raw', cfg['path'])
+    hdr = gethdr(height, 'raw', sqc.cfg['path'])
     cur.execute("select hash,coinbase from blocks where id=%s limit 1;", (height,))
     for blkhash,coinbase in cur:
         cur.execute("insert into orphans (sync_id,block_id,hash,hdr,coinbase) values(%s,%s,%s,%s,%s);", (sync_id,height,blkhash,hdr,coinbase))
@@ -259,7 +259,7 @@ def checkReOrg(cur, data):
                         insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan block
                 addOrphan(cur, height)
                 cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
-                puthdr(data['height'], data['hdr'], cfg['path'])
+                puthdr(data['height'], data['hdr'], sqc.cfg['path'])
             height += 1
        
 def insertTxMemPool(cur, tx, sync_id):
@@ -283,7 +283,7 @@ def insertTx(cur, tx, tx_id, blk_id):
                 in_id = (in_id*MAX_IO_TX) + vin['vout']
                 inlist.append(( tx_id, in_id ))
                 in_ids += pack('<Q', in_id)[:7]
-                if not cfg['no-sigs']:
+                if not sqc.cfg['no-sigs']:
                     txdata += encodeVarInt(len(vin['scriptSig'])) + vin['scriptSig']
                 if not stdSeq:
                     txdata += pack('<I', vin['sequence'])
@@ -294,11 +294,11 @@ def insertTx(cur, tx, tx_id, blk_id):
             outlist.append(( tx_id*MAX_IO_TX + vout['n'], addr_id, vout['value'] ))
             txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
     outQ.put((outlist,inlist))
-    ins,outs,sz,txhdr = mkBlobHdr(len(inlist), len(outlist), tx, stdSeq, cfg['no-sigs'], tx['segwit'])
-    if (not cfg['no-sigs']) and tx['segwit']:
+    ins,outs,sz,txhdr = mkBlobHdr(len(inlist), len(outlist), tx, stdSeq, sqc.cfg['no-sigs'], tx['segwit'])
+    if (not sqc.cfg['no-sigs']) and tx['segwit']:
         txdata += tx['witness']
     cur.execute("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", 
-        ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, cfg['path']), blk_id ))    
+        ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, sqc.cfg['path']), blk_id ))    
             
 def insertBlock(cur, data):
     checkReOrg(cur, data)
@@ -316,7 +316,7 @@ def insertBlock(cur, data):
         insertTx(cur, tx, tx_id, blk_id + n)
         
     cur.execute("insert ignore into blocks (id,hash,coinbase) values (%s,%s,%s);", (data['height'], data['hash'], data['coinbase']))
-    puthdr(data['height'], data['hdr'], cfg['path'])
+    puthdr(data['height'], data['hdr'], sqc.cfg['path'])
     
     blktime = time.time() - blkstart
     log("Block %d [ Q:%d %4d txs - %s - %3.0fms %2.1fs %3.0f tx/s]" % ( data['height'], blockQ.qsize(), 
@@ -327,7 +327,7 @@ def insertBlock(cur, data):
         del blksecs[0]
     cur.execute("replace into info (class,`key`,value) value('info','avg-block-sync',%s);", ("%2.1f"%(sum(blksecs)/len(blksecs)), ))
 
-def options(cfg):
+def options(sqc.cfg):
     try:                                
         opts,args = getopt.getopt(sys.argv[1:], "hvd:l:r:w:p:q:u:b:f:", 
             ["help", "version", "debug", "db=", "log=", "rpc=", "path=", "queue=", "user=", "block=", "blkdat=", "no-sigs", "defaults" ])
@@ -339,28 +339,28 @@ def options(cfg):
         elif opt in ("-v", "--version"):
             sys.exit(sys.argv[0]+': '+version)
         elif opt in ("-d", "--db"):
-            cfg['db'] = arg
+            sqc.cfg['db'] = arg
         elif opt in ("-l", "--log"):
-            cfg['log'] = arg
+            sqc.cfg['log'] = arg
         elif opt in ("-r", "--rpc"):
-            cfg['rpc'] = arg
+            sqc.cfg['rpc'] = arg
         elif opt in ("-p", "--path"):
-            cfg['path'] = arg
+            sqc.cfg['path'] = arg
         elif opt in ("-q", "--queue"):
-            cfg['queue'] = int(arg)
+            sqc.cfg['queue'] = int(arg)
         elif opt in ("-u", "--user"):
-            cfg['user'] = arg 
+            sqc.cfg['user'] = arg 
         elif opt in ("--no-sigs"):
-            cfg['no-sigs'] = True 
+            sqc.cfg['no-sigs'] = True 
         elif opt in ("--defaults"):
-            savecfg(cfg)
+            savecfg(sqc.cfg)
             sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
         elif opt in ("-b", "--block"):
-            cfg['block'] = int(arg)
+            sqc.cfg['block'] = int(arg)
         elif opt in ("--debug"):
-            cfg['debug'] = True
+            sqc.cfg['debug'] = True
         elif opt in ("-f", "--blkdat"):
-            cfg['blkdat'] = arg
+            sqc.cfg['blkdat'] = arg
         
 def usage():
     print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
@@ -378,7 +378,7 @@ def usage():
 def sigterm_handler(_signo, _stack_frame):
     sqc.done.set()
 def sighup_handler(_signo, _stack_frame):
-    logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
+    logpath = sqc.cfg['log'] if 'log' in sqc.cfg else sys.argv[0]+'.log'
     sys.stdout.close()
     sys.stdout=open(logpath,'a')
     sys.stderr.close()
@@ -402,7 +402,7 @@ def run():
     workstart = time.time()
     while not sqc.done.isSet():
         try:
-            blksdone = getBlocks(cfg['block'] if 'block' in cfg else 0)
+            blksdone = getBlocks(sqc.cfg['block'] if 'block' in sqc.cfg else 0)
             break
         except socket.error:
             log("Cannot connect to rpc")
@@ -418,18 +418,18 @@ def run():
     
 if __name__ == '__main__':
 
-    loadcfg(cfg)
-    options(cfg)
-    drop2user(cfg)
+    loadcfg(sqc.cfg)
+    options(sqc.cfg)
+    drop2user(sqc.cfg)
     
-    sqc.rpc = rpcPool(cfg)
+    sqc.rpc = rpcPool(sqc.cfg)
     
-    if cfg['debug']:
+    if sqc.cfg['debug']:
         signal.signal(signal.SIGINT, sigterm_handler)
         run()
     else:
-        logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
-        pidpath = cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid'
+        logpath = sqc.cfg['log'] if 'log' in sqc.cfg else sys.argv[0]+'.log'
+        pidpath = sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid'
         with daemon.DaemonContext(working_directory='.', umask=0002, stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
                 signal_map={signal.SIGTERM:sigterm_handler, signal.SIGHUP:sighup_handler} ):
             with file(pidpath,'w') as f: 
