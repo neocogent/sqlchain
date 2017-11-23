@@ -63,7 +63,7 @@ def addr2pkh(addr):
         long_value = div
     result = chr(long_value) + result
     nPad = 0
-    for c in v:
+    for c in addr:
         if c == b58[0]: nPad += 1
         else: break
     result = chr(0)*nPad + result
