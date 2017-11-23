@@ -193,7 +193,7 @@ def usage():
 --debug\t\tRun in foreground with logging to console
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
 \nThese options get saved in cfg file as defaults.
--p,--path\tSet path for blob and header data files (/var/data)
+-p,--path\tSet path for blob and header data files (/var/data/sqlchain)
 -h,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
 -d,--db  \tSet mysql db connection, "host:user:pwd:dbname"\n-l,--log\tSet log file path
 -r,--rpc\tSet rpc connection, "http://user:pwd@host:port" 
