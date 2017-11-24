@@ -292,20 +292,20 @@ def findTx(cur, txhash, mkNew=False, limit=32):
         tx_id += 1
 
 # blob and header file support stuff 
-def puthdr(blk, hdr, cfg):
+def puthdr(blk, hdr, cfg={'path':'/var/data/sqlchain'}):
     with open(cfg['path']+'/hdrs.dat', 'r+b') as f:
         f.seek(blk*80)
         f.write(hdr)
         f.flush()
         
-def gethdr(blk, var=None, cfg):
+def gethdr(blk, var=None, cfg={'path':'/var/data/sqlchain'}):
     with open(cfg['path']+'/hdrs.dat', 'rb') as f:
         f.seek(blk*80)
         data = f.read(80)
     hdr = dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
     return hdr if var == None else hdr[var] if var != 'raw' else data
 
-def getChunk(chunk, cfg):
+def getChunk(chunk, cfg={'path':'/var/data/sqlchain'}):
     with open(cfg['path']+'/hdrs.dat', 'rb') as f:
         f.seek(chunk*80*2016)
         return f.read(80*2016)
@@ -313,7 +313,7 @@ def getChunk(chunk, cfg):
 def bits2diff(bits):
     return (0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))))
     
-def getBlobHdr(pos, cfg):
+def getBlobHdr(pos, cfg={'path':'/var/data/sqlchain'}):
     buf = readBlob(int(pos), 13, cfg) 
     bits = [ (1,'B',0), (1,'B',0), (2,'H',0), (4,'I',1), (4,'I',0) ]  # ins,outs,tx size,version,locktime
     out,mask = [1],0x80 
@@ -361,7 +361,7 @@ def mkBlobHdr(ins, outs, tx, stdSeq, nosigs, segwit):
 
 blob_lock = threading.Lock()
     
-def insertBlob(data, cfg):
+def insertBlob(data, cfg={'path':'/var/data/sqlchain'}):
     if len(data) == 0:
         return 0
     fn = '/blobs.dat'
@@ -387,7 +387,7 @@ def insertBlob(data, cfg):
         return rtnpos if 'rtnpos' in locals() else newpos
 
 
-def readBlob(pos, sz, cfg):
+def readBlob(pos, sz, cfg={'path':'/var/data/sqlchain'}):
     if sz == 0:
         return ''
     fn = '/blobs.dat'
@@ -416,7 +416,7 @@ def s3blk(blob, blk):
     resp = urllib2.urlopen(req)
     return resp.read(S3_BLK_SIZE)
     
-def getBlobsSize(cfg):
+def getBlobsSize(cfg={'path':'/var/data/sqlchain'}):
     sz = 0
     for f in glob.glob(cfg['path']+'/blobs*.dat'):
         sz += os.stat(f).st_size 
