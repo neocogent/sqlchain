@@ -243,7 +243,7 @@ def apiInputs(cur, height, blob, ins):
                 cur.execute("select value,addr_id,hash from outputs o, trxs t where o.id=%s and t.id=%s limit 1;", (in_id, in_id/MAX_IO_TX))
                 outs = cur.fetchall()
                 for value,aid,txhash in outs:
-                    cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+                    cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
                     for addr, in cur:
                         btc = float(value)/1e8
                         data.append({ 'n':n, 'vout':in_id%MAX_IO_TX, 'value':round(btc,8), 'valueSat':int(value), 'txid':txhash[::-1].encode('hex'), 'addr':mkaddr(addr,aid) })
@@ -256,7 +256,7 @@ def apiOutputs(cur, txid, blob):
     cur.execute("select o.id,o.id%%{0},value,addr_id,o.tx_id from outputs o where o.id>=%s*{0} and o.id<%s*{0};".format(MAX_IO_TX), (txid,txid+1))
     outs = cur.fetchall()
     for out_id,n,value,aid,in_id, in outs:
-        cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) 'address',aid))
+        cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
         for addr, in cur:
             btc = float(value)/1e8
             total += btc
@@ -287,7 +287,7 @@ def txoAddr(cur, txhash, n):
     cur.execute("select addr_id from outputs o where o.id>=%s*{0} and o.id<%s*{0} and o.id%%{0}=%s limit 1;".format(MAX_IO_TX), (txid,txid+1,int(n)))
     aids = cur.fetchall()
     for aid, in aids:
-        cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+        cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
         addr = cur.fetchone()[0]
         return mkaddr(addr,aid) 
     return None
@@ -298,7 +298,7 @@ def txAddrs(cur, txhash):
     cur.execute("select addr_id from outputs o where o.id>=%s*{0} and o.id<%s*{0};".format(MAX_IO_TX), (txid,txid+1))
     outs = cur.fetchall()
     for aid, in outs:
-        cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+        cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
         addr = cur.fetchone()[0]
         data.append( mkaddr(addr,aid) )
     cur.execute("select txdata,ins from trxs where id=%s limit 1;", (txid,))
@@ -317,7 +317,7 @@ def txAddrs(cur, txhash):
                 cur.execute("select addr_id from outputs o where o.id=%s limit 1;", (in_id,))
                 ins = cur.fetchall()
                 for aid, in ins:
-                    cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+                    cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
                     addr = cur.fetchone()[0]
                     data.append(mkaddr(addr,aid))
     return data
@@ -393,7 +393,7 @@ def mkRawTx(cur, args, txid, txhash, txdata, blkid, ins, outs):
         cur.execute("select value,addr_id from outputs o where o.id=%s limit 1;", (txid*MAX_IO_TX + n,))
         row = cur.fetchall()
         for value,aid in row:
-            cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+            cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
             addr = cur.fetchone()[0]
             out += [ pack('<Q', int(value)) ]
             vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))

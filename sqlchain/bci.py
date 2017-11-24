@@ -160,7 +160,7 @@ def bciInputs(cur, blob, ins):
             cur.execute("select value,addr_id from outputs where id=%s limit 1;", (in_id,))
             ins = cur.fetchall()
             for value,aid in ins:
-                cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+                cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
                 for addr, in cur:
                     data.append({ 'prev_out':{ 'spent':True, 'type':0, 'n':in_id%MAX_IO_TX, 'value':int(value), 
                                   'tx_index':in_id/MAX_IO_TX, 'addr':mkaddr(addr,aid) }})
@@ -171,7 +171,7 @@ def bciOutputs(cur, txid, blob):
     cur.execute("select o.tx_id,o.id%%{0},value,addr_id from outputs o where o.id>=%s*{0} and o.id<%s*{0};".format(MAX_IO_TX), (txid,txid+1))
     outs = cur.fetchall()
     for in_id,n,value,aid in outs:
-        cur.execute("select addr from %s where id=%s limit 1;", ('bech32' if is_BL32(aid) else 'address',aid))
+        cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
         for addr, in cur:
             vout = { 'n':int(n), 'value':int(value), 'addr':mkaddr(addr,aid), 'type':0, 'tx_index':txid }
             if in_id:
