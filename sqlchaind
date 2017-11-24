@@ -327,7 +327,7 @@ def insertBlock(cur, data):
         del blksecs[0]
     cur.execute("replace into info (class,`key`,value) value('info','avg-block-sync',%s);", ("%2.1f"%(sum(blksecs)/len(blksecs)), ))
 
-def options(sqc.cfg):
+def options(cfg):
     try:                                
         opts,args = getopt.getopt(sys.argv[1:], "hvd:l:r:w:p:q:u:b:f:", 
             ["help", "version", "debug", "db=", "log=", "rpc=", "path=", "queue=", "user=", "block=", "blkdat=", "no-sigs", "defaults" ])
@@ -339,28 +339,28 @@ def options(sqc.cfg):
         elif opt in ("-v", "--version"):
             sys.exit(sys.argv[0]+': '+version)
         elif opt in ("-d", "--db"):
-            sqc.cfg['db'] = arg
+            cfg['db'] = arg
         elif opt in ("-l", "--log"):
-            sqc.cfg['log'] = arg
+            cfg['log'] = arg
         elif opt in ("-r", "--rpc"):
-            sqc.cfg['rpc'] = arg
+            cfg['rpc'] = arg
         elif opt in ("-p", "--path"):
-            sqc.cfg['path'] = arg
+            cfg['path'] = arg
         elif opt in ("-q", "--queue"):
-            sqc.cfg['queue'] = int(arg)
+            cfg['queue'] = int(arg)
         elif opt in ("-u", "--user"):
-            sqc.cfg['user'] = arg 
+            cfg['user'] = arg 
         elif opt in ("--no-sigs"):
-            sqc.cfg['no-sigs'] = True 
+            cfg['no-sigs'] = True 
         elif opt in ("--defaults"):
-            savecfg(sqc.cfg)
+            savecfg(cfg)
             sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
         elif opt in ("-b", "--block"):
-            sqc.cfg['block'] = int(arg)
+            cfg['block'] = int(arg)
         elif opt in ("--debug"):
-            sqc.cfg['debug'] = True
+            cfg['debug'] = True
         elif opt in ("-f", "--blkdat"):
-            sqc.cfg['blkdat'] = arg
+            cfg['blkdat'] = arg
         
 def usage():
     print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
