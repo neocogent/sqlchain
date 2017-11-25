@@ -1,0 +1,15 @@
+#!/bin/bash
+
+unset GIT_DIR
+DEPLOY_WORK="${HOME}/work"
+
+while read from to branch
+do
+    mkdir -p "${DEPLOY_WORK}"
+    GIT_WORK_TREE="${DEPLOY_WORK}" git checkout -f "${branch}" 
+    cd "${DEPLOY_WORK}"
+    if [ -f docs/deploy ]; then
+        docs/deploy "${branch##*/}"
+    fi
+    rm -rf "${DEPLOY_WORK}"
+done

@@ -1,6 +1,7 @@
 #!/bin/bash
 # for server deploy of git repo - customize to suit
 # include in repo - needs a post-receive hook to call
+# see docs directory for example
 # checkout is current directory
 # runs as user git
 
