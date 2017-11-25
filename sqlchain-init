@@ -3,7 +3,7 @@
 import os, sys, signal, pwd, random, string, shutil, json, platform
 import MySQLdb as db
 
-from sqlchain.version import *
+#from sqlchain.version import *
 
 DATA_DIR = 0
 BLKDAT_DIR = 1
@@ -14,7 +14,7 @@ DEF_API_PORT = 5
 CAN_PRUNE = 6
 CAN_BLKDAT = 7
 
-coin_setup = { 
+coin_setup = {
     'bitcoin': [ 'bitcoin',  '',         'bitcoind',  'btc', 8332,  8085,  True, True ],
     'testnet': [ 'testnet',  'testnet3', 'bitcoind',  'btc', 18332, 18085, True, True ],
     'litecoin':[ 'litecoin', '',         'litecoind', 'ltc', 10332, 8086,  False,False ]
@@ -28,22 +28,22 @@ def sigterm_handler(_signo, _stack_frame):
 
 signal.signal(signal.SIGINT, sigterm_handler)
 
-print """\nThis program will configure sqlChain for your system. 
-It can optionally create and initialize the MySQL database. It will ask a series of questions 
+print """\nThis program will configure sqlChain for your system.
+It can optionally create and initialize the MySQL database. It will ask a series of questions
 and then create the database, user, init and cfg files. Re-running this will overwrite options
 including passwords but does not clear the DB or remove old files.\n"""
 
 if not os.path.exists('/usr/local/share/sqlchain'):
     print "You need to install sqlchain before running this program.\neg. sudo pip install sqlchain\n"
     sys.exit(0)
-print "Defaults are shown in [brackets]. Just hit enter to accept the default.\n" 
+print "Defaults are shown in [brackets]. Just hit enter to accept the default.\n"
 if os.geteuid() != 0:
     print "You need to run with root/sudo privileges - try again."
     sys.exit(0)
 go = raw_input( "Continue [Y]/N:" ) or 'Y'
 if go.upper() != 'Y':
     sys.exit(0)
-    
+
 print """\nsqlchaind can support several coin types / blockchains.\nCurrent options are: %s.\n""" % ','.join(coin_setup.keys())
 cointype = raw_input( "Enter cointype / blockchain to use [bitcoin]:" ) or 'bitcoin'
 
@@ -54,13 +54,13 @@ coinrpc = raw_input( "Use existing RPC user/pwd? [Y]/N:" ) or 'Y'
 coinpwd = ''
 if coinrpc.upper() != 'Y':
     coinrpc = raw_input( "RPC username? [%s]:" % coin_var(DEF_COIN_USER) ) or coin_var(DEF_COIN_USER)
-    coinpwd = raw_input( "RPC password [create random]:" ) 
+    coinpwd = raw_input( "RPC password [create random]:" )
 
 coinprune = 'N'
 if coin_var(CAN_PRUNE):
-    print """\n%s can be run in pruning mode to discard block data after sqlchaind has processed it. 
-This requires a bitcoind be built with 'manual pruning' to allow control over pruned blocks. 
-This requires version >= 0.14.1 or a custom build with PR #7871. If you do not have this mode 
+    print """\n%s can be run in pruning mode to discard block data after sqlchaind has processed it.
+This requires a bitcoind be built with 'manual pruning' to allow control over pruned blocks.
+This requires version >= 0.14.1 or a custom build with PR #7871. If you do not have this mode
 available then do not enable pruning as blocks could be pruned before being processed by sqlchaind.\n""" % cointype.capitalize()
     coinprune = raw_input( "Run bitcoind in pruning mode Y/[N]:" ) or 'N'
 
@@ -84,12 +84,12 @@ nginx = raw_input( "Create nginx reverse proxy config (N to disable) [/etc/nginx
 if not nginx in ['n','N','/','none']:
     apidomain = raw_input( "Host domain name to use [api.%s.info]:" % cointype) or "api.%s.info" % cointype
     sslpath = raw_input( "SSL certificate path [/etc/letsencrypt/live/%s]:" % apidomain) or "/etc/letsencrypt/live/%s" % apidomain
-    
+
 dbname = raw_input( "\nMySQL database name [%s]:" % cointype ) or cointype
 dbuser = raw_input( "MySQL database user (will grant privileges) [%s]:" % coin_var(DEF_COIN_USER)) or coin_var(DEF_COIN_USER)
 dbpwd = raw_input( "MySQL %s user password [create random]:" % dbuser )
 rootpwd = raw_input( "MySQL root password (needed to create database and user):" )
-    
+
 if coinpwd == '':
     coinpwd = ''.join(random.sample(string.ascii_letters+string.digits,20))
 if dbpwd == '':
@@ -107,7 +107,7 @@ except KeyError:
     os.system('useradd -r -s /bin/false '+coinuser)
     pwd = pwd.getpwnam(coinuser)
 
-### Create directories if not already    
+### Create directories if not already
 if not os.path.exists(cfgdir):
     print "Creating directory:", cfgdir
     os.makedirs(cfgdir)
@@ -126,26 +126,26 @@ elif not os.path.exists(wwwdir):
     print "Creating directory:", wwwdir
     os.makedirs(wwwdir)
     os.chown(wwwdir, pwd.pw_uid, pwd.pw_gid)
-    for root, dirs, files in os.walk('www'):  
+    for root, dirs, files in os.walk('www'):
         dst = root[root.index('/'):] if '/'  in root else '/'
-        for d in dirs:  
+        for d in dirs:
             os.mkdir(os.path.join(wwwdir+dst, d))
             os.chown(os.path.join(wwwdir+dst, d), pwd.pw_uid, pwd.pw_gid)
         for f in files:
             shutil.copy2(os.path.join(root, f), os.path.join(wwwdir+dst, f))
             os.chown(os.path.join(wwwdir+dst, f), pwd.pw_uid, pwd.pw_gid)
-    
+
 ### Create empty data files and set ownership
 for f in ['/blobs.0.dat','/hdrs.dat']:
     try:
         os.utime(sqldir+f, None)
-    except:
+    except OSError:
         print "Creating data file:", sqldir+f
         open(sqldir+f, 'a').close()
         os.chown(sqldir+f, pwd.pw_uid, pwd.pw_gid)
 
-### Create MySql database and tables   
-print "Creating MySQL database:", dbname 
+### Create MySql database and tables
+print "Creating MySQL database:", dbname
 try:
     sqlsrc = open('docs/sqlchain.sql').read()
     sqlcode = ''
@@ -154,7 +154,7 @@ try:
     for line in sqlsrc.splitlines():
         if line != '' and line[:2] != '--':
             sqlcode += line
-    
+
     sql = db.connect(user='root', passwd=rootpwd)
     cur = sql.cursor()
     for stmnt in sqlcode.split(';'):
@@ -163,25 +163,23 @@ try:
 except (IOError, ImportError):
     print "Cannot open ", '/usr/local/share/sqlchain/docs/sqlchain.sql'
     print "Skipping further MySQL DB setup\n"
-    pass
-except db.Error, e:
+except db.Error, e: # pylint:disable=no-member
     print "MySQL Error: %s" % str(e)
     print "Skipping further MySQL DB setup\n"
-    pass
 
 ### Create init scripts for system boot
 dist,release,_ = platform.linux_distribution()
 if dist == "Ubuntu" and release == "14.04":  # create upstart init files
     initsrc = """
     description "sqlChain - %s SQL layer and API"
-    
+
     start on runlevel [2345]
     stop on starting rc RUNLEVEL=[016]
-    
+
     expect fork
     respawn limit 5 120
     kill timeout 60
-    
+
     """ % cointype.capitalize()
     coinbin = '/usr/local/bin/'+coin_var(DAEMON_BIN)
     if not os.path.exists(coinbin):
@@ -196,7 +194,7 @@ if dist == "Ubuntu" and release == "14.04":  # create upstart init files
             open('/etc/init/%s.override' % cointype, 'a').close()
     if sqlboot != '#':
         initfile = '/etc/init/sqlchain.%s.conf' % cointype
-        print "Creating upstart init file: %s" % initfile 
+        print "Creating upstart init file: %s" % initfile
         with open(initfile, 'w') as f:
             s = "exec start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchain.%s.cfg\n" % (sqldir,cfgdir,cointype)
             f.write(initsrc.replace('expect fork','')+s)
@@ -204,25 +202,25 @@ if dist == "Ubuntu" and release == "14.04":  # create upstart init files
             open('/etc/init/sqlchain.%s.override' % cointype, 'a').close()
     if apiboot != '#':
         initfile = '/etc/init/sqlchain-api.%s.conf' % cointype
-        print "Creating upstart init file: %s" % initfile 
+        print "Creating upstart init file: %s" % initfile
         with open(initfile, 'w') as f:
             s = "exec start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.%s.cfg\n" % (sqldir,cfgdir,cointype)
             f.write(initsrc.replace('expect fork','')+s)
         if apiboot.upper() != 'Y':
             open('/etc/init/sqlchain-api.%s.override' % cointype, 'a').close()
-            
+
 else:   # create systemd init files
     initsrc = """
     [Unit]
     Description=sqlChain - %s SQL layer and API
-    
+
     [Service]
     Type=forking
     ExecStart
-    
+
     [Install]
     WantedBy=multi-user.target
-        
+
     """ % cointype.capitalize()
     coinbin = '/usr/local/bin/'+coin_var(DAEMON_BIN)
     if not os.path.exists(coinbin):
@@ -237,15 +235,15 @@ else:   # create systemd init files
             os.symlink('../%s.service' % cointype, '/lib/systemd/system/multi-user.target.wants/%s.service' % cointype)
     if sqlboot != '#':
         initfile = '/lib/systemd/system/sqlchain.%s.service' % cointype
-        print "Creating systemd init file: %s" % initfile 
+        print "Creating systemd init file: %s" % initfile
         with open(initfile, 'w') as f:
             s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchain.%s.cfg\n" % (sqldir,cfgdir,cointype)
             f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
         if coinboot.upper() == 'Y':
             os.symlink('../sqlchain.%s.service' % cointype, '/lib/systemd/system/multi-user.target.wants/sqlchain.%s.service' % cointype)
     if apiboot != '#':
-        initfile = '/lib/systemd/system/sqlchain-api.%s.service' % cointype 
-        print "Creating systemd init file: %s" % initfile 
+        initfile = '/lib/systemd/system/sqlchain-api.%s.service' % cointype
+        print "Creating systemd init file: %s" % initfile
         with open(initfile, 'w') as f:
             s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.%s.cfg\n" % (sqldir,cfgdir,cointype)
             f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
@@ -262,21 +260,21 @@ try:
         cfgcoin[k] = v
 except (IOError, ImportError):
     print "Creating file: %s/%s.conf" % (cfgdir,cointype)
-    
+
 cfgcoin.update({'server':1, 'daemon':1, 'prune':1 if coinprune.upper() == 'Y' else 0, 'rpcport':coin_var(DEF_RPC_PORT), \
               'datadir':coindir, 'pid':sqldir+'/%s.pid' % coin_var(DAEMON_BIN), 'disablewallet':1 })
 if coinrpc.upper() != 'Y':
     cfgcoin.update({'rpcuser':coinrpc, 'rpcpassword':coinpwd })
 elif 'rpcuser' not in cfgcoin:
     cfgcoin.update({'rpcuser':'%s' % coin_var(DEF_COIN_USER), 'rpcpassword':coinpwd })
-    
+
 with open(cfgdir+'/%s.conf' % cointype, 'w') as f:
     for k in cfgcoin:
         f.write("%s=%s\n" % (k,cfgcoin[k]))
 os.chown(cfgdir+'/%s.conf' % cointype, pwd.pw_uid, pwd.pw_gid)
 os.chmod(cfgdir+'/%s.conf' % cointype, 0660)
-    
-### Create sqlchaind.cfg 
+
+### Create sqlchaind.cfg
 sqlcfg = { "log": sqldir+"/daemon.log", "pid": sqldir+"/daemon.pid", "path": sqldir, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), \
            "queue": 8, "rpc": "http://%s:%s@localhost:%d" % (cfgcoin['rpcuser'],cfgcoin['rpcpassword'],coin_var(DEF_RPC_PORT)), \
            "debug": False, "user": coinuser, "no-sigs": nosigs.upper() == 'Y', "cointype": cointype }
@@ -288,11 +286,11 @@ with open(cfgdir+'/sqlchain.%s.cfg' % cointype, 'w') as f:
 os.chown(cfgdir+'/sqlchain.%s.cfg' % cointype, pwd.pw_uid, pwd.pw_gid)
 os.chmod(cfgdir+'/sqlchain.%s.cfg' % cointype, 0660)
 
-### Create sqlchain-api.cfg 
+### Create sqlchain-api.cfg
 apicfg = { "www": wwwdir, "user": coinuser, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), "dbinfo": -1, "dbinfo-ts": "0", \
            "rpc": "http://%s:%s@localhost:%d" % (cfgcoin['rpcuser'],cfgcoin['rpcpassword'],coin_var(DEF_RPC_PORT)), \
            "pool": 4, "log": sqldir+"/api.log", "pid": sqldir+"/api.pid", \
-           "path": sqldir, "debug": False, "block": 0, "listen": "localhost:%d" % coin_var(DEF_API_PORT), "sync": 0 }          
+           "path": sqldir, "debug": False, "block": 0, "listen": "localhost:%d" % coin_var(DEF_API_PORT), "sync": 0 }
 print "Creating config file:", cfgdir+'/sqlchain-api.%s.cfg' % cointype
 with open(cfgdir+'/sqlchain-api.%s.cfg' % cointype, 'w') as f:
     json.dump(apicfg, f, indent=2)
@@ -314,7 +312,7 @@ logconf = """
         kill -HUP `cat %s/daemon.pid`
     endscript
 }
-""" 
+"""
 logconfpath = '/etc/logrotate.d/sqlchain.%s' % cointype
 if not os.path.exists(logconfpath):
     with open(logconfpath, 'w') as f:
@@ -335,7 +333,7 @@ if not os.path.exists(logconfpath):
     with open(logconfpath, 'w') as f:
         f.write(logconf % coindir)
 
-### Create nginx reverse proxy config        
+### Create nginx reverse proxy config
 nginxconf = """
 server {
     listen 80;

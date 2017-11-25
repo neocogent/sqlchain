@@ -1,19 +1,20 @@
 #!/usr/bin/env python
-import os, sys, pwd, getopt, datetime, time, cgi, urlparse, signal, string
-import ssl, json, gevent, daemon
 
 from time import sleep
-from hashlib import sha256
-from struct import pack, unpack, unpack_from
-from gevent import socket
-from gevent.server import StreamServer
-from gevent.queue import Queue
 from urllib2 import urlopen, URLError
 
-from sqlchain.version import *
-from sqlchain.util import *
+import os, sys, getopt, signal, json, daemon
 
-cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api', 
+from gevent import socket, monkey, spawn
+from gevent.server import StreamServer
+from gevent.queue import Queue
+
+from sqlchain.version import version
+from sqlchain.util import dotdict, loadcfg, savecfg, drop2user, logts, getChunk
+
+__builtins__.sqc = dotdict()  # container for super globals
+
+sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8081', 'www':'www', 'api':'http://localhost:8085/api',
         'banner':'docs/electrum.banner', 'path':'/var/data/sqlchain' }
 
 srvinfo = { 'version':version, 'banner':'', 'block':0, 'header':{} }
@@ -21,8 +22,8 @@ subs = { 'numblocks':{}, 'headers':{}, 'address':{}, '_ip_':{} }
 
 def ReqHandler():
     while True:
-        resp = None
-        fp,req = reqQ.get()
+        #resp = None
+        fp,req = sqc.reqQ.get()
         print 'REQ', req
         args = req['method'].split('.')
         val = req['params'][0] if len(req['params']) > 0 else 1
@@ -31,20 +32,20 @@ def ReqHandler():
                 addSub(args[1], val, fp)
             respSub(args[1], fp, req)
         elif args[0] == 'server':
-            respQ.put((fp, req['id'], srvinfo[args[1]] if args[1] in srvinfo else {}))
+            sqc.respQ.put((fp, req['id'], srvinfo[args[1]] if args[1] in srvinfo else {}))
         elif req['method'] in reqFuncs:
-            gevent.spawn(reqFuncs[req['method']], fp, req)
+            spawn(reqFuncs[req['method']], fp, req)
         else:
             logts("Bad Req %s:%d - %s" % (subs['_ip_'][fp][0]+(req['method'],)))
 
 def RespHandler():
     while True:
-        fp,reqid,resp = respQ.get()
-        resp = json.dumps({ 'id':reqid, 'result':resp } if resp == None or not 'error' in resp else { 'id':reqid,'error':resp['error'] })
+        fp,reqid,resp = sqc.respQ.get()
+        resp = json.dumps({ 'id':reqid, 'result':resp } if resp is None or not 'error' in resp else { 'id':reqid,'error':resp['error'] })
         print "RESP", reqid, resp
         fp.write(resp+'\n')
         fp.flush()
-        
+
 def SyncHandler():
     sync_id = 0
     while True:
@@ -63,36 +64,38 @@ def SyncHandler():
                 for tx in resp['txs']:
                     pubSubs('address', addrs=getAddrs(tx))
             sync_id = resp['sync_id']
-            
+
 def TcpHandler(sock, address):
     fp = sock.makefile()
     addSub('_ip_', address, fp)
     while True:
         line = fp.readline()
         if line:
-            reqQ.put((fp, json.loads(line)))
+            sqc.reqQ.put((fp, json.loads(line)))
         else:
             break
     delSubs(fp)
     sock.shutdown(socket.SHUT_WR)
     sock.close()
 
-def pubSubs(sub, msg=None, addrs=[]):
-    for addr in addrs:
-        fps = getSubs(sub, addr)
-        if len(fps) > 0:
-            data = apicall('/history/'+addr+'/status')
-            for fp in fps:
-                respQ.put((fp, None, data)) 
+def pubSubs(sub, msg=None, addrs=None):
+    if addrs:
+        for addr in addrs:
+            fps = getSubs(sub, addr)
+            if len(fps) > 0:
+                data = apicall('/history/'+addr+'/status')
+                for fp in fps:
+                    sqc.respQ.put((fp, None, data))
     if msg:
         for fp in getSubs(sub):
-            respQ.put((fp, None, msg))
-    
+            sqc.respQ.put((fp, None, msg))
+
 def getSubs(sub, val=1, key=None):
     if key:
         return key in subs[sub] and val in subs[sub][key]
     if val == 1:
         return subs[sub].keys()
+    fps = []
     for k in subs[sub]:
         if val in subs[sub][k]:
             fps.append(k)
@@ -103,64 +106,64 @@ def addSub(sub, val, key):
         subs[sub][key].add(val)
     else:
         subs[sub][key] = set(val)
-        
+
 def delSubs(key):
     for sub in subs:
         if key in subs[sub]:
             del subs[sub][key]
-            
+
 def respSub(to, fp, req):
     if to == 'address':
-        gevent.spawn(addrHistory, fp, req, '/status')
+        spawn(addrHistory, fp, req, '/status')
     elif to == 'numblocks':
-        respQ.put((fp, req['id'], srvinfo['block']))
+        sqc.respQ.put((fp, req['id'], srvinfo['block']))
     elif to == 'headers':
-        respQ.put((fp, req['id'], srvinfo['header']))
+        sqc.respQ.put((fp, req['id'], srvinfo['header']))
     else:
-        respQ.put((fp, req['id'], []))
-            
+        sqc.respQ.put((fp, req['id'], []))
+
 def addrHistory(fp, req, args=''):
     data = apicall('/history/'+req['params'][0] + args)
-    respQ.put((fp, req['id'], data if args else data['txs'] if len(data['txs']) > 0 else None ))
-        
-def addrBalance(fp, req):
-    respQ.put((fp, req['id'], apicall('/history/'+req['params'][0]+'/balance')))
-    
-def addrMemPool(fp, req):
-    respQ.put((fp, req['id'], apicall('/history/'+req['params'][0]+'/uncfmd')))
-    
-def addrUnspent(fp, req):
-    respQ.put((fp, req['id'], apicall('/history/'+req['params'][0]+'/utxo')))
-    
-def addrProof(fp, req):
-    pass
-    
-def blkHeader(fp, req):
-    respQ.put((fp, req['id'], apicall('/block-index/'+req['params'][0]+'/electrum') ))
-    
-def blkChunk(fp, req):
-    respQ.put((fp, req['id'], getChunk(int(req['params'][0]).encode('hex'), cfg) ))
-    
-def utxoAddress(fp, req):
-    respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/output/%d' % req['params'][1]) ))
-    
-def txGet(fp, req):
-    respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/raw') ))
-    
-def txSend(fp, req):
-    logts("Tx Sent: %s" % txid)
-    respQ.put((fp, req['id'], apicall('/tx/send', {'rawtx':req['params'][0]}) ))
-    
-def txMerkle(fp, req):
-    respQ.put((fp, req['id'], apicall('/merkle/'+req['params'][0]) ))
-    
-def feeEstimate(fp, req):
-    respQ.put((fp, req['id'], apicall('/util/estimatefee/'+req['params'][0]) ))
+    sqc.respQ.put((fp, req['id'], data if args else data['txs'] if len(data['txs']) > 0 else None ))
 
-reqFuncs = { 'blockchain.address.get_history':addrHistory, 'blockchain.address.get_balance':addrBalance, 
+def addrBalance(fp, req):
+    sqc.respQ.put((fp, req['id'], apicall('/history/'+req['params'][0]+'/balance')))
+
+def addrMemPool(fp, req):
+    sqc.respQ.put((fp, req['id'], apicall('/history/'+req['params'][0]+'/uncfmd')))
+
+def addrUnspent(fp, req):
+    sqc.respQ.put((fp, req['id'], apicall('/history/'+req['params'][0]+'/utxo')))
+
+def addrProof(fp, req): # pylint:disable=unused-argument
+    pass
+
+def blkHeader(fp, req):
+    sqc.respQ.put((fp, req['id'], apicall('/block-index/'+req['params'][0]+'/electrum') ))
+
+def blkChunk(fp, req):
+    sqc.respQ.put((fp, req['id'], getChunk(int(req['params'][0]), sqc.cfg).encode('hex') ))
+
+def utxoAddress(fp, req):
+    sqc.respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/output/%d' % req['params'][1]) ))
+
+def txGet(fp, req):
+    sqc.respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/raw') ))
+
+def txSend(fp, req):
+    #logts("Tx Sent: %s" % txid)
+    sqc.respQ.put((fp, req['id'], apicall('/tx/send', {'rawtx':req['params'][0]}) ))
+
+def txMerkle(fp, req):
+    sqc.respQ.put((fp, req['id'], apicall('/merkle/'+req['params'][0]) ))
+
+def feeEstimate(fp, req):
+    sqc.respQ.put((fp, req['id'], apicall('/util/estimatefee/'+req['params'][0]) ))
+
+reqFuncs = { 'blockchain.address.get_history':addrHistory, 'blockchain.address.get_balance':addrBalance,
              'blockchain.address.get_mempool':addrMemPool, 'blockchain.address.get_proof':addrProof,
              'blockchain.address.listunspent':addrUnspent, 'blockchain.utxo.get_address':utxoAddress,
-             'blockchain.block.get_header':blkHeader,      'blockchain.block.get_chunk':blkChunk, 
+             'blockchain.block.get_header':blkHeader,      'blockchain.block.get_chunk':blkChunk,
              'blockchain.transaction.broadcast':txSend,    'blockchain.transaction.get_merkle':txMerkle,
              'blockchain.transaction.get':txGet,           'blockchain.estimatefee':feeEstimate }
 
@@ -172,10 +175,10 @@ def getAddrs(tx):
     for vo in tx['out']:
         addrs.append(vo['addr'])
     return addrs
-    
-def options(cfg):
-    try:                                
-        opts,args = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:s:a:u:b:", 
+
+def options(cfg): # pylint:disable=too-many-branches
+    try:
+        opts,_ = getopt.getopt(sys.argv[1:], "hvb:p:c:d:l:w:p:s:a:u:b:",
             ["help", "version", "debug", "db=", "log=", "listen=", "www=", "user=", "banner=", "defaults" ])
     except getopt.GetoptError:
         usage()
@@ -189,9 +192,9 @@ def options(cfg):
         elif opt in ("-l", "--log"):
             cfg['log'] = arg
         elif opt in ("-w", "--www"):
-            cfg['www'] = arg  
+            cfg['www'] = arg
         elif opt in ("-p", "--path"):
-            cfg['path'] = arg  
+            cfg['path'] = arg
         elif opt in ("-s", "--listen"):
             cfg['listen'] = arg
         elif opt in ("-a", "--api"):
@@ -200,87 +203,83 @@ def options(cfg):
             cfg['user'] = arg
         elif opt in ("-b", "--banner"):
             cfg['banner'] = arg
-        elif opt in ("--defaults"):
+        elif opt in "--defaults":
             savecfg(cfg)
             sys.exit("%s updated" % (sys.argv[0]+'.cfg'))
-        elif opt in ("--debug"):
+        elif opt in "--debug":
             cfg['debug'] = True
-            
+
 def usage():
     print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
 --debug\t\tRun in foreground with logging to console
---defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log 
+--defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
 \nThese options get saved in cfg file as defaults.
 -s,--listen\tSet host:port for Electrum server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
 -p,--path\tSet path for header data files (/var/data/sqlchain)
 -b,--banner\tSet file path for banner text\n-a,--api\tSet host:port for API connection\n-l,--log\tSet log file path""".format(sys.argv[0])
-    sys.exit(2) 
+    sys.exit(2)
 
 def apicall(url, post=None):
     try:
-        data = urlopen(cfg['api']+url, post).read()
+        data = urlopen(sqc.cfg['api']+url, post).read()
     except URLError:
-        logts("Error: sqlchain-api not at %s" % cfg['api'])
+        logts("Error: sqlchain-api not at %s" % sqc.cfg['api'])
         return { 'error':'No api connection' }
     return json.loads(data)
 
 def sigterm_handler(_signo, _stack_frame):
     logts("Shutting down.")
-    if not cfg['debug']:
-        os.unlink(cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid')
+    if not sqc.cfg['debug']:
+        os.unlink(sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid')
     sys.exit(0)
-    
+
 def sighup_handler(_signo, _stack_frame):
-    logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
+    path = sqc.cfg['log'] if 'log' in sqc.cfg else sys.argv[0]+'.log'
     sys.stdout.close()
-    sys.stdout=open(logpath,'a')
+    sys.stdout=open(path,'a')
     sys.stderr.close()
-    sys.stderr=open(logpath,'a')
+    sys.stderr=open(path,'a')
     logts("SIGHUP Log reopened")
 
 def run():
-    global reqQ,respQ
-    from gevent import monkey; monkey.patch_socket()
+    monkey.patch_socket()
 
-    with open(cfg['banner']) as f:
-        srvinfo['banner'] = f.read()
-    
+    with open(sqc.cfg['banner']) as bf:
+        srvinfo['banner'] = bf.read()
+
     hdr = apicall('/block-index/latest/electrum')
     if 'error' in hdr:
         sys.exit(1)
     srvinfo['block'],srvinfo['header'] = hdr['block_height'],hdr
-    
-    reqQ,respQ = Queue(),Queue()
-    gevent.spawn(ReqHandler)
-    gevent.spawn(RespHandler)
-    gevent.spawn(SyncHandler)
 
-    logts("Starting on %s" % cfg['listen'])
-    host,port = cfg['listen'].split(':')
-    cert = {'certfile':cfg['ssl']} if ('ssl' in cfg) and (cfg['ssl'] != '') else {}
+    sqc.reqQ = Queue()
+    sqc.respQ = Queue()
+    spawn(ReqHandler)
+    spawn(RespHandler)
+    spawn(SyncHandler)
+
+    logts("Starting on %s" % sqc.cfg['listen'])
+    host,port = sqc.cfg['listen'].split(':')
+    cert = {'certfile':sqc.cfg['ssl']} if ('ssl' in sqc.cfg) and (sqc.cfg['ssl'] != '') else {}
     server = StreamServer((host, int(port)), TcpHandler, **cert)
-    
-    drop2user(cfg, chown=True)
-    
+
+    drop2user(sqc.cfg, chown=True)
+
     server.serve_forever()
-    
+
 if __name__ == '__main__':
-    
-    loadcfg(cfg)
-    options(cfg)
-    
-    if cfg['debug']:
+
+    loadcfg(sqc.cfg)
+    options(sqc.cfg)
+
+    if sqc.cfg['debug']:
         signal.signal(signal.SIGINT, sigterm_handler)
         run()
     else:
-        logpath = cfg['log'] if 'log' in cfg else sys.argv[0]+'.log'
-        pidpath = cfg['pid'] if 'pid' in cfg else sys.argv[0]+'.pid'
-        with daemon.DaemonContext(working_directory='.', umask=0002, stdout=open(logpath,'a'), stderr=open(logpath,'a'), 
+        logpath = sqc.cfg['log'] if 'log' in sqc.cfg else sys.argv[0]+'.log'
+        pidpath = sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid'
+        with daemon.DaemonContext(working_directory='.', umask=0002, stdout=open(logpath,'a'), stderr=open(logpath,'a'),
                 signal_map={signal.SIGTERM:sigterm_handler, signal.SIGHUP:sighup_handler } ):
-            with file(pidpath,'w') as f: 
+            with file(pidpath,'w') as f:
                 f.write(str(os.getpid()))
             run()
-            
-    
-        
-        

@@ -1,10 +1,10 @@
 #
 #  RPC compatible API module
-#  
-import urlparse, cgi, json, decimal
+#
+import urlparse, json, decimal
 
 from bitcoinrpc.authproxy import AuthServiceProxy
-from util import *
+from sqlchain.util import gethdr, bits2diff
 
 # encode json btc values as satoshi integer
 class btcEncoder(json.JSONEncoder):
@@ -12,31 +12,32 @@ class btcEncoder(json.JSONEncoder):
         if isinstance(o, decimal.Decimal):
             return int(float(o)*1e8)
         return super(btcEncoder, self).default(o)
-        
+
 def do_RPC(env, send_resp):
-    get,args,cur = urlparse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
+    _,args,cur = urlparse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
     send_resp('200 OK', [('Content-Type', 'application/json')])
+    result = []
     if args[0] == "getblockcount":
-        return json.dumps(sqc.cfg['block'])
-    if args[0] == "getinfo":
-        return json.dumps( { 'blocks':sqc.cfg['block'], 'difficulty':bits2diff(gethdr(sqc.cfg['block'], 'bits', sqc.cfg)) } )
-    if args[0] == "getdifficulty":
-        return json.dumps( bits2diff(gethdr(sqc.cfg['block'], 'bits', sqc.cfg)) )
-        
-    rpc = AuthServiceProxy(sqc.cfg['rpc'])
-    if args[0] == "getblock":
-        return json.dumps( rpc.getblock(args[1]), cls=btcEncoder )
-    if args[0] == "getblockhash":
-        return json.dumps( rpc.getblockhash(int(args[1])) )
-    if args[0] == "getrawtransaction":
-        return json.dumps( rpc.getrawtransaction(args[1], 1), cls=btcEncoder )
-    if args[0] == "gettxout":
-        return json.dumps( rpcTxOut(cur, args[1], args[2]) )
-    if args[0] == "getmempoolinfo":
-        return json.dumps( rpc.getmempoolinfo(), cls=btcEncoder )
-    if args[0] == "getrawmempool":
-        return json.dumps( rpc.getrawmempool(False), cls=btcEncoder )
-    return []
+        result = json.dumps(sqc.cfg['block'])
+    elif args[0] == "getinfo":
+        result = json.dumps( { 'blocks':sqc.cfg['block'], 'difficulty':bits2diff(gethdr(sqc.cfg['block'], sqc.cfg, 'bits')) } )
+    elif args[0] == "getdifficulty":
+        result = json.dumps( bits2diff(gethdr(sqc.cfg['block'], sqc.cfg, 'bits')) )
+    else:
+        rpc = AuthServiceProxy(sqc.cfg['rpc'])
+        if args[0] == "getblock":
+            result = json.dumps( rpc.getblock(args[1]), cls=btcEncoder )
+        elif args[0] == "getblockhash":
+            result = json.dumps( rpc.getblockhash(int(args[1])) )
+        elif args[0] == "getrawtransaction":
+            result = json.dumps( rpc.getrawtransaction(args[1], 1), cls=btcEncoder )
+        elif args[0] == "gettxout":
+            result = json.dumps( rpcTxOut(cur, args[1], args[2]) )
+        elif args[0] == "getmempoolinfo":
+            result = json.dumps( rpc.getmempoolinfo(), cls=btcEncoder )
+        elif args[0] == "getrawmempool":
+            result = json.dumps( rpc.getrawmempool(False), cls=btcEncoder )
+    return result
 
 def rpcTxOut(cur, txhash, out):
     return 'blah' # todo find output in fmt below

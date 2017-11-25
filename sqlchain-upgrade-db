@@ -2,13 +2,13 @@
 #
 #   sqlchain - upgrade database to support bech32 table and use revised addr id encoding
 #
-#   This program should be run detached from console (as it is long running) and with ooutput piped to a log file.
-#       eg. sudo sqlchain-upgrade-db /etc/bitcoin/sqlchaind.cfg &>>upgrade.log & disown 
+#   This program should be run detached from console (as it is long running) and with output piped to a log file.
+#       eg. sudo sqlchain-upgrade-db /etc/bitcoin/sqlchaind.cfg &>>upgrade.log & disown
 #
 #   Old: addr_id columns had P2SH encoded as odd values, regular addresses as even.
 #   New: addr_id columns has P2SH encoded with high bit 41, and high bit 42 for bech32.
 #   This may also result in better division of address indices since p2sh are not interleaved with p2pkh.
-#   
+#
 #   Max addr id values and future high bit flags:
 #       currently addr ids are decimal(13) which takes 6 bytes and has a maximum value of 9,999,999,999,999 = 0x9184E729FFF
 #       only 5 bytes are used from the hashed address so bits above that can be flags, 0x9xxxxxxxxxx allows 3 high bits
@@ -20,23 +20,24 @@
 #       Max tx_id (37 bits) 137,438,953,500 giving a max output id 2,251,799,814,000,000 - still within decimal(16) and 7 byte blob id
 #
 #   Long bech32 hashes (p2wsh) are stored in a new table (bech32) but the short ones (p2wpkh) are in the existing address table.
-#   
-#   This program checks if the bech32 table exists as indicator of past table upgrade which repeating would corrupt. 
 #
-#   Overview: 
+#   This program checks if the bech32 table exists as indicator of past table upgrade which repeating would corrupt.
+#
+#   Overview:
 #       fix address table ids - 2 pass
 #       update addr_ids in output table to match - 2 pass
 #       update block_ids for new limit
 #       update outputs id for new limit
-#       add new bech32 table 
-#       scan blocks since 481,824 (testnet 834,624)(first segwit) and insert any missing addresses, update outputs 
+#       add new bech32 table
+#       scan blocks since 481,824 (testnet 834,624)(first segwit) and insert any missing addresses, update outputs
 #           (fixes missing bech32 and also pkh detection bug in v0.2.2)
 #
 
 import os, sys
 import MySQLdb as db
 
-from sqlchain.util import *
+from sqlchain.util import dotdict, loadcfg, savecfg, getBlobHdr, decodeVarInt, readBlob, insertAddress, decodeScriptPK, log
+from sqlchain.version import MAX_IO_TX, MAX_TX_BLK
 
 __builtins__.sqc = dotdict()  # container for super globals
 
@@ -45,7 +46,7 @@ if len(sys.argv) < 2:
     print "Suggest backing up db files first if space available, and then run detached like this:"
     print "\tsudo sqlchain-upgrade-db /etc/bitcoin/sqlchaind.cfg &>>upgrade.log & disown\n"
     sys.exit(0)
-   
+
 sqc.cfg = {}
 loadcfg(sqc.cfg)
 sqc.cfg['cointype'] = 'testnet' if sqc.cfg['testnet'] else 'bitcoin'
@@ -61,7 +62,7 @@ cur2 = sql2.cursor(db.cursors.SSCursor)
 cur.execute("show tables like 'bech32';") # test if old db version and skip upgrade steps if exists
 if cur.rowcount == 0:
     log("\nDo not interrupt these steps or ids will be corrupted.\n")
-    
+
     log("Updating address table - id, step 1/8. ")
     cur.execute("update address set id = if(id%2=0, (id/2)|0x40000000000, (id/2)|0x50000000000);")
 
@@ -70,13 +71,13 @@ if cur.rowcount == 0:
 
     log("Updating outputs table - addr_id, step 3/8.")
     cur.execute("update outputs set addr_id = if(addr_id%2=0, (addr_id/2)|0x40000000000, (addr_id/2)|0x50000000000);")
- 
+
     log("Updating outputs table - mask, step 4/8.")
     cur.execute("update outputs set addr_id = (addr_id & 0x1FFFFFFFFFF);")
-    
+
     log("Updating trxs table - expand txs/block, step 5/8.")
     cur.execute("update trxs set block_id = (block_id/10000*{0} + block_id%10000) where 1 order by block_id desc;".format(MAX_TX_BLK))
-    
+
     log("Updating outputs table - expand outputs/tx, step 6/8.")
     cur.execute("update outputs set id = (id/4096*{0} + id%4096)|0x10000000000000;".format(MAX_IO_TX))
 
@@ -111,9 +112,9 @@ while first_block <= blks:
         tx_n = oid % MAX_IO_TX
         hdr = getBlobHdr(txdata, sqc.cfg['path'])
         if ins >= 0xC0:
-            ins = ((ins&0x3F)<<8) + hdr[1] 
+            ins = ((ins&0x3F)<<8) + hdr[1]
         if outs >= 0xC0:
-            outs = ((outs&0x3F)<<8) + hdr[2] 
+            outs = ((outs&0x3F)<<8) + hdr[2]
         vpos = int(txdata) + hdr[0] + ins*7
         for n in range(ins):
             vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg)) if not hdr[7] else (0,0) # no-sigs flag
@@ -127,17 +128,14 @@ while first_block <= blks:
                     fixlist.append((addr_id,oid))
                 break
             vpos += off+vsz
-            
+
     log("CHK %02d: %d-%d, %d fixed." % (count,first_block,last_block,len(fixlist)))
     cur.executemany("update outputs set addr_id=%s where id=%s limit 1;", fixlist)
     first_block = last_block
     count += 1
-    
+
     with open('upgrade.state', 'w') as f:
         f.write('%d %d %d' % (count,first_block,chunksz))
-    
+
 log("Upgrade complete.")
 os.unlink('upgrade.state')
-
-
-
