@@ -89,7 +89,7 @@ def addr2id(addr, cur=None, rtnPKH=False):
     if not pkh:
         return None,'' if rtnPKH else None
     addr_id, = unpack('<q', hashlib.sha256(pkh).digest()[:5]+'\0'*3)
-    if addr[:2] == coincfg(BECH_HRP): # bech32 has bit 42 set, >20 byte, encode as odd id and stored in bech32 table
+    if addr[:2].lower() == coincfg(BECH_HRP): # bech32 has bit 42 set, >20 byte, encode as odd id and stored in bech32 table
         addr_id |= BECH32_FLAG
         if len(pkh) > 20:
             addr_id |= P2SH_FLAG
@@ -100,7 +100,7 @@ def addr2id(addr, cur=None, rtnPKH=False):
         cur.execute("select id from {0} where id>=%s and id<%s+32 and addr=%s limit 1;".format(tbl), (addr_id,addr_id,pkh))
         row = cur.fetchone()
         return row[0] if row else None
-    return addr_id,pkh if rtnPKH else addr_id
+    return (addr_id,pkh) if rtnPKH else addr_id
 
 # script support stuff
 def mkSPK(pkh, addr_id):
@@ -142,12 +142,12 @@ OpCodes = { '\x4F':'OP_1NEGATE', '\x61':'OP_NOP', '\x63':'OP_IF', '\x64':'OP_NOT
             '\xA5':'OP_WITHIN', '\xA6':'OP_RIPEMD160', '\xA7':'OP_SHA1', '\xA8':'OP_SHA256', '\xA9':'OP_HASH160', '\xAA':'OP_HASH256',
             '\xAB':'OP_CODESEPARATOR ', '\xAC':'OP_CHECKSIG', '\xAD':'OP_CHECKSIGVERIFY', '\xAE':'OP_CHECKMULTISIG', '\xAF':'OP_CHECKMULTISIGVERIFY',
             '\xFD':'OP_PUBKEYHASH', '\xFE':'OP_PUBKEY', '\xFF':'OP_INVALIDOPCODE', '\x50':'OP_RESERVED', '\x62':'OP_VER', '\x65':'OP_VERIF',
-            '\x66':'OP_VERNOTIF', '\x89':'OP_RESERVED1', '\x8A':'OP_RESERVED2' }
+            '\x66':'OP_VERNOTIF', '\x89':'OP_RESERVED1', '\x8A':'OP_RESERVED2', '\xB1':'OP_CHECKLOCKTIMEVERIFY', '\xB2':'OP_CHECKSEQUENCEVERIFY' }
 
 def mkOpCodeStr(data, sepOP=' ', sepPUSH='\n'):
     ops,pos = '',0
     while pos < len(data):
-        if data[pos] == 0:
+        if data[pos] == '\x00':
             ops += 'OP_0'+sepOP
         elif data[pos] <= '\x4C':
             sz, = unpack('<B', data[pos])
@@ -166,13 +166,13 @@ def mkOpCodeStr(data, sepOP=' ', sepPUSH='\n'):
             ops += data[pos+2:pos+2+sz].encode('hex')+sepPUSH
             pos += sz
         elif data[pos] >= '\x50' and data[pos] <= '\x60':
-            ops += 'OP_'+str(int(data[pos]))+sepOP
-        elif data[pos] >= '\xB0' and data[pos] <= '\xB9':
-            ops += 'OP_NOP'+str(int(data[pos])+1)+sepOP
+            ops += 'OP_'+str(int(ord(data[pos]))-0x50)+sepOP
+        elif data[pos] >= '\xB3' and data[pos] <= '\xB9':
+            ops += 'OP_NOP'+str(int(ord(data[pos])-0xB2)+1)+sepOP
         else:
             ops += OpCodes[data[pos]]+sepOP
         pos += 1
-    return ops
+    return ops[:-1]
 
 def decodeVarInt(v):
     if v[0] <= '\xfc':
