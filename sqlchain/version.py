@@ -23,6 +23,7 @@ def coincfg(IDX):
     return coin_cfg[sqc.cfg['cointype']][IDX]
 
 # addr id flags
+ADDR_ID_FLAGS = 0x70000000000
 P2SH_FLAG = 0x10000000000
 BECH32_FLAG = 0x20000000000
 BECH32_LONG = 0x30000000000
