@@ -24,7 +24,7 @@ class dotdict(dict):
 
 # address support stuff
 def is_address(addr):
-    if addr[:2] == coincfg(BECH_HRP):
+    if addr[:2].lower() == coincfg(BECH_HRP):
         return bech32decode(addr) != None
     try:
         n = 0
@@ -41,9 +41,9 @@ def mkpkh(pk):
     return rmd.digest()
 
 def addr2pkh(addr):
-    if addr[:2] == coincfg(BECH_HRP):
+    if addr[:2].lower() == coincfg(BECH_HRP):
         pkh = bech32decode(addr)
-        return pkh[2:] if pkh else None
+        return str(pkh[2:]) if pkh else None
     long_value = 0L
     for (i, c) in enumerate(addr[::-1]):
         long_value += b58.find(c) * (58**i)
@@ -240,10 +240,17 @@ def bech32encode(hrp, witprog, witver=0):
     return hrp + '1' + ''.join([BECH_CHARSET[d] for d in combined])
 
 def bech32decode(addr):
+    if (any(ord(x) < 33 or ord(x) > 126 for x in addr)) or (addr.lower() != addr and addr.upper() != addr):
+        return None
+    addr = addr.lower()
     pos = addr.rfind('1')
+    if pos < 1 or pos + 7 > len(addr) or len(addr) > 90:
+        return None
     data = [BECH_CHARSET.find(x) for x in addr[pos+1:]]
     keyhash = base2cvt(data[1:-6], 5, 8, False)
     witver = data[0]+0x50 if data[0] > 0 else 0
+    if len(keyhash) < 2 or len(keyhash) > 40 or witver > 96 or (witver==0 and not len(keyhash) in [20,32]):
+        return None
     return bytearray([witver,len(keyhash)] + keyhash) if bech32verify(addr[:pos], data) else None
 
 # sqlchain ids support stuff
