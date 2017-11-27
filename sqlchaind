@@ -65,7 +65,7 @@ def getBlocks(blk):
     return blk - startblk
 
 def getBlocksDirect(cur, blk):
-    blkscan = threading.Thread(target = BlkDatHandler, args=(True))
+    blkscan = threading.Thread(target = BlkDatHandler, args=(True,))
     blkscan.start()
     log("Using blkdat mode: %s" % sqc.cfg['blkdat'])
     while not sqc.done.isSet():
