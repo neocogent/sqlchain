@@ -1,7 +1,8 @@
 -- create new database after install
 -- need to do these as mysql root user
 
---CREATE USER IF NOT EXISTS 'sqluser'@'localhost' IDENTIFIED BY 'sqlpwd';
+--CREATE USER IF NOT EXISTS 'sqluser'@'localhost';
+--ALTER USER 'sqluser'@'localhost' IDENTIFIED BY 'sqlpwd';
 --GRANT ALL PRIVILEGES ON coindb.* TO 'sqluser'@'localhost';
 --FLUSH PRIVILEGES;
 
@@ -36,7 +37,7 @@ CREATE TABLE IF NOT EXISTS `trxs` (
   `ins` tinyint unsigned NOT NULL,
   `outs` tinyint unsigned NOT NULL,
   `txsize` smallint unsigned NOT NULL,
-  `txdata` decimal(13,0) DEFAULT NULL,
+  `txdata` decimal(13) DEFAULT NULL,
   `block_id` decimal(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `block` (`block_id`)
