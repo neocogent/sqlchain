@@ -64,22 +64,22 @@ if cur.rowcount == 0:
     log("\nDo not interrupt these steps or ids will be corrupted.\n")
 
     log("Updating address table - id, step 1/8. ")
-    cur.execute("update address set id = if(id%2=0, (id/2)|0x40000000000, (id/2)|0x50000000000);")
+    cur.execute("update address set id = if(id%2=0, (id div 2)|0x40000000000, (id div 2)|0x50000000000);")
 
     log("Updating address table - mask, step 2/8.")
     cur.execute("update address set id = (id & 0x1FFFFFFFFFF);")
 
     log("Updating outputs table - addr_id, step 3/8.")
-    cur.execute("update outputs set addr_id = if(addr_id%2=0, (addr_id/2)|0x40000000000, (addr_id/2)|0x50000000000);")
+    cur.execute("update outputs set addr_id = if(addr_id%2=0, (addr_id div 2)|0x40000000000, (addr_id div 2)|0x50000000000);")
 
     log("Updating outputs table - mask, step 4/8.")
     cur.execute("update outputs set addr_id = (addr_id & 0x1FFFFFFFFFF);")
 
     log("Updating trxs table - expand txs/block, step 5/8.")
-    cur.execute("update trxs set block_id = (block_id/10000*{0} + block_id%10000) where 1 order by block_id desc;".format(MAX_TX_BLK))
+    cur.execute("update trxs set block_id = (block_id div 10000*{0} + block_id%10000) where 1 order by block_id desc;".format(MAX_TX_BLK))
 
     log("Updating outputs table - expand outputs/tx, step 6/8.")
-    cur.execute("update outputs set id = (id/4096*{0} + id%4096)|0x10000000000000;".format(MAX_IO_TX))
+    cur.execute("update outputs set id = (id div 4096*{0} + id%4096)|0x10000000000000;".format(MAX_IO_TX))
 
     log("Updating outputs table - mask, step 7/8.")
     cur.execute("update outputs set id = id&0xFFFFFFFFFFFFF;")
@@ -107,7 +107,7 @@ log("\nStarting at %d, %d chunks of %d blocks:" % (first_block,101-count,chunksz
 while first_block <= blks:
     fixlist = []
     last_block = first_block + chunksz
-    cur2.execute("select o.id,t.txdata,t.ins,t.outs from trxs t left join outputs o on t.id=floor(o.id/%s) where o.addr_id=0 and t.block_id >= %s and t.block_id < %s;", (MAX_IO_TX, first_block*MAX_TX_BLK, last_block*MAX_TX_BLK))
+    cur2.execute("select o.id,t.txdata,t.ins,t.outs from trxs t left join outputs o on t.id=(o.id div %s) where o.addr_id=0 and t.block_id >= %s and t.block_id < %s;", (MAX_IO_TX, first_block*MAX_TX_BLK, last_block*MAX_TX_BLK))
     for oid,txdata,ins,outs in cur2:
         tx_n = oid % MAX_IO_TX
         hdr = getBlobHdr(txdata, sqc.cfg['path'])

@@ -6,11 +6,11 @@ import urlparse, json
 from string import hexdigits
 from struct import unpack
 
+from sqlchain.insight import apiHeader, apiTx, addrUTXOs
 from sqlchain.util import is_address, mkaddr, gethdr, addr2id, txh2id, is_BL32, readBlob, getBlobHdr
 from sqlchain.version import MAX_TX_BLK, MAX_IO_TX
-from sqlchain.insight import apiHeader, apiTx, addrUTXOs
 from sqlchain.rpc import do_RPC
-#from encodings import hex_codec
+
 
 def do_BCI(env, send_resp):
     args = env['PATH_INFO'].split('/')[2:]
@@ -131,7 +131,7 @@ def bciTxWS(cur, txhash): # reduced data for websocket subs
 def bciTx(cur, txhash):
     data = { 'hash':txhash }
     txh = txhash.decode('hex')[::-1]
-    cur.execute("select id,txdata,floor(block_id/{0}),ins,txsize from trxs where id>=%s and hash=%s limit 1;".format(MAX_TX_BLK), (txh2id(txh), txh))
+    cur.execute("select id,txdata,(block_id div {0}),ins,txsize from trxs where id>=%s and hash=%s limit 1;".format(MAX_TX_BLK), (txh2id(txh), txh))
     for txid,blob,blkid,ins,txsize in cur:
         hdr = getBlobHdr(int(blob), sqc.cfg)
         data['tx_index'] = int(txid)
@@ -163,7 +163,7 @@ def bciInputs(cur, blob, ins):
                 cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
                 for addr, in cur:
                     data.append({ 'prev_out':{ 'spent':True, 'type':0, 'n':in_id%MAX_IO_TX, 'value':int(value),
-                                  'tx_index':in_id/MAX_IO_TX, 'addr':mkaddr(addr,aid) }})
+                                  'tx_index':in_id//MAX_IO_TX, 'addr':mkaddr(addr,int(aid)) }})
     return data,ins
 
 def bciOutputs(cur, txid, blob):
@@ -173,7 +173,7 @@ def bciOutputs(cur, txid, blob):
     for in_id,n,value,aid in outs:
         cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
         for addr, in cur:
-            vout = { 'n':int(n), 'value':int(value), 'addr':mkaddr(addr,aid), 'type':0, 'tx_index':txid }
+            vout = { 'n':int(n), 'value':int(value), 'addr':mkaddr(addr,int(aid)), 'type':0, 'tx_index':txid }
             if in_id:
                 vout['spent'] = True
             data.append(vout)
