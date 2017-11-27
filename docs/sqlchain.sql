@@ -1,8 +1,8 @@
 -- create new database after install
 -- need to do these as mysql root user
 
-----CREATE USER 'sqluser'@'localhost' IDENTIFIED BY 'sqlpwd';
---GRANT ALL PRIVILEGES ON coindb.* TO 'sqluser'@'localhost' IDENTIFIED BY 'sqlpwd';
+--CREATE USER IF NOT EXISTS 'sqluser'@'localhost' IDENTIFIED BY 'sqlpwd';
+--GRANT ALL PRIVILEGES ON coindb.* TO 'sqluser'@'localhost';
 --FLUSH PRIVILEGES;
 
 -- disabled for safety
