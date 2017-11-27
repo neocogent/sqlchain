@@ -32,7 +32,7 @@ def is_address(addr):
             n = n * 58 + b58.index(c)
         btc = ('%%0%dx' % (25 << 1) % n).decode('hex')[-25:]
         return btc[-4:] == hashlib.sha256(hashlib.sha256(btc[:-4]).digest()).digest()[:4]
-    except Exception:
+    except Exception: # pylint:disable=broad-except
         return False
 
 def mkpkh(pk):
@@ -514,7 +514,7 @@ class rpcPool(object): # pylint:disable=too-few-public-methods
             except JSONRPCException as e:
                 if e.code == -5:
                     return None
-            except Exception as e:
+            except Exception as e: # pylint:disable=broad-except
                 log( 'RPC Error ' + str(e) + ' (retrying)' )
                 print "===>", name, args
                 rpc_obj = AuthServiceProxy(self.url, None, self.timeout, None) # maybe broken, make new connection

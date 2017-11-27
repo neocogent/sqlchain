@@ -3,12 +3,49 @@
 #   sqlchain.utils - unit test module
 #
 
+import os, sys
+from struct import unpack
+
+try:
+    import MySQLdb as db
+except ImportError:
+    print "Cannot run database tests without MySQLdb module"
+    
+import pytest   
+ 
 from sqlchain.version import ADDR_ID_FLAGS, P2SH_FLAG, BECH32_FLAG, BECH32_LONG
 from sqlchain.util import dotdict, is_address, addr2pkh, mkaddr, addr2id, decodeScriptPK, mkOpCodeStr, decodeVarInt, encodeVarInt
+from sqlchain.util import txh2id, insertAddress, findTx
 
 __builtins__['sqc'] = dotdict()  # container for super globals
-
 sqc.cfg = { 'cointype':'bitcoin' }
+
+# memory based test db with same schema
+# remains after test run for inspection, cleared at start of each run
+# does not survive mysql restart or os reboot
+@pytest.fixture(scope="module")
+def testdb(request):
+    if 'MySQLdb' not in sys.modules:
+        print "No test db available"
+        return None
+    sql = db.connect('localhost','root','root','')
+    cur = sql.cursor()
+    cur.execute("set sql_notes=0;")
+    cur.execute("show databases like 'unittest';")
+    if cur.rowcount > 0:
+        print "\nClearing test db"
+        cur.execute("drop database unittest;")
+    sqlsrc = open('docs/sqlchain.sql').read()
+    sqlcode = ''
+    for k,v in [('MyISAM','Memory'),('--CREATE','CREATE'),('--GRANT','GRANT'),('--FLUSH','FLUSH'),('coindb','unittest'),('sqlpwd','fakepwd'),('sqluser','test')]:
+        sqlsrc = sqlsrc.replace(k, v)
+    for line in sqlsrc.splitlines():
+        if line != '' and line[:2] != '--':
+            sqlcode += line
+    for stmnt in sqlcode.split(';'):
+        if stmnt:
+            cur.execute(stmnt)
+    return cur
 
 def test_is_address():
     #p2pkh
@@ -180,5 +217,34 @@ def test_VarInt():
         for N in grp:
             assert decodeVarInt(encodeVarInt(N)) == ( N,L )
 
-
-
+def test_insertAddress(testdb, monkeypatch):
+    addrs = [ '1FomKJy8btcmuyKBFXeZmje94ibnQxfDEf','1EWpTBe9rE27NT9boqg8Zsc643bCFCEdbh','1MBxxUgVF27trqqBMnoz8Rr7QATEoz1u2Y',
+              '1EWpTBe9rE27NT9b1qg8Zsc643bCFCEdbh','3EWpTBe9rE27NT9boqg8Zsc643bCFCEdbh','3De5zB9JKmwU4zP85EEazYS3MEDVXSmvvm',
+              '3MixsgkBB8NBQe5GAxEj4eGx5YPxvbaSk9','3HQR7C1Ag53BoaxKDeaA97wTh9bpGuUpgg','2MixsgkBB8NBQe5GAxEj4eGx5YPxvbaSk9',
+              'bc1q5lz8xffjt4azkzm4hled45qpgcu46thhl6j7vm','bc1q0yrdw9t2pyev94jfeyq9mm4a0smfdswfweht6t',
+              '1EWpTBe9rE27NT9boqg8Zsc643bCFCEdbh', # duplicate, should not add row
+              'bc1q5gp20lfuhz2avvqwau6sgwmakrp5r2qv66x56rfr9t30halv4vfs283f6e' ] # bech32 table, should not add row
+             
+    def fake_id(addr, cur=None, rtnPKH=False): # forces collisions by always returning same id
+        x = monkeypatch._setattr[0][2](addr, cur, rtnPKH)
+        return ((x[0]&ADDR_ID_FLAGS)|123456,x[1]) if isinstance(x, tuple) else (x&ADDR_ID_FLAGS)|123456 # keep flags
+    monkeypatch.setattr("sqlchain.util.addr2id", fake_id)
+    
+    for addr in addrs:
+        insertAddress(testdb, addr)
+    testdb.execute("select count(1) from address where id !=0;")
+    assert testdb.fetchone()[0] == 11 # 13 minus 2 addresses not inserted 
+    
+def test_findTx(testdb):
+    trxs = []
+    tx1 = bytearray(os.urandom(32))
+    for x in range(16):
+        tx1[-1] = chr((int(tx1[-1])+x)&0xFF) # use sequential tx hashes to test collisions
+        tid,new = findTx(testdb, tx1, True)
+        testdb.execute("insert ignore into trxs (id,hash,ins,outs,txsize) values (%s,%s,0,0,0);", (tid,tx1))
+        trxs.append(tid)
+    assert len(set(trxs)) == len(trxs) # all ids should be unique
+    
+    for x in range(1000):
+        tx1 = os.urandom(32)
+        assert txh2id(tx1) == unpack('<q', tx1[:5]+'\0'*3)[0] >> 3 # test 1000 randoms hashes match, just for heck of it
