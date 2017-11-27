@@ -16,7 +16,7 @@ CAN_BLKDAT = 7
 
 coin_setup = {
     'bitcoin': [ 'bitcoin',  '',         'bitcoind',  'btc', 8332,  8085,  True, True ],
-    'testnet': [ 'testnet',  'testnet3', 'bitcoind',  'btc', 18332, 18085, True, True ],
+    'testnet': [ 'bitcoin',  'testnet3', 'bitcoind',  'btc', 18332, 18085, True, True ],
     'litecoin':[ 'litecoin', '',         'litecoind', 'ltc', 10332, 8086,  False,False ]
 }
 def coin_var(IDX):
@@ -44,10 +44,10 @@ go = raw_input( "Continue [Y]/N:" ) or 'Y'
 if go.upper() != 'Y':
     sys.exit(0)
 
-print """\nsqlchaind can support several coin types / blockchains.\nCurrent options are: %s.\n""" % ','.join(coin_setup.keys())
-cointype = raw_input( "Enter cointype / blockchain to use [bitcoin]:" ) or 'bitcoin'
+print """\nsqlchaind can support several coin types / blockchains.\n\nCurrent options are: %s.\n""" % ', '.join(coin_setup.keys())
+cointype = raw_input( "Enter cointype (blockchain) to use [bitcoin]:" ) or 'bitcoin'
 
-coindir = raw_input( "\nEnter the %s data directory [/var/data/%s]:" % (cointype,cointype)) or "/var/data/"+cointype
+coindir = raw_input( "\nEnter the %s data directory [/var/data/%s]:" % (cointype,coin_var(DATA_DIR))) or "/var/data/"+coin_var(DATA_DIR)
 coinboot = raw_input( "Start %s at system boot Y/N/[No Change]:" % coin_var(DAEMON_BIN) ) or '#'
 coinuser = raw_input( "User to run %s and sqlchain daemons (will create if not existing) [%s]:" % (coin_var(DAEMON_BIN),coin_var(DEF_COIN_USER))) or coin_var(DEF_COIN_USER)
 coinrpc = raw_input( "Use existing RPC user/pwd? [Y]/N:" ) or 'Y'
@@ -134,6 +134,7 @@ elif not os.path.exists(wwwdir):
         for f in files:
             shutil.copy2(os.path.join(root, f), os.path.join(wwwdir+dst, f))
             os.chown(os.path.join(wwwdir+dst, f), pwd.pw_uid, pwd.pw_gid)
+    shutil.copy2(os.path.join(root, 'demo-%s.html' % cointype), os.path.join(wwwdir, 'main.html'))
 
 ### Create empty data files and set ownership
 for f in ['/blobs.0.dat','/hdrs.dat']:
@@ -149,7 +150,7 @@ print "Creating MySQL database:", dbname
 try:
     sqlsrc = open('docs/sqlchain.sql').read()
     sqlcode = ''
-    for k,v in [('--CREATE','CREATE'),('--GRANT','GRANT'),('--FLUSH','FLUSH'),('coindb',dbname),('sqlpwd',dbpwd),('sqluser',dbuser)]:
+    for k,v in [('--CREATE','CREATE'),('--GRANT','GRANT'),('--ALTER','ALTER'),('--FLUSH','FLUSH'),('coindb',dbname),('sqlpwd',dbpwd),('sqluser',dbuser)]:
         sqlsrc = sqlsrc.replace(k, v)
     for line in sqlsrc.splitlines():
         if line != '' and line[:2] != '--':
@@ -185,7 +186,7 @@ if dist == "Ubuntu" and release == "14.04":  # create upstart init files
     if not os.path.exists(coinbin):
         coinbin = '/usr/bin/'+coin_var(DAEMON_BIN)
     if coinboot != '#':
-        initfile = '/etc/init/%s.conf' % cointype
+        initfile = '/etc/init/%s.conf' % coin_var(DATA_DIR)
         print "Creating upstart init file: %s" % initfile
         with open(initfile, 'w') as f:
             s = "exec start-stop-daemon --start --pidfile %s/%s.pid --chuid %s: --exec %s -- -conf=%s/%s.conf -datadir=%s\n" % (sqldir,coin_var(DAEMON_BIN),coinuser,coinbin,cfgdir,cointype,coindir)
@@ -226,7 +227,7 @@ else:   # create systemd init files
     if not os.path.exists(coinbin):
         coinbin = '/usr/bin/'+coin_var(DAEMON_BIN)
     if coinboot != '#':
-        initfile = '/lib/systemd/system/%s.service' % cointype
+        initfile = '/lib/systemd/system/%s.service' % coin_var(DATA_DIR)
         print "Creating systemd init file: %s" % initfile
         with open(initfile, 'w') as f:
             s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%s.pid --chuid %s:%s --exec %s -- -conf=%s/%s.conf -datadir=%s\n" % (sqldir,coin_var(DAEMON_BIN),coinuser,coinuser,coinbin,cfgdir,cointype,coindir)
@@ -267,6 +268,8 @@ if coinrpc.upper() != 'Y':
     cfgcoin.update({'rpcuser':coinrpc, 'rpcpassword':coinpwd })
 elif 'rpcuser' not in cfgcoin:
     cfgcoin.update({'rpcuser':'%s' % coin_var(DEF_COIN_USER), 'rpcpassword':coinpwd })
+if cointype == 'testnet':
+    cfgcoin.update({'testnet':1 })
 
 with open(cfgdir+'/%s.conf' % cointype, 'w') as f:
     for k in cfgcoin:
@@ -359,6 +362,6 @@ if not nginx in ['n','N','/','none']:
     if not os.path.exists(nginx_path):
         print "Creating directory:", nginx_path
         os.makedirs(nginx_path)
-        print "Creating nginx reverse proxy config:", nginx
-        with open(nginx, 'w') as f:
-            f.write(nginxconf % (apidomain,sslpath,sslpath,apicfg['listen']))
+    print "Creating nginx reverse proxy config:", nginx
+    with open(nginx, 'w') as f:
+        f.write(nginxconf % (apidomain,sslpath,sslpath,apicfg['listen']))
