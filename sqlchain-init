@@ -187,26 +187,35 @@ kill timeout 60
         coinbin = '/usr/bin/'+coin_var(DAEMON_BIN)
     if coinboot != '#':
         initfile = '/etc/init/%s.conf' % cointype
-        print "Creating upstart init file: %s" % initfile
-        with open(initfile, 'w') as f:
-            s = "exec start-stop-daemon --start --pidfile %s/%s.pid --chuid %s: --exec %s -- -conf=%s/%s.conf -datadir=%s\n" % (sqldir,coin_var(DAEMON_BIN),coinuser,coinbin,cfgdir,cointype,coindir)
-            f.write(initsrc+s)
+        try:
+            os.utime(initfile, None)
+        except OSError:
+            print "Creating upstart init file: %s" % initfile
+            with open(initfile, 'w') as f:
+                s = "exec start-stop-daemon --start --pidfile %s/%s.pid --chuid %s: --exec %s -- -conf=%s/%s.conf -datadir=%s\n" % (sqldir,coin_var(DAEMON_BIN),coinuser,coinbin,cfgdir,cointype,coindir)
+                f.write(initsrc+s)
         if coinboot.upper() != 'Y':
             open('/etc/init/%s.override' % cointype, 'a').close()
     if sqlboot != '#':
         initfile = '/etc/init/sqlchain.%s.conf' % cointype
-        print "Creating upstart init file: %s" % initfile
-        with open(initfile, 'w') as f:
-            s = "exec start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchain.%s.cfg\n" % (sqldir,cfgdir,cointype)
-            f.write(initsrc.replace('expect fork','')+s)
+        try:
+            os.utime(initfile, None)
+        except OSError:
+            print "Creating upstart init file: %s" % initfile
+            with open(initfile, 'w') as f:
+                s = "exec start-stop-daemon --start --pidfile %s/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchain.%s.cfg\n" % (sqldir,cfgdir,cointype)
+                f.write(initsrc.replace('expect fork','')+s)
         if sqlboot.upper() != 'Y':
             open('/etc/init/sqlchain.%s.override' % cointype, 'a').close()
     if apiboot != '#':
         initfile = '/etc/init/sqlchain-api.%s.conf' % cointype
-        print "Creating upstart init file: %s" % initfile
-        with open(initfile, 'w') as f:
-            s = "exec start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.%s.cfg\n" % (sqldir,cfgdir,cointype)
-            f.write(initsrc.replace('expect fork','')+s)
+        try:
+            os.utime(initfile, None)
+        except OSError:
+            print "Creating upstart init file: %s" % initfile
+            with open(initfile, 'w') as f:
+                s = "exec start-stop-daemon --start --pidfile %s/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.%s.cfg\n" % (sqldir,cfgdir,cointype)
+                f.write(initsrc.replace('expect fork','')+s)
         if apiboot.upper() != 'Y':
             open('/etc/init/sqlchain-api.%s.override' % cointype, 'a').close()
 
@@ -223,32 +232,41 @@ TimeoutStopSec=2min
 [Install]
 WantedBy=multi-user.target
 
-""" 
+"""
     coinbin = '/usr/local/bin/'+coin_var(DAEMON_BIN)
     if not os.path.exists(coinbin):
         coinbin = '/usr/bin/'+coin_var(DAEMON_BIN)
     if coinboot != '#':
         initfile = '/lib/systemd/system/%s.service'  % cointype
-        print "Creating systemd init file: %s" % initfile
-        with open(initfile, 'w') as f:
-            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%s.pid --chuid %s:%s --exec %s -- -conf=%s/%s.conf -datadir=%s\n" % (sqldir,coin_var(DAEMON_BIN),coinuser,coinuser,coinbin,cfgdir,cointype,coindir)
-            f.write(initsrc.replace('ExecStart',s))
+        try:
+            os.utime(initfile, None)
+        except OSError:
+            print "Creating systemd init file: %s" % initfile
+            with open(initfile, 'w') as f:
+                s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%s.pid --chuid %s:%s --exec %s -- -conf=%s/%s.conf -datadir=%s\n" % (sqldir,coin_var(DAEMON_BIN),coinuser,coinuser,coinbin,cfgdir,cointype,coindir)
+                f.write(initsrc.replace('ExecStart',s))
         if coinboot.upper() == 'Y':
             os.symlink('../%s.service' % cointype, '/lib/systemd/system/multi-user.target.wants/%s.service' % cointype)
     if sqlboot != '#':
         initfile = '/lib/systemd/system/sqlchain@.service'
-        print "Creating systemd init file: %s" % initfile
-        with open(initfile, 'w') as f:
-            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchain.%%i.cfg\n" % (sqldir,cfgdir)
-            f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
+        try:
+            os.utime(initfile, None)
+        except OSError:
+            print "Creating systemd init file: %s" % initfile
+            with open(initfile, 'w') as f:
+                s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchain.%%i.cfg\n" % (sqldir,cfgdir)
+                f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
         if coinboot.upper() == 'Y':
             os.symlink('../sqlchain@.service', '/lib/systemd/system/multi-user.target.wants/sqlchain@%s.service' % cointype)
     if apiboot != '#':
         initfile = '/lib/systemd/system/sqlchain-api@.service'
-        print "Creating systemd init file: %s" % initfile
-        with open(initfile, 'w') as f:
-            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.%%i.cfg\n" % (sqldir,cfgdir)
-            f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
+        try:
+            os.utime(initfile, None)
+        except OSError:
+            print "Creating systemd init file: %s" % initfile
+            with open(initfile, 'w') as f:
+                s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.%%i.cfg\n" % (sqldir,cfgdir)
+                f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
         if coinboot.upper() == 'Y':
             os.symlink('../sqlchain-api@.service', '/lib/systemd/system/multi-user.target.wants/sqlchain-api@%s.service' % cointype)
 
@@ -363,6 +381,9 @@ if not nginx in ['n','N','/','none']:
     if not os.path.exists(nginx_path):
         print "Creating directory:", nginx_path
         os.makedirs(nginx_path)
-    print "Creating nginx reverse proxy config:", nginx
-    with open(nginx, 'w') as f:
-        f.write(nginxconf % (apidomain,sslpath,sslpath,apicfg['listen']))
+    try:
+        os.utime(nginx, None)
+    except OSError:
+        print "Creating nginx reverse proxy config:", nginx
+        with open(nginx, 'w') as f:
+            f.write(nginxconf % (apidomain,sslpath,sslpath,apicfg['listen']))
