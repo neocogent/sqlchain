@@ -4,15 +4,14 @@
 #
 from Queue import Queue, Empty
 from datetime import datetime
-from struct import pack, unpack, unpack_from
-from hashlib import sha256
+from struct import pack, unpack
 
 import os, sys, socket, getopt, time, signal, threading, daemon
 import MySQLdb as db
 
-from sqlchain.version import version, coincfg, BLKDAT_NEAR_SYNC, BLKDAT_MAGIC, MAX_IO_TX, MAX_TX_BLK
+from sqlchain.version import version, cointype_override, coincfg, BLKDAT_NEAR_SYNC, BLKDAT_MAGIC, MAX_IO_TX, MAX_TX_BLK
 from sqlchain.util import dotdict, loadcfg, savecfg, drop2user, rpcPool, log, logts
-from sqlchain.util import decodeVarInt, encodeVarInt, decodeScriptPK, findTx, insertAddress, mkBlobHdr, insertBlob, puthdr, gethdr
+from sqlchain.util import encodeVarInt, decodeBlock, decodeTx, findTx, insertAddress, mkBlobHdr, insertBlob, puthdr, gethdr
 from sqlchain.blkdat import BlkDatHandler
 
 __builtins__.sqc = dotdict()  # container for super globals
@@ -35,7 +34,7 @@ def getBlocks(blk):
         blk = int(cur.fetchone()[0] + 1)
     startblk = blk
     blkinfo = sqc.rpc.getblockchaininfo()
-    sqc.bestblk = blkinfo['headers']
+    sqc.bestblk = blkinfo['headers'] if 'headers' in blkinfo else 0
     if 'blkdat' in sqc.cfg and (sqc.bestblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
     if not sqc.done.isSet():
@@ -52,7 +51,7 @@ def getBlocks(blk):
             poll_delay *= 2
             continue
         poll_delay = 0.05
-        if blkinfo['pruned']:
+        if 'pruned' in blkinfo and blkinfo['pruned']:
             chkPruning(blk - blockQ.qsize())
         rpcstart = time.time()
         blkhash = sqc.rpc.getblockhash(blk)
@@ -163,73 +162,6 @@ def addOrphan(cur, height):
     cur.execute("select hash,coinbase from blocks where id=%s limit 1;", (height,))
     for blkhash,coinbase in cur:
         cur.execute("insert into orphans (sync_id,block_id,hash,hdr,coinbase) values(%s,%s,%s,%s,%s);", (sync_id,height,blkhash,hdr,coinbase))
-
-def decodeBlock(data):
-    hdr = ['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
-    hv = unpack_from('<I32s32s3I', data)
-    block = dict(zip(hdr,hv))
-    block['hdr'] = data[:80]
-    block['hash'] = sha256(sha256(block['hdr']).digest()).digest()
-    block['bits'] = '%08x' % block['bits']
-    txcnt,off = decodeVarInt(data[80:89])
-    off += 80
-    block['tx'] = []
-    while txcnt > 0:
-        tx = decodeTx(data[off:])
-        block['tx'].append(tx)
-        off += tx['size']
-        txcnt -= 1
-    block['height'] = 0
-    block['coinbase'] = block['tx'][0]['vin'][0]['coinbase']
-    if block['version'] > 1 and block['height'] >= 227836 and block['coinbase'][0] == '\x03':
-        block['height'] = unpack('<I', block['coinbase'][1:4]+'\0')[0]
-    return block
-
-def decodeTx(data): # pylint:disable=too-many-locals
-    vers, = unpack_from('<I', data)
-    tx = { 'version': vers, 'vin':[], 'vout':[] }
-    tx['segwit'] = ( data[4:6] == '\0\1' )
-    off = 6 if tx['segwit'] else 4
-    vicnt,ioff = decodeVarInt(data[off:off+9])
-    off += ioff
-    wcnt = vicnt
-    while vicnt > 0:
-        txid,vout = unpack_from('<32sI', data, off)
-        sigsz,soff = decodeVarInt(data[off+36:off+36+9])
-        off += soff+36
-        seq, = unpack_from('<I', data, off+sigsz)
-        if txid == '\0'*32 and vout == 0xffffffff:
-            tx['vin'].append({'coinbase':data[off:off+sigsz], 'sequence':seq })
-        else:
-            tx['vin'].append({'txid':txid, 'vout':vout, 'scriptSig':data[off:off+sigsz], 'sequence':seq })
-        off += sigsz+4
-        vicnt -= 1
-    vocnt,voff = decodeVarInt(data[off:off+9])
-    off += voff
-    n = 0
-    while n < vocnt:
-        value, = unpack_from('<Q', data, off)
-        pksz,soff = decodeVarInt(data[off+8:off+8+9])
-        off += 8+soff
-        tx['vout'].append({'value':value, 'n':n, 'scriptPubKey':decodeScriptPK( data[off:off+pksz] ) })
-        off += pksz
-        n += 1
-    if tx['segwit']:
-        woff = off
-        while wcnt > 0:
-            scnt,soff = decodeVarInt(data[off:off+9])
-            off += soff
-            while scnt > 0:
-                icnt,ioff = decodeVarInt(data[off:off+9])
-                off += icnt+ioff
-                scnt -= 1
-            wcnt -= 1
-        tx['witness'] = data[woff:off]
-        tx['txid'] = sha256(sha256(data[:4]+data[6:woff]+data[off:off+4]).digest()).digest()
-    tx['locktime'], = unpack_from('<I', data, off)
-    tx['size'] = off+4
-    tx['wtxid' if tx['segwit'] else 'txid'] = sha256(sha256(data[:tx['size']]).digest()).digest()
-    return tx
 
 def checkReOrg(cur, data):
     if data['height'] == 0:
@@ -387,6 +319,8 @@ def sighup_handler(_signo, _stack_frame):
 def run():
     sqc.done = threading.Event()
     sqc.flush = threading.Event()
+
+    cointype_override()
 
     blkwrk = threading.Thread(target = BlockHandler)
     blkwrk.start()
