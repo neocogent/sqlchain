@@ -14,27 +14,26 @@
 - **sqlchain-api**          - provides multiple API interfaces over the mysql database
 - **sqlchain-electrum**     - runs a private electrum server over the sqlchain-api layer
 
-#### Recent Updates
+#### Recent Updates (v0.2.5)
 
 Added **bech32** address support (p2wpkh and p2sh). This requires a database upgrade and **sqlchain-upgrade-db** has been provided for this. sqlchaind will detect and stop on old version databases. The upgrade takes quite some time and if you cannot wait then revert your version (< 0.2.5). The upgrade re-encodes how address ids are stored and expands tx/block and outputs/tx limits to better deal with segwit increases. Finally, the part which takes the longest (but can be killed/restarted) is retro-fixing any past bech32 tx outputs that were ignored. If you have the space you may be better off syncing a new db and then quick-switching it in rather than taking a live db down to do the upgrade. It's also probably safer in case of an upgrade bug.
 
-Added support for multiple blockchains and generalized testnet to be handled in this context. Currently Litecoin has been added with a demo page and I hope to add a few more before long. Each coin requires it's own daemon process but sqlchain-init has been upgraded to use systemd instances so that several can coexist.
+Added support for multiple blockchains and generalized testnet to be handled in this context. Currently Litecoin has been added with a demo page and I hope to add a few more before long. Each coin requires it's own daemon process but sqlchain-init has been upgraded to use systemd instances so that several can coexist. This means the systemctl commands are now like `systemctl start sqlchain@bitcoin`, and similarly for other coins. There is only one sqlchain@.service and it creates variant instances for each coin. Upstart (Ubuntu 14.04) support has been removed - it probably works fine but the setup process now supports Ubuntu 16.04 (systemd) and newer platforms.
 
-Testnet and first partial SegWit support added. Still testing but should be ignored except on testnet where segwit txs exist. Currently decodes and stores witness data but the API doesn't yet return segwit status or witness data. That will come.
+#### Supported Features (with more tested history)
 
-Pruning mode now supported with bitcoind >= 0.14.1 with manual pruning mode. This allows deleting block files as they are processed by sqlchain and cuts down on total disk usage by about 50%. Most of the "witness" data is stored in the sqlchain blob file(s). 
+- testnet and segwit - decodes and stores witness data but not much of an segwit api yet
+- pruning - since block data is parsing into mysql you can remove old blocks and save ~50% disk space with no loss in api 
+- no-sig option - can drop signature and witness data to further reduce disk space for uses not requiring historic proofs
+- external blobs - most signature, witness and script data is offloaded to blobs exteral to mysql, giving finer control (losing indexibility)
+- split blobs, s3 ready -  blobs are split in 5GB chunks, allows mapping older tx data to cheaper offline storage like Amazon s3
+- blkdat mode - direct reading of bitcoind block files allows much faster initial sync as sqlchain can read while bitcoind is syncing
+- blkbtc - utility to block on/off node network traffic to allow more cpu for sqlchain to catch up
+- sqlchain-init - utility to ask install questions and generate optimal config files for easy setup
 
-Split blobs are now supported by default allowing more flexible locations - you can put recent blobs on SSD and older ones on slower disks or even Amazon S3. You can move a blob and replace with a symlink (but probably should only do that when sqlchain stopped).
+sqlchain is still *Alpha level* software under sporadic active development (not ready for prime time). 
 
-Direct block file mode allows processing blocks even when bitcoind is syncing. This would otherwise be difficult due to how syncing impedes RPC call usage. 
-
-The **blkbtc** utility blocks bitcoin network traffic. This allows sqlchain to catch up while pruning block files thereby cutting down on transient storage needs (and sqlchain can also use more cpu resources).
-
-Improved sync speed with another thread to handle output inserts/updates. These can happen "out of band" with the blocks/txs as long as in order. My testing on a "hybrid" 2 Core (8GB, SSD) server showed about double the tx/s conversion rate. 
-
-Added sqlchain-init and installation guide (INSTALL.md) to help users get up and running. I've tested some more on Amazon EC2 and now also on a regular VPS account, and on a few [Vultr](http://www.vultr.com/?ref=7087266) instances. So it's starting to get some workout and more bugs fixed.  
-
-sqlChain is still *Alpha level* software under sporadic active development (not ready for prime time). For this reason the IRC peer discovery for public Electrum servers is not yet implemented, and wont be until enough testing has been completed.
+sqlchain-electrum has not receivedd much love over the last 2 years but I do plan to get it caught up and functioning again.
 
 #### Try It Out
 
@@ -42,9 +41,12 @@ You can try it on Testnet and it doesn't take much time or resources. Even a 1vC
 
 #### TODO
 
+- extend to support more altcoins
+- improve the included demo pages
 - more testing on Electrum server and testnet operation  
 - look further into pruning spent outputs (most of blob.dat) for a wallet api with even lower storage needs
-- add segwit specific API data
+- add segwit specific API data 
+
 
 
 
