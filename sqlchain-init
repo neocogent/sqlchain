@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import os, sys, signal, pwd, random, string, shutil, json, platform
+import os, sys, signal, pwd, random, string, shutil, json
 import MySQLdb as db
 
 #from sqlchain.version import *
@@ -148,9 +148,12 @@ for f in ['/blobs.0.dat','/hdrs.dat']:
         os.chown(sqldir+f, pwd.pw_uid, pwd.pw_gid)
 
 ### Create MySql database and tables
+sqldef = 'docs/%s.sql' % cointype
+if not os.path.exists(sqldef):
+    sqldef = 'docs/sqlchain.sql'
 print "Creating MySQL database:", dbname
 try:
-    sqlsrc = open('docs/sqlchain.sql').read()
+    sqlsrc = open(sqldef).read()
     sqlcode = ''
     for k,v in [('--CREATE','CREATE'),('--GRANT','GRANT'),('--ALTER','ALTER'),('--FLUSH','FLUSH'),('coindb',dbname),('sqlpwd',dbpwd),('sqluser',dbuser)]:
         sqlsrc = sqlsrc.replace(k, v)
