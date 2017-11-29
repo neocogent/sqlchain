@@ -17,7 +17,8 @@ CAN_BLKDAT = 7
 coin_setup = {
     'bitcoin': [ 'bitcoin',  '',         'bitcoind',  'btc', 8332,  8085,  True, True ],
     'testnet': [ 'bitcoin',  'testnet3', 'bitcoind',  'btc', 18332, 18085, True, True ],
-    'litecoin':[ 'litecoin', '',         'litecoind', 'ltc', 10332, 8086,  True, False ]
+    'litecoin':[ 'litecoin', '',         'litecoind', 'ltc', 10332, 8086,  True, False ],
+    'reddcoin':[ 'reddcoin', '',         'reddcoind', 'rdd', 45443, 8087,  False, False ]
 }
 def coin_var(IDX):
     return coin_setup[cointype][IDX]
@@ -44,7 +45,7 @@ go = raw_input( "Continue [Y]/N:" ) or 'Y'
 if go.upper() != 'Y':
     sys.exit(0)
 
-print """\nsqlchaind can support several coin types / blockchains.\n\nCurrent options are: %s.\n""" % ', '.join(coin_setup.keys())
+print """\nsqlchaind can support several coin types / blockchains.\n\nCurrent options are: %s.\n""" % ', '.join(coin_setup.keys()[::-1])
 cointype = raw_input( "Enter cointype (blockchain) to use [bitcoin]:" ) or 'bitcoin'
 
 coindir = raw_input( "\nEnter the %s data directory [/var/data/%s]:" % (cointype,coin_var(DATA_DIR))) or "/var/data/"+coin_var(DATA_DIR)
@@ -126,6 +127,7 @@ elif not os.path.exists(wwwdir):
     print "Creating directory:", wwwdir
     os.makedirs(wwwdir)
     os.chown(wwwdir, pwd.pw_uid, pwd.pw_gid)
+    print "Copying demo web app files."
     for root, dirs, files in os.walk('www'):
         dst = root[root.index('/'):] if '/'  in root else '/'
         for d in dirs:
@@ -134,7 +136,7 @@ elif not os.path.exists(wwwdir):
         for f in files:
             shutil.copy2(os.path.join(root, f), os.path.join(wwwdir+dst, f))
             os.chown(os.path.join(wwwdir+dst, f), pwd.pw_uid, pwd.pw_gid)
-    shutil.copy2(os.path.join(root, 'demo-%s.html' % cointype), os.path.join(wwwdir, 'main.html'))
+    shutil.copy2(os.path.join('www', 'demo-%s.html' % cointype), os.path.join(wwwdir, 'main.html'))
 
 ### Create empty data files and set ownership
 for f in ['/blobs.0.dat','/hdrs.dat']:
@@ -186,7 +188,7 @@ coinbin = '/usr/local/bin/'+coin_var(DAEMON_BIN)
 if not os.path.exists(coinbin):
     coinbin = '/usr/bin/'+coin_var(DAEMON_BIN)
 if coinboot != '#':
-    initfile = '/lib/systemd/system/%s.service'  % cointype
+    initfile = '/lib/systemd/system/%s.service' % cointype
     try:
         os.utime(initfile, None)
     except OSError:
