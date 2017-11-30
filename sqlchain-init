@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os, sys, signal, pwd, random, string, shutil, json
+from getpass import getpass
 import MySQLdb as db
 
 #from sqlchain.version import *
@@ -22,6 +23,7 @@ coin_setup = {
 }
 def coin_var(IDX):
     return coin_setup[cointype][IDX]
+cointype = ''
 
 def sigterm_handler(_signo, _stack_frame):
     print "\nClean shutdown"
@@ -45,8 +47,9 @@ go = raw_input( "Continue [Y]/N:" ) or 'Y'
 if go.upper() != 'Y':
     sys.exit(0)
 
-print """\nsqlchaind can support several coin types / blockchains.\n\nCurrent options are: %s.\n""" % ', '.join(coin_setup.keys()[::-1])
-cointype = raw_input( "Enter cointype (blockchain) to use [bitcoin]:" ) or 'bitcoin'
+while cointype not in coin_setup.keys():
+    print """\nsqlchaind can support several coin types / blockchains.\n\nCurrent options are: %s.\n""" % ', '.join(coin_setup.keys()[::-1])
+    cointype = raw_input( "Enter cointype (blockchain) to use [bitcoin]:" ) or 'bitcoin'
 
 coindir = raw_input( "\nEnter the %s data directory [/var/data/%s]:" % (cointype,coin_var(DATA_DIR))) or "/var/data/"+coin_var(DATA_DIR)
 coinboot = raw_input( "Start %s at system boot Y/N/[No Change]:" % coin_var(DAEMON_BIN) ) or '#'
@@ -89,7 +92,7 @@ if not nginx in ['n','N','/','none']:
 dbname = raw_input( "\nMySQL database name [%s]:" % cointype ) or cointype
 dbuser = raw_input( "MySQL database user (will grant privileges) [%s]:" % coin_var(DEF_COIN_USER)) or coin_var(DEF_COIN_USER)
 dbpwd = raw_input( "MySQL %s user password [create random]:" % dbuser )
-rootpwd = raw_input( "MySQL root password (needed to create database and user):" )
+rootpwd = getpass( "MySQL root password (needed to create database and user):" )
 
 if coinpwd == '':
     coinpwd = ''.join(random.sample(string.ascii_letters+string.digits,20))
@@ -238,8 +241,9 @@ try:
     conf = open(cfgdir+'/%s.conf' % cointype).read()
     print "Updating file: %s/%s.conf" % (cfgdir,cointype)
     for line in conf.splitlines():
-        k,v = line.split('=')
-        cfgcoin[k] = v
+        if '=' in line:
+            k,v = line.split('=')
+            cfgcoin[k] = v
 except (IOError, ImportError):
     print "Creating file: %s/%s.conf" % (cfgdir,cointype)
 
