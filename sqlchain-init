@@ -24,6 +24,7 @@ coin_setup = {
 def coin_var(IDX):
     return coin_setup[cointype][IDX]
 cointype = ''
+sqlroot = "/var/data/sqlchain/"
 
 def sigterm_handler(_signo, _stack_frame):
     print "\nClean shutdown"
@@ -81,7 +82,7 @@ nosigs = raw_input( "Discard signature/witness data [Y]/N:" ) or 'Y'
 sqlboot = raw_input( "Start sqlchaind at system boot Y/N/[No Change]:" ) or '#'
 apiboot = raw_input( "Start sqlchain-api at system boot Y/N/[No Change]:" ) or '#'
 cfgdir = raw_input( "\nDirectory for config files [/etc/sqlchain]:") or "/etc/sqlchain"
-sqldir = raw_input( "Directory for sqlchain log, blob and header data files [/var/data/sqlchain/%s]:" % cointype) or "/var/data/sqlchain/"+cointype
+sqldir = raw_input( "Directory for sqlchain log, blob and header data files [%s/%s]:" % (sqlroot,cointype)) or sqlroot+cointype
 
 wwwdir = raw_input( "Web root directory for sqlchain-api (N to disable) [/var/www/%s]:" % cointype) or "/var/www/"+cointype
 nginx = raw_input( "Create nginx reverse proxy config (N to disable) [/etc/nginx/conf.d/%s.conf]:" % cointype) or "/etc/nginx/conf.d/%s.conf" % cointype
@@ -212,8 +213,8 @@ if sqlboot != '#':
     except OSError:
         print "Creating systemd init file: %s" % initfile
         with open(initfile, 'w') as f:
-            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchain.%%i.cfg\n" % (sqldir,cfgdir)
-            f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
+            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchain.%%i.cfg\n" % (sqlroot,cfgdir)
+            f.write(initsrc.replace('Type=forking\n','').replace('ExecStart',s))
     if coinboot.upper() == 'Y':
         os.symlink('../sqlchain@.service', '/lib/systemd/system/multi-user.target.wants/sqlchain@%s.service' % cointype)
 if apiboot != '#':
@@ -223,8 +224,8 @@ if apiboot != '#':
     except OSError:
         print "Creating systemd init file: %s" % initfile
         with open(initfile, 'w') as f:
-            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.%%i.cfg\n" % (sqldir,cfgdir)
-            f.write(initsrc.replace('Type=forking\n    ','').replace('ExecStart',s))
+            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.%%i.cfg\n" % (sqlroot,cfgdir)
+            f.write(initsrc.replace('Type=forking\n','').replace('ExecStart',s))
     if coinboot.upper() == 'Y':
         os.symlink('../sqlchain-api@.service', '/lib/systemd/system/multi-user.target.wants/sqlchain-api@%s.service' % cointype)
 print """\nUse systemctl to manage the %s sqlchain daemons:

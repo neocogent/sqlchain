@@ -23,6 +23,7 @@ memPool = set()
 
 def getBlocks(blk):
     sql = db.connect(*sqc.cfg['db'].split(':'))
+    sql.autocommit(True)
     cur = sql.cursor()
     cur.execute("show tables like 'bech32';") # test if old db version and abort with log msg
     if cur.rowcount == 0:
@@ -112,6 +113,7 @@ def chkPruning(blk):
 
 def BlockHandler():
     sql = db.connect(*sqc.cfg['db'].split(':'))
+    sql.autocommit(True)
     cur = sql.cursor()
     while not sqc.done.isSet():
         try:
@@ -121,6 +123,7 @@ def BlockHandler():
 
 def OutputHandler():
     sql = db.connect(*sqc.cfg['db'].split(':'))
+    sql.autocommit(True)
     cur = sql.cursor()
     ins,outs = [],[]
     while True:
