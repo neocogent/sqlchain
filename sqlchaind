@@ -23,7 +23,6 @@ memPool = set()
 
 def getBlocks(blk):
     sql = db.connect(*sqc.cfg['db'].split(':'))
-    sql.autocommit(True)
     cur = sql.cursor()
     cur.execute("show tables like 'bech32';") # test if old db version and abort with log msg
     if cur.rowcount == 0:
@@ -45,6 +44,7 @@ def getBlocks(blk):
         blkinfo = sqc.rpc.getblockchaininfo()
         if blk > blkinfo['blocks']:
             checkMemPool(cur)
+            sql.commit()
             time.sleep(5)
             continue
         if blockQ.qsize() >= sqc.cfg['queue']:
@@ -113,17 +113,16 @@ def chkPruning(blk):
 
 def BlockHandler():
     sql = db.connect(*sqc.cfg['db'].split(':'))
-    sql.autocommit(True)
     cur = sql.cursor()
     while not sqc.done.isSet():
         try:
             insertBlock(cur, blockQ.get(True, 5))
+            sql.commit()
         except Empty:
             pass
 
 def OutputHandler():
     sql = db.connect(*sqc.cfg['db'].split(':'))
-    sql.autocommit(True)
     cur = sql.cursor()
     ins,outs = [],[]
     while True:
@@ -134,11 +133,13 @@ def OutputHandler():
             if len(outs) + len(ins) > 8192:
                 cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
                 cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
+                sql.commit()
                 ins,outs = [],[]
         except Empty:
             if len(outs) > 0 or len(ins) > 0:
                 cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
                 cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
+                sql.commit()
             if sqc.flush.isSet():
                 print "Flushed outQ - outs %d - ins %d" % (len(outs), len(ins))
                 return

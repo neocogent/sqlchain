@@ -128,6 +128,7 @@ def getBlkRPC(blkhash):
 def initdb():
     global todo,lastpos
     sql = db.connect(*sqc.cfg['db'].split(':'))
+    sql.autocommit(True)
     cur = sql.cursor()
     cur.execute("show tables like 'blkdat';")
     if cur.rowcount == 0:

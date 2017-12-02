@@ -21,13 +21,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #  Extended from gevent.db by neocogent
 #  Original: https://github.com/gordonc/gevent-db/blob/master/db.py
 #
-#  Modified for use with MySQLdb 
+#  Modified for use with MySQLdb
 #  - allowing it to take a connection list arg as well as string
 #  - adding a cursor __iter__ to allow iteration like MySQLdb supports.
 #  - adding __enter__ and __exit_ to support using "with" context manager
 #  - adding executemany on cursor
 #  - original license copied into file to avoid confusion
-#  
+#
 import gevent.socket
 from gevent import queue
 
@@ -57,7 +57,7 @@ class DBPool():
             self.queue.put(self.conns[i])
         if KEEPALIVE_PERIOD > 0:
             self.monitor = gevent.spawn(self.keepalive)
-        
+
     def keepalive(self):
         while True:
             for n in range(len(self.conns)):
@@ -78,8 +78,13 @@ class DBPool():
             finally:
                 conn.pipe[1].send('\0')
 
-    def get(self):
-        return DBConnection(self,self.queue.get())
+    def get(self, commit=True):
+        c = self.queue.get()
+        if callable(c.autocommit):
+            c.autocommit(commit)
+        else:
+            c.autocommit = commit
+        return DBConnection(self,c)
 
 class DBConnection_():
     class State():
@@ -97,7 +102,7 @@ class DBConnection_():
 
     def apply(self,function,*args):
         logging.info(args)
-        
+
         self.state.function = function
         self.state.args = args
         gevent.socket.wait_write(self.pipe[0].fileno())
@@ -126,19 +131,19 @@ class DBCursor():
     def __init__(self,conn,cursor):
         self.conn = conn
         self.cursor = cursor
-        
+
     def __enter__(self):
         return self.cursor
-        
+
     def __exit__(self, type, value, traceback):
         pass
-        
+
     def __iter__(self,*args):
-         return self.conn.apply(self.cursor.__iter__,*args)
+        return self.conn.apply(self.cursor.__iter__,*args)
 
     def execute(self,*args):
         return self.conn.apply(self.cursor.execute,*args)
-        
+
     def executemany(self,*args):
         return self.conn.apply(self.cursor.executemany,*args)
 
@@ -165,9 +170,9 @@ class TestDBPool(unittest.TestCase):
 
     def test_benchmark(self):
         requests = 1000
-        concurrency = 10 
+        concurrency = 10
         sql = 'SELECT 1'
-        
+
         timings = []
         def timer(pool,sql):
             conn = pool.get()
@@ -175,13 +180,13 @@ class TestDBPool(unittest.TestCase):
             cursor = conn.cursor()
             cursor.execute(sql)
             timings.append(time.time()-t0)
-        
+
         pool = DBPool(':memory:',concurrency,'sqlite3')
-        
+
         greenlets = []
         for i in xrange(requests):
             greenlets.append(gevent.spawn(timer,pool,sql))
-        
+
         for g in greenlets:
             g.join()
 
@@ -193,4 +198,3 @@ class TestDBPool(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
