@@ -5,8 +5,8 @@
 - Insight API (plus some extensions, like /api/closure)
 - Blockchain.info API (including websocket)
 - RPC via POST, GET urls
-- Web Interface (using bootstrap, integrated with API backend, primarily a demo)
-- Electrum Server
+- Web Interface (demo of integrating with API backend; only hints at what you can do)
+- Electrum Server (old, still untested, needs TLC)
 
 **sqlChain** currently consists of three daemon programs.
 
@@ -16,9 +16,11 @@
 
 #### Recent Updates (v0.2.5)
 
+Database sync code updated for SQL transactional engines. Tested with MariaDB using the [TokuDB](https://en.wikipedia.org/wiki/TokuDB) engine. This engine has many advanced features but the main ones of interest here is storage size reduction and fractal indexing (instead of Btree) more suited to high entropy keys (tx,address ids). In my tests TokuDB was not much faster initially but didn't drop in speed as DB size grows. It's a bit early to fully recommend but initially it looks like a nice option. I'll update the install guide with TokuDB steps (soonish).
+
 Added **bech32** address support (p2wpkh and p2sh). This requires a database upgrade and **sqlchain-upgrade-db** has been provided for this. sqlchaind will detect and stop on old version databases. The upgrade takes quite some time and if you cannot wait then revert your version (< 0.2.5). The upgrade re-encodes how address ids are stored and expands tx/block and outputs/tx limits to better deal with segwit increases. Finally, the part which takes the longest (but can be killed/restarted) is retro-fixing any past bech32 tx outputs that were ignored. If you have the space you may be better off syncing a new db and then quick-switching it in rather than taking a live db down to do the upgrade. It's also probably safer in case of an upgrade bug.
 
-Added support for multiple blockchains and generalized testnet to be handled in this context. Currently Litecoin has been added with a demo page and I hope to add a few more before long. Each coin requires it's own daemon process but sqlchain-init has been upgraded to use systemd instances so that several can coexist. This means the systemctl commands are now like `systemctl start sqlchain@bitcoin`, and similarly for other coins. There is only one sqlchain@.service and it creates variant instances for each coin. Upstart (Ubuntu 14.04) support has been removed - it probably works fine but the setup process now supports Ubuntu 16.04 (systemd) and newer platforms.
+Now supports multiple blockchains and testnet variants. Currently Litecoin and Reddcoin have been added as test cases (each with a demo page) and I hope to add a few more before long. Each coin requires it's own daemon process but sqlchain-init has been upgraded to take advantage of systemd "instances" so that several can coexist. This means the systemctl commands are now like `systemctl start sqlchain@bitcoin`, and similarly for other coins. There is only one sqlchain@.service and it creates variant instances for each coin described by it's cfg. Upstart (Ubuntu 14.04) support has been removed - it probably works fine but the setup process now only automates Ubuntu 16.04 (systemd) and newer platforms.
 
 #### Supported Features (with more tested history)
 
@@ -29,7 +31,7 @@ Added support for multiple blockchains and generalized testnet to be handled in 
 - split blobs, s3 ready -  blobs are split in 5GB chunks, allows mapping older tx data to cheaper offline storage like Amazon s3
 - blkdat mode - direct reading of bitcoind block files allows much faster initial sync as sqlchain can read while bitcoind is syncing
 - blkbtc - utility to block on/off node network traffic to allow more cpu for sqlchain to catch up
-- sqlchain-init - utility to ask install questions and generate optimal config files for easy setup
+- sqlchain-init - utility to ask questions and generate optimal config files for easy setup
 
 sqlchain is still *Alpha level* software under sporadic active development (not ready for prime time). 
 
