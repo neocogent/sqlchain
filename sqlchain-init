@@ -84,16 +84,20 @@ apiboot = raw_input( "Start sqlchain-api at system boot Y/N/[No Change]:" ) or '
 cfgdir = raw_input( "\nDirectory for config files [/etc/sqlchain]:") or "/etc/sqlchain"
 sqldir = raw_input( "Directory for sqlchain log, blob and header data files [%s/%s]:" % (sqlroot,cointype)) or sqlroot+cointype
 
-wwwdir = raw_input( "Web root directory for sqlchain-api (N to disable) [/var/www/%s]:" % cointype) or "/var/www/"+cointype
-nginx = raw_input( "Create nginx reverse proxy config (N to disable) [/etc/nginx/conf.d/%s.conf]:" % cointype) or "/etc/nginx/conf.d/%s.conf" % cointype
-if not nginx in ['n','N','/','none']:
-    apidomain = raw_input( "Host domain name to use [api.%s.info]:" % cointype) or "api.%s.info" % cointype
-    sslpath = raw_input( "SSL certificate path [/etc/letsencrypt/live/%s]:" % apidomain) or "/etc/letsencrypt/live/%s" % apidomain
-
+print """\nsqlchain-api can serve web pages (html,js,css) directly but for more robust SSL support and better static file 
+caching and speed it's preferable to use Nginx as a front end (reverse proxy). A conf file can be created with basic settings 
+but will not be overwritten if already present.\n"""
+nginx = 'n'
+wwwdir = raw_input( "Web root directory for sqlchain-api (N to disable, use front end) [/var/www/%s]:" % cointype) or "/var/www/"+cointype
+if wwwdir in ['n','N','/','none']:
+    nginx = raw_input( "Nginx reverse proxy config path [/etc/nginx/conf.d/%s.conf]:" % cointype) or "/etc/nginx/conf.d/%s.conf" % cointype
+    apidomain = raw_input( "Host domain name for Nginx conf [api.%s.info]:" % cointype) or "api.%s.info" % cointype
+    sslpath = raw_input( "SSL certificate path for Nginx conf [/etc/letsencrypt/live/%s]:" % apidomain) or "/etc/letsencrypt/live/%s" % apidomain
+    
 dbname = raw_input( "\nMySQL database name [%s]:" % cointype ) or cointype
 dbuser = raw_input( "MySQL database user (will grant privileges) [%s]:" % coin_var(DEF_COIN_USER)) or coin_var(DEF_COIN_USER)
 dbpwd = raw_input( "MySQL %s user password [create random]:" % dbuser )
-dbeng = raw_input( "\nMySQL database engine [MyISAM]:") or 'MyISAM'
+dbeng = raw_input( "\nMySQL database engine, eg. TokuDB, Aria, InnoDB [MyISAM]:") or 'MyISAM'
 rootpwd = getpass( "MySQL root password (needed to create database and user):" )
 
 if coinpwd == '':
