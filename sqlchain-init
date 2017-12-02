@@ -24,7 +24,7 @@ coin_setup = {
 def coin_var(IDX):
     return coin_setup[cointype][IDX]
 cointype = ''
-sqlroot = "/var/data/sqlchain/"
+sqlroot = "/var/data/sqlchain"
 
 def sigterm_handler(_signo, _stack_frame):
     print "\nClean shutdown"
@@ -294,7 +294,7 @@ os.chmod(cfgdir+'/sqlchain-api.%s.cfg' % cointype, 0660)
 ### Create log rotation control files
 print "Creating logrotate files in: /etc/logrotate.d/"
 logconf = """
-%s/*.log {
+sqldir/*.log {
     weekly
     rotate 4
     compress
@@ -302,15 +302,15 @@ logconf = """
     missingok
     notifempty
     postrotate
-        kill -HUP `cat %s/api.pid`
-        kill -HUP `cat %s/daemon.pid`
+        [ -f sqldir/api.pid ] && kill -HUP `cat sqldir/api.pid`
+        [ -f sqldir/daemon.pid ] && kill -HUP `cat sqldir/daemon.pid`
     endscript
 }
 """
 logconfpath = '/etc/logrotate.d/sqlchain.%s' % cointype
 if not os.path.exists(logconfpath):
     with open(logconfpath, 'w') as f:
-        f.write(logconf % (sqldir,sqldir,sqldir))
+        f.write(logconf.replace('sqldir', sqldir))
 logconf = """
 %s/debug.log {
     weekly
