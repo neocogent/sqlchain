@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta content="width=device-width, initial-scale=1" name="viewport">
-    <title>sqlChain Testnet Demo - Bitcoin SQL Blockchain Explorer</title>
-    <meta content="bitcoin testnet blockchain insight api using sqlchain" name="description">
+    <title>sqlChain Demo - Bitcoin SQL Blockchain Explorer</title>
+    <meta content="bitcoin blockchain insight api using sqlchain" name="description">
     <meta content="neocogent" name="author"> 
     <link href="css/bootstrap.min.css" rel="stylesheet">
     <link href="css/main.css" rel="stylesheet">
@@ -68,7 +68,7 @@
             Status and blockchain analysis information below is updated periodically from this server. The open source Python code is 
             available in the <a href="https://github.com/neocogent/sqlchain">neoCogent Github</a> and please check out 
              my <a href="http://neocogent.com">neoCogent blog</a>.
-        <legend>Server Status - Testnet</legend>This information is provided by the /api/status/db/html call.
+        <legend>Server Status</legend>This information is provided by the /api/status/db/html call.
         <div id='dbstatus'></div>
         </div>
 <!-- API docs -->
@@ -85,81 +85,81 @@
             </fieldset>
             </form>
         </div>
-        <legend>Insight - Testnet</legend>
+        <legend>Insight</legend>
         <ul class='apiClk'>
-            <li>/api/block/<span>0000000000003431c5b86d3788a953eeaeef2bd5b3491dff0f4e0a931aa4f8f3</span></li>
-            <li>/api/block-index/<span>892679</span></li>
-            <li>/api/tx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span></li>
-            <li>/api/raw/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span></li>
-            <li>/api/addr/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span><span class='opt'>?noTxList=1</span></li>
+            <li>/api/block/<span>0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
+            <li>/api/block-index/<span>123432</span></li>
+            <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span></li>
+            <li>/api/raw/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span></li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span><span class='opt'>?noTxList=1</span></li>
             <div class='info'>Spelling mistake on txApperances is maintained for compatibility.</div>
-            <li>/api/addr/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/balance</li>
-            <li>/api/addr/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/totalReceived</li>
-            <li>/api/addr/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/totalSent</li>
-            <li>/api/addr/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/unconfirmedBalance</li>
-            <li>/api/addr/<span>n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ</span>/utxo</li>
-            <li>/api/addrs/<span>n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ,muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/utxo</li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/balance</li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/totalReceived</li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/totalSent</li>
+            <li>/api/addr/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/unconfirmedBalance</li>
+            <li>/api/addr/<span>1FvzCLoTPGANNjWoUo6jUGuAG3wg1w4YjR</span>/utxo</li>
+            <li>/api/addrs/<span>1FvzCLoTPGANNjWoUo6jUGuAG3wg1w4YjR,1CmTtsKEqPxZsW3YjGYXbPSY89xrzkhy94</span>/utxo</li>
             <div class='info'>Also supports POST at '/api/addrs/utxo' with param 'addrs'.</div>
-            <li>/api/addrs/<span>n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ,muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/txs<span class='opt'>?from=0&to=1</span></li>
+            <li>/api/addrs/<span>17pfg6L3hT1ZPBASPt7DCQZfy9jWeMGq1W,1CmTtsKEqPxZsW3YjGYXbPSY89xrzkhy94</span>/txs<span class='opt'>?from=0&to=1</span></li>
             <div class='info'>Also supports POST at '/api/addrs/txs' with params 'addrs,from,to'.</div>
-            <li>/api/txs<span class='opt'>?block=0000000000003431c5b86d3788a953eeaeef2bd5b3491dff0f4e0a931aa4f8f3</span></li>
-            <li>/api/txs<span class='opt'>?address=n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ</span></li>
+            <li>/api/txs<span class='opt'>?block=0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
+            <li>/api/txs<span class='opt'>?address=1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
             <li class='noargs'>/api/utils/estimatefee<span class='opt'>?nbBlocks=2</span></li>
             <li>/api/tx/send</li>
             <div class='info'>Send raw transaction by POST method with param 'rawtx'.</div>
         </ul>
-        <legend>Blockchain.info - Testnet</legend>
+        <legend>Blockchain.info</legend>
         <ul class='apiClk'>
-            <li>/bci/block-height/<span>892679</span></li>
+            <li>/bci/block-height/<span>123432</span></li>
             <div class='info'>...</div>
-            <li>/bci/rawblock/<span>0000000000003431c5b86d3788a953eeaeef2bd5b3491dff0f4e0a931aa4f8f3</span></li>
-            <li>/bci/rawtx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span><span class='opt'>?format=hex</span></li>
-            <li>/bci/address/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span></li>
-            <li>/bci/unspent/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span></li>
+            <li>/bci/rawblock/<span>0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
+            <li>/bci/rawtx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span><span class='opt'>?format=hex</span></li>
+            <li>/bci/address/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
+            <li>/bci/unspent/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
             <li class='noargs'>/bci/latestblock</li>
             <li class='noargs'>/bci/q/getblockcount</li>
             <li>ws://api-host<span><a href="/wstest.html" target="wstest">/ws</a></span></li>
             <div class='info'>Blockchain.info compatible websocket interface</div>
         </ul>
-        <legend>RPC - Testnet</legend>
+        <legend>RPC</legend>
         This api also available via POST with [method,params] args.
         <ul class='apiClk'>
             <li class='noargs'>/rpc/getinfo</li>
             <li class='noargs'>/rpc/getdifficulty</li>
-            <li>/rpc/getblock/<span>0000000000003431c5b86d3788a953eeaeef2bd5b3491dff0f4e0a931aa4f8f3</span></li>
-            <li>/rpc/getblockhash/<span>892679</span></li>
+            <li>/rpc/getblock/<span>0000000000001271efd5d9f7e539909160a181b2c0a2b8c164d6f8159e5c7dd9</span></li>
+            <li>/rpc/getblockhash/<span>123432</span></li>
             <li class='noargs'>/rpc/getblockcount</li>
-            <li>/rpc/getrawtransaction/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span></li>
-            <li>/rpc/gettxout/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35/1</span></li>
+            <li>/rpc/getrawtransaction/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span></li>
+            <li>/rpc/gettxout/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56/1</span></li>
             <li class='noargs'>/rpc/getmempoolinfo</li>
             <li class='noargs'>/rpc/getrawmempool</li>
         </ul>
-        <legend>Electrum - Testnet</legend> Extensions to support sqlchain-electrum server.
+        <legend>Electrum</legend> Extensions to support sqlchain-electrum server.
         <ul class="apiClk">
-            <li>/api/history/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span></li>
-            <li>/api/history/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/status</li>
-            <li>/api/history/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/balance</li>
-            <li>/api/history/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/uncfmd</li>
-            <li>/api/history/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span>/utxo</li>
+            <li>/api/history/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span></li>
+            <li>/api/history/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/status</li>
+            <li>/api/history/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/balance</li>
+            <li>/api/history/<span>1JK6pUCAXfnvcbXEpdVSxhVZ8W6kxQ4VEH</span>/uncfmd</li>
+            <li>/api/history/<span>1FvzCLoTPGANNjWoUo6jUGuAG3wg1w4YjR</span>/utxo</li>
             <li>/api/block-index/<span>167324/electrum</li>
-            <li>/api/tx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span>/output/<span>1</span></li>
-            <li>/api/tx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span>/raw</li>
-            <li>/api/tx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span>/addrs</li>
-            <li>/api/merkle/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span></li>
+            <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/output/<span>1</span></li>
+            <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/raw</li>
+            <li>/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/addrs</li>
+            <li>/api/merkle/<span>2acba2c6916cdfdbf3584dfdd32534af5031ab076029ff275167fa5181dee0a8</span></li>
         </ul>
-        <legend>Extras - Testnet</legend> Extensions, and status / debugging.
+        <legend>Extras</legend> Extensions, and status / debugging.
         <ul class="apiClk">
-            <li>/api/auto/<span>892679</span></li>
+            <li>/api/auto/<span>123432</span></li>
             <div class='info'>Auto detect value and return appropriate data.<br>Supports 4 modes: block-index, block hash, address, tx hash.<br>
             Also available as POST method with 'data' parameter, as demonstrated above with "Find".</div>
-            <li>/api/closure/<span>muPawjrif323ikE2oJM3FbPxvTjGP1zNin</span></li>
+            <li>/api/closure/<span>1M8s2S5bgAzSSzVTeL7zruvMPLvzSkEAuv</span></li>
             <div class='info'>Compute the closure of an address. That is, the addresses likely to be owned by the same entity.</div>
             <li class='noargs'>/api/status</li>
             <li>/api/status/<span>db</span><span class='opt'>/html</span></li>
             <div class='info'>Returns database information like row counts, disk space used.<br>Advanced info like multi-sig address count, 
             id collision counts, non-std and unspent output counts are updated periodically due to slow query time. An html 
             version returns a table that can be used in web pages with styling.</div>
-            <li class="raw">/api/tx/<span>1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35</span>/html</li>
+            <li class="raw">/api/tx/<span>23bb66ef300714042085d0ed2d05100531e80d5239020545887df059c0178b56</span>/html</li>
             <div class='info'>An html table formatted version of raw transaction data with hex values and op codes.</div>
         </ul>
         <div id="blank" class="resp"></div>
@@ -167,17 +167,19 @@
 <!-- Install docs -->
         <div class="tab-pane fade" id="install">
         <legend>Roll Your Own Blockchain Web App</legend>
-        It's easy to create a web app based using sqlChain on an Ubuntu server.<br><br>See the full install guide on <a href="https://github.com/neocogent/sqlchain">github</a>, but briefly:
+        It's easy to create a web app using sqlChain on an Ubuntu server.<br><br>See the full install guide on <a href="https://github.com/neocogent/sqlchain">github</a>, but briefly:
         <ol>
             <li>Install base packages:<br>
             <span class='bash'> # may not need but won't hurt<br>sudo apt-get install python-software-properties libev-dev libevent-dev</span></li>
-            <span class='bash'>sudo apt-get install bitcoind mysql-server libmysqlclient-dev python-pip python-dev</span></li>
+            <span class='bash'>sudo apt install software-properties-common python-software-properties libev-dev libevent-dev</span></li>
+            <span class='bash'>sudo apt install mariadb-server libmysqlclient20</span></li>
+            <span class='bash'>sudo apt install bitcoind libmysqlclient-dev python-pip python-dev build-essential</span></li>
             <li>Install sqlchain from PyPi:<br>
             <span class='bash'>sudo pip install sqlchain</span></li>
-            <li>Run the init script to setup mysql db, users and config files:<br>
+            <li>Run the init script to setup the mysql/maria db, users and config files:<br>
             <span class='bash'>sudo sqlchain-init</span></li>
             <li>Start the daemons, as needed:<br>
-            <span class='bash'>sudo start bitcoin<br>sudo start sqlchain<br>sudo start sqlchain-api</span></li>
+            <span class='bash'>sudo systemctl start bitcoin<br>sudo systemctl start sqlchain<br>sudo systemctl start sqlchain-api</span></li>
             <li>Modify the /var/www source files as your own app.</li>
             <li>Scale to serve the world:<br>
             <span class='bash'>run nginx as front end and mysql replication behind.</span></li>
@@ -188,11 +190,13 @@
         <legend>Support</legend>
         Huh, What support?<br><br>
         More seriously, I put a lot of work into creating this. If you want to support continued effort by donating 
-        that would be cool. Visit my <a href="http://www.neocogent.com/pages/btc-donation.html">blog donation page</a>.<br><br>
-        I do <a href="http://www.neocogent.com/pages/about-me.html">freelance programming</a> work, and I'm available to build on this commericially for you or work on other Bitcoin related 
+        that would be cool. Visit my <a href="http://blog.coinview.info/pages/btc-donation.html">blog donation page</a>.<br><br>
+        I do <a href="http://blog.coinview.info/pages/about-me.html">freelance programming</a> work, and I'm available to build on this commericially for you or work on other Bitcoin related 
         projects. My rates are very reasonable, given my expertise, because I live in a downright life-is-cheap country. 
-        So if donating rubs you the wrong way then you can always hire me.
-        
+        So if donating rubs you the wrong way then you can always hire me.<br><br>
+        Give [Vultr.com](http://www.vultr.com/?ref=7087266) a try out. I've been very happy with them for development and testing sqlchain. 
+        Use my referral link and I get funded for my testing without costing you a penny extra. You can start up and run VPS servers by the 
+        hour using a simple control panel and in my tests they're been both faster and cheaper than Amazon AWS.
         </div>                        
     <FOOTER> 
     <p></p> 

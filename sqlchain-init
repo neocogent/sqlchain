@@ -3,8 +3,7 @@
 import os, sys, signal, pwd, random, string, shutil, json
 from getpass import getpass
 import MySQLdb as db
-
-#from sqlchain.version import *
+from sqlchain.democvt import democvt
 
 DATA_DIR = 0
 BLKDAT_DIR = 1
@@ -145,7 +144,7 @@ elif not os.path.exists(wwwdir):
         for f in files:
             shutil.copy2(os.path.join(root, f), os.path.join(wwwdir+dst, f))
             os.chown(os.path.join(wwwdir+dst, f), pwd.pw_uid, pwd.pw_gid)
-    shutil.copy2(os.path.join('www', 'demo-%s.html' % cointype), os.path.join(wwwdir, 'main.html'))
+    democvt(os.path.join('www', 'main.html'), os.path.join(wwwdir, 'main.html'), cointype)
 
 ### Create empty data files and set ownership
 for f in ['/blobs.0.dat','/hdrs.dat']:
