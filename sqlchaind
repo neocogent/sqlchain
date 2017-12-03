@@ -185,20 +185,23 @@ def checkReOrg(cur, data):
         sqc.flushed.wait() # make sure all outputs committed before we start re-org
         cur.execute("update trxs set block_id=-1 where block_id >= %s;", (height*MAX_TX_BLK,)) # set bad chain txs uncfmd
         logts("Block %d *** ReOrg: %d orphan(s), %d txs affected" % (height, data['height']-height, cur.rowcount))
-        while height < data['height']:
-            blkhash = sqc.rpc.getblockhash(height)
-            data = decodeBlock(sqc.rpc.getblock(blkhash, False).decode('hex')) # get good chain blocks
-            if data:
-                for n,tx in enumerate(data['tx']):
-                    tx_id,found = findTx(cur, tx['txid'], mkNew=True)
-                    if found:
-                        cur.execute("update trxs set block_id=%s where id=%s limit 1;", (height*MAX_TX_BLK+n, tx_id))
-                    else:
-                        insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan block
-                addOrphan(cur, height)
-                cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
-                puthdr(data['height'], sqc.cfg, data['hdr'])
-            height += 1
+        doReOrg(cur, data, height)
+
+def doReOrg(cur, data, height):
+    while height < data['height']:
+        blkhash = sqc.rpc.getblockhash(height)
+        data = decodeBlock(sqc.rpc.getblock(blkhash, False).decode('hex')) # get good chain blocks
+        if data:
+            for n,tx in enumerate(data['tx']):
+                tx_id,found = findTx(cur, tx['txid'], mkNew=True)
+                if found:
+                    cur.execute("update trxs set block_id=%s where id=%s limit 1;", (height*MAX_TX_BLK+n, tx_id))
+                else:
+                    insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan block
+            addOrphan(cur, height)
+            cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
+            puthdr(data['height'], sqc.cfg, data['hdr'])
+        height += 1
 
 def insertTxMemPool(cur, tx, sync_id):
     tx_id,found = findTx(cur, tx['txid'], mkNew=True)
