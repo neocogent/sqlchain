@@ -285,7 +285,7 @@ os.chmod(cfgdir+'/sqlchain.%s.cfg' % cointype, 0660)
 ### Create sqlchain-api.cfg
 apicfg = { "www": wwwdir, "user": coinuser, "db": "localhost:%s:%s:%s" % (dbuser,dbpwd,dbname), "dbinfo": -1, "dbinfo-ts": "0", \
            "rpc": "http://%s:%s@localhost:%d" % (cfgcoin['rpcuser'],cfgcoin['rpcpassword'],coin_var(DEF_RPC_PORT)), \
-           "pool": 4, "log": sqldir+"/api.log", "pid": sqldir+"/api.pid", \
+           "pool": 4, "log": sqldir+"/api.log", "pid": sqldir+"/api.pid", "cointype": cointype, \
            "path": sqldir, "debug": False, "block": 0, "listen": "localhost:%d" % coin_var(DEF_API_PORT), "sync": 0 }
 print "Creating config file:", cfgdir+'/sqlchain-api.%s.cfg' % cointype
 with open(cfgdir+'/sqlchain-api.%s.cfg' % cointype, 'w') as f:
