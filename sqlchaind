@@ -128,6 +128,7 @@ def OutputHandler():
     while True:
         try:
             xo,xi = outQ.get(True, 3)
+            sqc.flushed.clear()
             outs.extend(xo)
             ins.extend(xi)
             if len(outs) + len(ins) > 8192:
@@ -140,7 +141,8 @@ def OutputHandler():
                 cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
                 cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
                 sql.commit()
-            if sqc.flush.isSet():
+            sqc.flushed.set()
+            if sqc.alldone.isSet():
                 print "Flushed outQ - outs %d - ins %d" % (len(outs), len(ins))
                 return
             ins,outs = [],[]
@@ -180,6 +182,7 @@ def checkReOrg(cur, data):
         blkhash = sqc.rpc.getblockhash(height).decode('hex')[::-1]
     height += 1
     if height < data['height']:
+        sqc.flushed.wait() # make sure all outputs committed before we start re-org
         cur.execute("update trxs set block_id=-1 where block_id >= %s;", (height*MAX_TX_BLK,)) # set bad chain txs uncfmd
         logts("Block %d *** ReOrg: %d orphan(s), %d txs affected" % (height, data['height']-height, cur.rowcount))
         while height < data['height']:
@@ -322,7 +325,8 @@ def sighup_handler(_signo, _stack_frame):
 
 def run():
     sqc.done = threading.Event()
-    sqc.flush = threading.Event()
+    sqc.alldone = threading.Event()
+    sqc.flushed = threading.Event()
 
     cointype_override()
 
@@ -343,7 +347,7 @@ def run():
 
     sqc.done.set()
     blkwrk.join()
-    sqc.flush.set()
+    sqc.alldone.set()
     outwrk.join()
     if blksdone:
         log("Session %d blocks, %.2f blocks/s" % (blksdone, float(blksdone / (time.time() - workstart))) )
