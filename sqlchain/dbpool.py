@@ -80,10 +80,10 @@ class DBPool():
 
     def get(self, commit=True):
         c = self.queue.get()
-        if callable(c.autocommit):
-            c.autocommit(commit)
+        if callable(c.conn.autocommit):
+            c.conn.autocommit(commit)
         else:
-            c.autocommit = commit
+            c.conn.autocommit = commit
         return DBConnection(self,c)
 
 class DBConnection_():

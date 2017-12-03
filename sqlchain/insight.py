@@ -18,7 +18,7 @@ RESULT_ROW_LIMIT = 1000
 
 #main entry point for api calls
 def do_API(env, send_resp):
-    result = None
+    result = []
     get,args,cur = urlparse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
     send_resp('200 OK', [('Content-Type', 'application/json')])
     if args[0] == 'auto' or env['REQUEST_METHOD'] == 'POST':
@@ -50,13 +50,13 @@ def do_API(env, send_resp):
     return result
 
 def apiAuto(cur, env, args, get):
-    result = None
+    result = []
     form = cgi.FieldStorage(fp=env['wsgi.input'], environ=env, keep_blank_values=True)
     if args[0] == "auto":
         param = form['data'].value if 'data' in form else args[1]
         if param.isdigit() and int(param) <= sqc.cfg['block']:
             blkhash = apiHeader(cur, param, args[2:])
-            result = json.dumps(apiBlock(cur, blkhash['blockHash'])) if blkhash else None
+            result = json.dumps(apiBlock(cur, blkhash['blockHash'])) if blkhash else []
         elif len(param) == 64:
             if param[:8] == '00000000':
                 result = json.dumps(apiBlock(cur, param))
@@ -70,7 +70,6 @@ def apiAuto(cur, env, args, get):
     return result
 
 def apiHeader(cur, blk, args):
-    from sqlchain.bci import bciBlock
     if blk.isdigit():
         cur.execute("select id,hash from blocks where id=%s limit 1;", (blk,))
     else:
@@ -80,10 +79,8 @@ def apiHeader(cur, blk, args):
         if 'electrum' in args:
             return { 'block_height':int(blkid), 'version':hdr['version'], 'time':hdr['time'], 'bits':hdr['bits'], 'nonce':hdr['nonce'],
                      'merkle_root':hdr['merkleroot'][::-1].encode('hex'), 'prev_block_hash':hdr['previousblockhash'][::-1].encode('hex') }
-        elif 'bci' in args:
-            return { 'blocks': [ bciBlock(cur, blkhash[::-1].encode('hex')) ] }
         return { 'blockHash': blkhash[::-1].encode('hex') }
-    return None
+    return []
 
 def apiBlock(cur, blkhash):
     data = { 'hash':blkhash, 'tx':[] }
@@ -105,7 +102,7 @@ def apiBlock(cur, blkhash):
         for txhash, in cur:
             data['nextblockhash'] = txhash[::-1].encode('hex')
         return data
-    return None
+    return []
 
 def apiAddr(cur, addrs, args, get):
     data = []
@@ -229,7 +226,7 @@ def apiTx(cur, txhash, args):
             del data['fees']
             data['isCoinBase'] = True
         return data
-    return None
+    return []
 
 def apiInputs(cur, height, txdata, ins):
     total = 0
@@ -347,7 +344,7 @@ def apiMerkle(cur, txhash):
         if mkt[0] != gethdr(blk, sqc.cfg, 'merkleroot'):
             logts("Panic! Merkle tree failure, tx %s" % txhash )
         return { "block_height": blk, "merkle": mkb, "pos": pos }
-    return None
+    return []
 
 rawTxHdr = [ 'version','# inputs','# outputs', 'locktime' ]
 rawCbHdr = [ 'null txid','n','coinbase size','coinbase bytes','sequence' ]
@@ -406,7 +403,7 @@ def mkRawTx(cur, args, txid, txdata, blkid, ins, outs):
             out += [ pack('<Q', int(value)) ]
             vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))
             pkbuf = readBlob(vpos, off+vsz, sqc.cfg)
-            out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, aid)
+            out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, int(aid))
             vpos += off+vsz
     out += [ pack('<I', hdr[5]) ]
     return rawHTML(out, ins, outs) if 'html' in args else ''.join(out).encode('hex')
