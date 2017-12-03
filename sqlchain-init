@@ -157,10 +157,12 @@ for f in ['/blobs.0.dat','/hdrs.dat']:
         os.chown(sqldir+f, pwd.pw_uid, pwd.pw_gid)
 
 ### Create MySql database and tables
-sqldef = 'docs/%s.sql' % cointype
+sqldef = 'docs/%s.sql' % dbname         # custom dbname overrides cointype
 if not os.path.exists(sqldef):
-    sqldef = 'docs/sqlchain.sql'
-print "Creating MySQL database:", dbname
+    sqldef = 'docs/%s.sql' % cointype   # cointype overrides default
+if not os.path.exists(sqldef):
+    sqldef = 'docs/sqlchain.sql'        # default sqlchain schema
+print "Creating MySQL database: %s using schema: %s", (dbname,os.path.split(sqldef)[1])
 try:
     sqlsrc = open(sqldef).read()
     sqlcode = ''
@@ -234,9 +236,9 @@ if apiboot != '#':
         os.symlink('../sqlchain-api@.service', '/lib/systemd/system/multi-user.target.wants/sqlchain-api@%s.service' % cointype)
 print """\nUse systemctl to manage the %s sqlchain daemons:
   systemctl start sqlchain@%s - start daemon
-  systemctl start sqlchain@%s - stop daemon
-  systemctl enable sqlchain@%s - make daemon start at boot
-  systemctl disable sqlchain@%s - prevent daemon starting at boot
+  systemctl stop sqlchain@%s - stop daemon
+  systemctl enable sqlchain@%s - enable daemon start at boot
+  systemctl disable sqlchain@%s - disable daemon starting at boot
   systemctl status sqlchain@%s - daemon status, debug why it isn't running
 and similarly systemctl ... sqlchain-api@%s with same commands for the api daemon
 """.replace('%s', cointype)
