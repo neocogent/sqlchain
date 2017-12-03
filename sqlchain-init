@@ -81,11 +81,11 @@ nosigs = raw_input( "Discard signature/witness data [Y]/N:" ) or 'Y'
 sqlboot = raw_input( "Start sqlchaind at system boot Y/N/[No Change]:" ) or '#'
 apiboot = raw_input( "Start sqlchain-api at system boot Y/N/[No Change]:" ) or '#'
 cfgdir = raw_input( "\nDirectory for config files [/etc/sqlchain]:") or "/etc/sqlchain"
-sqldir = raw_input( "Directory for sqlchain log, blob and header data files [%s/%s]:" % (sqlroot,cointype)) or sqlroot+cointype
+sqldir = raw_input( "Directory for sqlchain log, blob and header data files [%s/%s]:" % (sqlroot,cointype)) or sqlroot+'/'+cointype
 
 print """\nsqlchain-api can serve web pages (html,js,css) directly but for more robust SSL support and better static file 
-caching and speed it's preferable to use Nginx as a front end (reverse proxy). A conf file can be created with basic settings 
-but will not be overwritten if already present.\n"""
+caching and speed it's preferable to use Nginx as a front end (reverse proxy). A conf file can be created 
+with basic settings (but will not be overwritten if already present).\n"""
 nginx = 'n'
 wwwdir = raw_input( "Web root directory for sqlchain-api (N to disable, use front end) [/var/www/%s]:" % cointype) or "/var/www/"+cointype
 if wwwdir in ['n','N','/','none']:
@@ -161,7 +161,7 @@ if not os.path.exists(sqldef):
     sqldef = 'docs/%s.sql' % cointype   # cointype overrides default
 if not os.path.exists(sqldef):
     sqldef = 'docs/sqlchain.sql'        # default sqlchain schema
-print "Creating MySQL database: %s using schema: %s", (dbname,os.path.split(sqldef)[1])
+print "Creating MySQL database: %s using schema: %s" % (dbname, os.path.split(sqldef)[1])
 try:
     sqlsrc = open(sqldef).read()
     sqlcode = ''
