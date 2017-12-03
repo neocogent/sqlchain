@@ -41,7 +41,7 @@ S3_BLK_SIZE = 4096 # s3 block size for caching
 def cointype_override():
     try:
         from importlib import import_module
-        module = import_module('sqlchain.'+sqc.cfg['cointype'])
+        module = import_module('sqlchain.overlay.'+sqc.cfg['cointype'])
     except ImportError:
         return
     globals().update(
