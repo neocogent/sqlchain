@@ -1,10 +1,12 @@
 #
 # Common sqlchain support utils
 #
-import os, sys, pwd, time, json, threading, re, glob, urllib2, hashlib
+import os, sys, pwd, time, json, threading, re, urllib2, hashlib
 
 from datetime import datetime
 from struct import pack, unpack, unpack_from
+from glob import glob
+from importlib import import_module
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 
 from backports.functools_lru_cache import lru_cache # pylint:disable=relative-import
@@ -443,7 +445,7 @@ def insertBlob(data, cfg):
                 fn = '/blobs.%d.dat' % (insertBlob.nextpos//BLOB_SPLIT_SIZE,)
             except AttributeError:
                 n = 0
-                for f in glob.glob(cfg['path']+'/blobs.*[0-9].dat'): # should happen only once as init
+                for f in glob(cfg['path']+'/blobs.*[0-9].dat'): # should happen only once as init
                     n = max(n, int(re.findall(r'\d+', f)[0]))
                 pos = os.path.getsize(cfg['path']+'/blobs.%d.dat' % n) if os.path.exists(cfg['path']+'/blobs.%d.dat' % n) else 0
                 insertBlob.nextpos =  n*BLOB_SPLIT_SIZE + pos
@@ -489,7 +491,7 @@ def s3blk(blob, blk):
 
 def getBlobsSize(cfg):
     sz = 0
-    for f in glob.glob(cfg['path']+'/blobs*.dat'):
+    for f in glob(cfg['path']+'/blobs*.dat'):
         sz += os.stat(f).st_size
     return sz
 
@@ -588,3 +590,18 @@ class rpcPool(object): # pylint:disable=too-few-public-methods
                 rpc_obj = AuthServiceProxy(self.url, None, self.timeout, None) # maybe broken, make new connection
                 time.sleep(3) # slow down, in case gone away
         return result
+
+def sqlchain_overlay(pattern):
+    if not pattern[-3:].lower() =='.py':
+        pattern += '.py'
+    ovrlist = glob('overlay/'+pattern)
+    for ovr in ovrlist:
+        try:
+            modname,_ = os.path.splitext(os.path.split(ovr)[1])
+            module = import_module('sqlchain.overlay.'+modname)
+        except ImportError:
+            return
+        globals().update(
+            {n: getattr(module, n) for n in module.__all__} if hasattr(module, '__all__')
+            else
+            {k: v for (k, v) in module.__dict__.items() if not k.startswith('_') })

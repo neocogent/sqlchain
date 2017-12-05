@@ -38,14 +38,4 @@ MAX_IO_TX = 16384    # allows 37 bit out_id value, (5 byte hash >> 3)*16384 in d
 BLOB_SPLIT_SIZE = int(5e9) # size limit for split blobs, approx. as may extend past if tx on boundary
 S3_BLK_SIZE = 4096 # s3 block size for caching
 
-def cointype_override():
-    try:
-        from importlib import import_module
-        module = import_module('sqlchain.overlay.'+sqc.cfg['cointype'])
-    except ImportError:
-        return
-    globals().update(
-        {n: getattr(module, n) for n in module.__all__} if hasattr(module, '__all__')
-        else
-        {k: v for (k, v) in module.__dict__.items() if not k.startswith('_')
-    })
+

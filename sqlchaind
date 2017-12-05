@@ -9,8 +9,8 @@ from struct import pack, unpack
 import os, sys, socket, getopt, time, signal, threading, daemon
 import MySQLdb as db
 
-from sqlchain.version import version, cointype_override, coincfg, BLKDAT_NEAR_SYNC, BLKDAT_MAGIC, MAX_IO_TX, MAX_TX_BLK
-from sqlchain.util import dotdict, loadcfg, savecfg, drop2user, rpcPool, log, logts
+from sqlchain.version import version, coincfg, BLKDAT_NEAR_SYNC, BLKDAT_MAGIC, MAX_IO_TX, MAX_TX_BLK
+from sqlchain.util import dotdict, sqlchain_overlay, loadcfg, savecfg, drop2user, rpcPool, log, logts
 from sqlchain.util import encodeVarInt, decodeBlock, decodeTx, findTx, insertAddress, mkBlobHdr, insertBlob, puthdr, gethdr
 from sqlchain.blkdat import BlkDatHandler
 
@@ -332,7 +332,7 @@ def run():
     sqc.alldone = threading.Event()
     sqc.flushed = threading.Event()
 
-    cointype_override()
+    sqlchain_overlay(sqc.cfg['cointype'])
 
     blkwrk = threading.Thread(target = BlockHandler)
     blkwrk.start()
