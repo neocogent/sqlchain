@@ -238,12 +238,12 @@ def insertTx(cur, tx, tx_id, blk_id): # pylint:disable=too-many-locals
     ins,outs,sz,txhdr = mkBlobHdr(tx, len(inlist), len(outlist), sqc.cfg['no-sigs'])
     if (not sqc.cfg['no-sigs']) and tx['segwit']:
         txdata += tx['witness']
-    cur.execute("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)",
-        ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, sqc.cfg), blk_id ))
+    return ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, sqc.cfg), blk_id )
 
 def insertBlock(cur, data):
     checkReOrg(cur, data)
     blkstart = time.time()
+    txlist = []
     blk_id = data['height']*MAX_TX_BLK
     for n,tx in enumerate(data['tx']):
         tx_id,found = findTx(cur, tx['txid'], mkNew=True)
@@ -254,8 +254,9 @@ def insertBlock(cur, data):
             cur.execute("update trxs set block_id=%s where id=%s limit 1;", (blk_id + n, tx_id))
             if cur.rowcount > 0:
                 continue
-        insertTx(cur, tx, tx_id, blk_id + n)
+        txlist.append(insertTx(cur, tx, tx_id, blk_id + n))
 
+    cur.executemany("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", txlist)
     cur.execute("insert ignore into blocks (id,hash,coinbase) values (%s,%s,%s);", (data['height'], data['hash'], data['coinbase']))
     puthdr(data['height'], sqc.cfg, data['hdr'])
 
