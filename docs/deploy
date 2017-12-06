@@ -6,7 +6,7 @@
 # runs as user git
 
 declare -A branch
-branch["master"]="/usr/local" 
+branch["dev"]="/usr/local" 
 
 if [[ "${branch[$1]}" ]]; then
     target=${branch[$1]}
