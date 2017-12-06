@@ -13,7 +13,7 @@ if [[ "${branch[$1]}" ]]; then
     
     echo "Copying executable and package files"
     cp sqlchaind sqlchain-api sqlchain-init sqlchain-electrum $target/bin/
-    cp sqlchain/* $target/lib/python2.7/dist-packages/sqlchain/
+    cp -r sqlchain/* $target/lib/python2.7/dist-packages/sqlchain/
     
 else
     echo "Branch "$1" has no target - not deployed."
