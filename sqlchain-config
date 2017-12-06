@@ -1,0 +1,83 @@
+#! /usr/bin/env python
+
+import os, sys, signal, pwd, locale, random, string, shutil, json
+import MySQLdb as db
+
+from dialog import Dialog
+from sqlchain.version import version
+from sqlchain.democvt import democvt
+
+DATA_DIR = 0
+BLKDAT_DIR = 1
+DAEMON_BIN = 2
+DEF_COIN_USER = 3
+DEF_RPC_PORT = 4
+DEF_API_PORT = 5
+CAN_PRUNE = 6
+CAN_BLKDAT = 7
+
+coin_var = {
+    'bitcoin': [ 'bitcoin',  '',         'bitcoind',  'btc', 8332,  8085,  True, True ],
+    'testnet': [ 'bitcoin',  'testnet3', 'bitcoind',  'btc', 18332, 18085, True, True ],
+    'litecoin':[ 'litecoin', '',         'litecoind', 'ltc', 10332, 8086,  True, False ],
+    'reddcoin':[ 'reddcoin', '',         'reddcoind', 'rdd', 45443, 8087,  False, False ]
+}
+cointype = ''
+sqlroot = "/var/data/sqlchain"
+
+def default_cfg(cointype):
+    return { 
+    'cointype':cointype,'coindir':"/var/data/"+coin_var[cointype][DATA_DIR],'sqldir':sqlroot+'/'+cointype,'cfgdir':'/etc/sqlchain',
+    'coinboot':'No','sqlboot':'No','apiboot':'No','coinuser':coin_var[cointype][DEF_COIN_USER],'rpcuser':coin_var[cointype][DEF_COIN_USER],
+    'dbuser':coin_var[cointype][DEF_COIN_USER],'coinpwd':'random','coinprune':'No','blkdat':'No','nosigs':'Yes','dbname':coin_var[cointype][DATA_DIR],
+    'dbeng':'MyISAM','nginx':'disabled'
+    }
+
+def sigterm_handler(_signo, _stack_frame):
+    print "\nClean shutdown"
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, sigterm_handler)
+locale.setlocale(locale.LC_ALL, '')
+
+d = Dialog(dialog="dialog")
+d.set_background_title("sqlChain Config - %s" % version)
+
+if not os.geteuid() != 0:
+    d.msgbox("This program requires admin (root) privileges.\nTry again with: sudo %s" % sys.argv[0],7,55)
+    sys.exit(0)
+
+if not os.path.exists('/usr/local/share/sqlchain'):
+    d.msgbox("Please install sqlchain before running config.\neg. sudo pip install sqlchain",7,55)
+    sys.exit(0)
+
+intro = """\nThis program will configure sqlChain for your system.\n
+It can optionally create the required users, database, and config
+files for multiple supported "coins". Re-running this can update 
+settings including passwords but will not clear the database or 
+remove old files.\n"""
+
+if d.yesno(intro,12,70) == d.OK:
+    while True:
+        code,coins_todo = d.checklist("",15,60, choices=[ (c.capitalize(),'',False) for c in coin_var ][::-1],
+            title='You can choose multiple and configure each in turn:', backtitle='Only One Blockchain Rules Them All', 
+            ok_label='Configure', cancel_label='Quit')
+        if code in [d.CANCEL,d.ESC]:
+            break
+        for cointype_selected in coins_todo:
+            cfg = default_cfg(cointype_selected.lower())
+            while True:
+                code,tag = d.menu('%s Settings - Choose a setting to change:' % cfg['cointype'].capitalize(),20,80,
+                                   choices=[("(1)", "%s data directory: %s" % (cfg['cointype'].capitalize(),cfg['coindir'])),
+                                            ("(2)", "sqlChain data directory: %s" % cfg['sqldir']),
+                                            ("(3)", "Config directory: %s" % cfg['cfgdir']),
+                                            ("(4)", "System Boot Options: Node:%s, sqlChain:%s, API:%s" % (cfg['coinboot'],cfg['sqlboot'],cfg['apiboot'])),
+                                            ("(5)", "User Options & Pwds: Node:%s, RPC:%s, DB:%s" % (cfg['coinuser'],cfg['rpcuser'],cfg['dbuser'])),
+                                            ("(6)", "Operating Modes: Prune:%s, Direct:%s, NoSigs:%s" % (cfg['coinprune'],cfg['blkdat'],cfg['nosigs'])),
+                                            ("(7)", "Database Config: Name:%s, Engine:%s" % (cfg['dbname'],cfg['dbeng'])),
+                                            ("(8)", "Web Server/API Options: [%s]" % cfg['nginx']),
+                                            ("(9)", "Update ALL Settings" )
+                                           ], ok_label="Change", menu_height=9,
+                                           backtitle='sqlChain - %s Settings' % cfg['cointype'].capitalize())
+                if code in [d.CANCEL,d.ESC]:
+                    break
