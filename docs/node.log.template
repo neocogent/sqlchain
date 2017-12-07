@@ -1,4 +1,4 @@
-{sqldir}/*.log {
+{sqldir}/*.log {{
     weekly
     rotate 4
     compress
@@ -9,4 +9,4 @@
         [ -f {sqldir}/api.pid ] && kill -HUP `cat {sqldir}/api.pid`
         [ -f {sqldir}/daemon.pid ] && kill -HUP `cat {sqldir}/daemon.pid`
     endscript
-}
+}}

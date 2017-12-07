@@ -1,4 +1,4 @@
-{coindir}/debug.log {
+{coindir}/debug.log {{
     weekly
     copytruncate
     rotate 4
@@ -6,4 +6,4 @@
     delaycompress
     missingok
     notifempty
-}
+}}

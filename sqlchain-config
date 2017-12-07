@@ -390,7 +390,7 @@ def ConfigProxy(cfg):
         os.utime(cfg['nginx'], None)
         log += "Nginx config exists, not modified: "+cfg['nginx']
     except OSError:
-        print "Creating nginx config: "+cfg['nginx']
+        log += "Creating nginx config: "+cfg['nginx']
         with open(cfg['nginx'], 'w') as f:
             f.write(nginxconf.format(**cfg))
     return log
