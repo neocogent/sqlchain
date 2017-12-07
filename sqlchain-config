@@ -1,11 +1,13 @@
 #! /usr/bin/env python
 
-import os, sys, signal, pwd, curses, locale, random, string, shutil, json
+import os, sys, signal, pwd, locale, random, string, shutil, json
 import MySQLdb as db
 
 from dialog import Dialog
 from sqlchain.version import version
 from sqlchain.democvt import democvt
+
+SQLCHAIN_INSTALL_PATH = '/usr/local/share/sqlchain'
 
 DATA_DIR = 0
 BLKDAT_DIR = 1
@@ -22,16 +24,28 @@ coin_var = {
     'litecoin':[ 'litecoin', '',         'litecoind', 'ltc', 10332, 8086,  True, False ],
     'reddcoin':[ 'reddcoin', '',         'reddcoind', 'rdd', 45443, 8087,  False, False ]
 }
-cointype = ''
+cwd = os.getcwd()
 sqlroot = "/var/data/sqlchain"
+op_mode_help = [
+"""Normally the underlying full node stores all historic blocks making up the blockchain. But these are not used again by sqlchain once the data has been processed into the SQL database. So by enabling pruning mode the processed blocks can be discarded and significant disk space saved.\n\nHowever, typically the node software can accept and verify blocks faster than sqlchain which means that unless something pauses the node it still needs a large amount of disk space even if later released. The "blkbtc" utility included with sqlchain can block ports that stalls the node allowing sqlchain to catch up. This allows processing the entire blockchain with less disk space, such as on small VPS nodes.\n\nAn SSD is essential for syncing with sqlchain but afterwards it is feasible to move data to slower media.""",
+"""The default is for sqlchain to get new blocks using the RPC interface. When the underlying node is busy syncing the RPC interface can respond slowly, starving sqlchain. Using 'direct mode' enables sqlchain to access the blockchain files directly, read new blocks and process them without being held back or interfering with node operation.\n\nIt does depend on fixed formats, with 'magic' numbers, and can be broken by new node versions or non-standard changes and so should be regarded as 'experimental'. Also, it is disabled once sqlchain nears full sync and not used for ongoing operation.""",
+"""The signature and witness data is needed to verify transaction validity but that has already been done by the underlying node.\n\nThere may be some applications that need to provide signature/witness data for completeness but in many cases it is not required and much disk space can be saved by discarding the data.\n\nFull raw transaction data cannot be requested from sqlchain if signature/witness data is discarded.""",
+"""This installs system logrotate config files so that logs get rotated weekly, and compressed for older cycles, saving disk space.\n\nThese configs can be manually edited to alter options (/etc/logrotate.d/...) and during sync it may help to manually rotate as they grow large quickly, eg.\n\nsudo logrotate -f /etc/logrotate.d/sqlchain\n\nwill trigger a rotation."""
+]
 
-def default_cfg(cointype):
-    return { 
+
+def initcfg(d, cfg, cointype):
+    if cfg is not None and  d.yesno("Copy last settings for %s?" % cointype.capitalize()) == d.OK:
+        oldtype = cfg['cointype']
+        for x in cfg:
+            cfg[x] = cfg[x].replace(oldtype, cointype)
+        return cfg
+    return {
     'cointype':cointype,'coindir':"/var/data/"+coin_var[cointype][DATA_DIR],'sqldir':sqlroot+'/'+cointype,'cfgdir':'/etc/sqlchain',
     'coinboot':'No','sqlboot':'No','apiboot':'No','coinuser':coin_var[cointype][DEF_COIN_USER],'coinrpc':coin_var[cointype][DEF_COIN_USER],
     'dbuser':coin_var[cointype][DEF_COIN_USER],'coinpwd':''.join(random.sample(string.ascii_letters+string.digits,20)),
     'dbpwd':''.join(random.sample(string.ascii_letters+string.digits,20)),'coinprune':'No','blkdat':'No','nosigs':'Yes',
-    'dbname':cointype,'dbeng':'MyISAM','wwwdir':'/var/www/'+cointype,'nginx':'/etc/nginx/conf.d/%s.conf' % cointype, 
+    'dbname':cointype,'dbeng':'MyISAM','wwwdir':'/var/www/'+cointype,'nginx':'/etc/nginx/conf.d/%s.conf' % cointype,
     'apidomain':'api.%s.info' % cointype,'sslpath':'/etc/letsencrypt/live/api.%s.info' % cointype,
     'listen':"localhost:%d" % coin_var[cointype][DEF_API_PORT],'logrotate':'Yes'
     }
@@ -44,106 +58,344 @@ def doCfg():
     d = Dialog(dialog="dialog")
     d.set_background_title("sqlChain Config - %s" % version)
 
-    if not os.geteuid() != 0:
+    if os.geteuid() != 0:
         d.msgbox("This program requires admin (root) privileges.\nTry again with: sudo %s" % sys.argv[0],7,55)
         return
 
-    if not os.path.exists('/usr/local/share/sqlchain'):
+    if not os.path.exists(SQLCHAIN_INSTALL_PATH):
         d.msgbox("Please install sqlchain before running config.\neg. sudo pip install sqlchain",7,55)
         return
 
-    intro = "\nThis program will configure sqlChain for your system.\n\nIt can optionally create the required users,"\
+    intro = "\nThis program will configure sqlChain for your system.\n\nIt can optionally create the required users, "\
             "database, and config files for multiple supported \"coins\". Re-running this can update settings including "\
             "passwords but will not clear the database or remove old files.\n\nContinue?"
 
     if d.yesno(intro,15,70) == d.OK:
+        cfg = None
         while True:
             code,coins_todo = d.checklist("",15,60, choices=[ (c.capitalize(),'',False) for c in coin_var ][::-1],
-                title='You can choose multiple and configure each in turn:', backtitle='Only One Blockchain Rules Them All', 
+                title='You can choose multiple and configure each in turn:', backtitle='Only One Blockchain Rules Them All',
                 ok_label='Configure', cancel_label='Quit')
             if code in [d.CANCEL,d.ESC]:
                 break
             for cointype_selected in coins_todo:
-                cfg = default_cfg(cointype_selected.lower())
-                d.set_background_title('sqlChain - %s Settings' % cfg['cointype'].capitalize())
-                while True:
-                    code,tag = d.menu('%s Settings - Choose a setting to change:' % cfg['cointype'].capitalize(),20,80,
-                                       choices=[("(1)", "%s data directory: %s" % (cfg['cointype'].capitalize(),cfg['coindir'])),
-                                                ("(2)", "sqlChain data directory: %s" % cfg['sqldir']),
-                                                ("(3)", "Config directory: %s" % cfg['cfgdir']),
-                                                ("(4)", "System Boot Options => Node:%s, sqlChain:%s, API:%s" % (cfg['coinboot'],cfg['sqlboot'],cfg['apiboot'])),
-                                                ("(5)", "User Options & Pwds => Node:%s, RPC:%s, DB:%s" % (cfg['coinuser'],cfg['coinrpc'],cfg['dbuser'])),
-                                                ("(6)", "Operating Modes => Prune:%s, Direct:%s, NoSigs:%s" % (cfg['coinprune'],cfg['blkdat'],cfg['nosigs'])),
-                                                ("(7)", "Database Config => Name:%s, Engine:%s" % (cfg['dbname'],cfg['dbeng'])),
-                                                ("(8)", "Web/API Server Options => Root:[%s]" % cfg['wwwdir']),
-                                                ("(9)", "Configure -> Update ALL Settings" )
-                                               ], ok_label="Change", menu_height=9)
-                    if code in [d.CANCEL,d.ESC]:
-                        break
-                    if tag[1] == '1':
-                        code,tmp = d.inputbox("%s data directory:" % cfg['cointype'].capitalize(), 8, 60, init=cfg['coindir'])
-                        if code == d.OK:
-                            cfg['coindir'] = tmp
-                    if tag[1] == '2':
-                        code,tmp = d.inputbox("sqlChain data directory:", 8, 60, init=cfg['sqldir'])
-                        if code == d.OK:
-                            cfg['sqldir'] = tmp
-                    if tag[1] == '3':
-                        code,tmp = d.inputbox("Config directory:", 8, 60, init=cfg['cfgdir'])
-                        if code == d.OK:
-                            cfg['cfgdir'] = tmp
-                    if tag[1] == '4':
-                        code,tmp = d.checklist("Mark the daemons that should start at boot:", 10, 60, choices=[
-                            ('1','%s node' % coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinboot']=='Yes'),
-                            ('2','sqlchaind daemon',cfg['sqlboot']=='Yes'),
-                            ('3','sqlchain-api daemon',cfg['apiboot']=='Yes')
-                            ],title="System Boot Options")
-                        if code == d.OK:
-                            cfg['coinboot'] = 'Yes' if '1' in tmp else 'No'
-                            cfg['sqlboot'] = 'Yes' if '2' in tmp else 'No'
-                            cfg['apiboot'] = 'Yes' if '3' in tmp else 'No'
-                    if tag[1] == '5':
-                        code,tmp = d.form("Set userid / password (random default):",[
-                            ('%s/sqlchain (run as):' % coin_var[cfg['cointype']][DAEMON_BIN],1,0,cfg['coinuser'],1,30,25,10),
-                            ('RPC user id:',2,0,cfg['coinrpc'],2,30,25,0),
-                            ('RPC password:',3,0,cfg['coinpwd'],3,30,25,0),
-                            ('DB user id:',4,0,cfg['dbuser'],4,30,25,0),
-                            ('DB password:',5,0,cfg['dbpwd'],5,30,25,0)],title="User Ids / Passwords")
-                        if code == d.OK:
-                            cfg['coinuser'],cfg['coinrpc'],cfg['coinpwd'],cfg['dbuser'],cfg['dbpwd'] = tmp
-                    if tag[1] == '6':
-                        code,tmp = d.checklist("Mark the options to enable:", 12, 60, choices=[
-                            ('1','Enable %s pruning (save space)' % coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinprune']=='Yes'),
-                            ('2','Direct read blockchain, not RPC (faster)',cfg['blkdat']=='Yes'),
-                            ('3','Discard signature/witness data (save space)',cfg['nosigs']=='Yes'),
-                            ('4','Enable weekly log rotation',cfg['logrotate']=='Yes')
-                            ],title="Operating Modes",list_height=4)
-                        if code == d.OK:
-                            cfg['coinprune'] = 'Yes' if '1' in tmp else 'No'
-                            cfg['blkdat'] = 'Yes' if '2' in tmp else 'No'
-                            cfg['nosigs'] = 'Yes' if '3' in tmp else 'No'
-                            cfg['logrotate'] = 'Yes' if '4' in tmp else 'No'
-                    if tag[1] == '7':
-                        code,tmp = d.form("",[
-                            ('Database Name:',1,0,cfg['dbname'],1,20,12,0),
-                            ('Database Engine:',2,0,cfg['dbeng'],2,20,12,0)],form_height=2,title="Database Options")
-                        if code == d.OK:
-                            cfg['dbname'],cfg['dbeng'] = tmp
-                    if tag[1] == '8':
-                        code,tmp = d.form("Set web server / proxy options:",[
-                            ('Web root directory:',1,0,cfg['wwwdir'],1,40,45,0,"Path to web root (html,js,css) files. Used by sqlchain-api or Nginx depending on proxy setting."),
-                            ('Web/API Server Host:Port:',2,0,cfg['listen'],2,40,45,0,"Usually localhost if proxying or testing, or 0.0.0.0:443 for public serving with SSL."),
-                            ('SSL certificate path:',3,0,cfg['sslpath'],3,40,45,0,"Free SSL cert-authority Lets Encrypt as default. Blank for non-SSL (chg port to 80)."),
-                            ('Nginx config path (blank = no proxy):',4,0,cfg['nginx'],4,40,45,0,"Blank if not using reverse proxy in which case sqlchain-api serves both files and API."),
-                            ('Domain name (if Nginx conf):',5,0,cfg['apidomain'],5,40,45,0,"Virtual host domain name if using Nginx to serve web files.")
-                            ],title="Web / API Server Options",item_help=True)
-                        if code == d.OK:
-                            cfg['wwwdir'],cfg['listen'],cfg['sslpath'],cfg['nginx'],cfg['apidomain'] = tmp
-    
-                        
+                cfg = doCoinSettings(d, initcfg(d, cfg, cointype_selected.lower()))
+
+def doCoinSettings(d, cfg): # pylint:disable=too-many-branches,too-many-statements
+    d.set_background_title('sqlChain - %s Settings' % cfg['cointype'].capitalize())
+    while True:
+        code,tag = d.menu('%s Settings - Choose a setting to change:' % cfg['cointype'].capitalize(),18,80,
+                           choices=[("(1)", "File Locations => %s, %s" % (cfg['coindir'], cfg['sqldir'])),
+                                    ("(2)", "System Boot Options => Node:%s, sqlChain:%s, API:%s" % (cfg['coinboot'],cfg['sqlboot'],cfg['apiboot'])),
+                                    ("(3)", "User Options & Pwds => Node:%s, RPC:%s, DB:%s" % (cfg['coinuser'],cfg['coinrpc'],cfg['dbuser'])),
+                                    ("(4)", "Operating Modes => Prune:%s, Direct:%s, NoSigs:%s, Logs:%s" % (cfg['coinprune'],cfg['blkdat'],cfg['nosigs'],cfg['logrotate'])),
+                                    ("(5)", "Database Config => Name:%s, Engine:%s" % (cfg['dbname'],cfg['dbeng'])),
+                                    ("(6)", "Web/API Server Options => Root:%s, Proxy:%s" % (cfg['wwwdir'],'No' if cfg['nginx'] =='' else 'Yes')),
+                                    ("", ""),
+                                    ("(8)", "Configure -> Update ALL Settings" )
+                                   ], ok_label="Change", menu_height=9)
+        if code in [d.CANCEL,d.ESC]:
+            if d.yesno("Canceling will lose changes. Are you sure?",5,48) == d.OK:
+                return None
+        elif tag[1] == '1':
+            code,tmp = d.form("Set paths for sqlchain files:",[
+                ("%s data directory:" % cfg['cointype'].capitalize(),1,0,cfg['coindir'],1,27,50,0),
+                ("sqlChain data directory:",2,0,cfg['sqldir'],2,27,50,0),
+                ("Config directory:",3,0,cfg['cfgdir'],3,27,50,0)
+                ],title="sqlChain Locations")
+            if code == d.OK:
+                cfg['coindir'],cfg['sqldir'],cfg['cfgdir'] = tmp
+        elif tag[1] == '2':
+            code,tmp = d.checklist("Mark the daemons that should start at boot:", 10, 60, choices=[
+                ('1','%s node' % coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinboot']=='Yes'),
+                ('2','sqlchaind daemon',cfg['sqlboot']=='Yes'),
+                ('3','sqlchain-api daemon',cfg['apiboot']=='Yes')
+                ],title="System Boot Options")
+            if code == d.OK:
+                cfg['coinboot'] = 'Yes' if '1' in tmp else 'No'
+                cfg['sqlboot'] = 'Yes' if '2' in tmp else 'No'
+                cfg['apiboot'] = 'Yes' if '3' in tmp else 'No'
+        elif tag[1] == '3':
+            code,tmp = d.form("Set userid / password (random default):",[
+                ('%s/sqlchain (run as):' % coin_var[cfg['cointype']][DAEMON_BIN],1,0,cfg['coinuser'],1,30,25,10),
+                ('RPC user id:',2,0,cfg['coinrpc'],2,30,25,0),
+                ('RPC password:',3,0,cfg['coinpwd'],3,30,25,0),
+                ('DB user id:',4,0,cfg['dbuser'],4,30,25,0),
+                ('DB password:',5,0,cfg['dbpwd'],5,30,25,0)],title="User Ids / Passwords")
+            if code == d.OK:
+                cfg['coinuser'],cfg['coinrpc'],cfg['coinpwd'],cfg['dbuser'],cfg['dbpwd'] = tmp
+        elif tag[1] == '4':
+            while True:
+                code,tmp = d.checklist("Mark the options to enable:", 12, 60, choices=[
+                    ('1','Enable %s pruning (save space)' % coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinprune']=='Yes'),
+                    ('2','Direct read blockchain, not RPC (faster)',cfg['blkdat']=='Yes'),
+                    ('3','Discard signature/witness data (save space)',cfg['nosigs']=='Yes'),
+                    ('4','Enable weekly log rotation',cfg['logrotate']=='Yes')
+                    ],title="Operating Modes",list_height=4,help_button=True)
+                if code == d.HELP:
+                    d.msgbox(op_mode_help[int(tmp)-1],20,75)
+                    continue
+                elif code == d.OK:
+                    cfg['coinprune'] = 'Yes' if '1' in tmp else 'No'
+                    cfg['blkdat'] = 'Yes' if '2' in tmp else 'No'
+                    cfg['nosigs'] = 'Yes' if '3' in tmp else 'No'
+                    cfg['logrotate'] = 'Yes' if '4' in tmp else 'No'
+                break
+        elif tag[1] == '5':
+            code,tmp = d.form("",[
+                ('Database Name:',1,0,cfg['dbname'],1,20,12,0,"Any valid sql database name possible. If <dbname>.sql exists in current directory it overrides schema."),
+                ('Database Engine:',2,0,cfg['dbeng'],2,20,12,0,"MyISAM: simple, fast read-only; RocksDB: fast, ~50% space; TokuDB: slower, saves ~50%; InnoDB,Aria: untested.")
+                ],form_height=2,title="Database Options",item_help=True)
+            if code == d.OK:
+                cfg['dbname'],cfg['dbeng'] = tmp
+        elif tag[1] == '6':
+            code,tmp = d.form("Set web server / proxy options:",[
+                ('Web root directory:',1,0,cfg['wwwdir'],1,40,45,0,"Path to web root (html,js,css) files. Used by sqlchain-api or Nginx depending on proxy setting."),
+                ('Web/API Server Host:Port:',2,0,cfg['listen'],2,40,45,0,"Usually localhost if proxying or testing, or 0.0.0.0:443 for direct public serving with SSL (not recommended)."),
+                ('SSL certificate path:',3,0,cfg['sslpath'],3,40,45,0,"Free SSL cert-authority Lets Encrypt as default. Blank for non-SSL (chg port to 80)."),
+                ('Nginx config path (blank = no proxy):',4,0,cfg['nginx'],4,40,45,0,"Set blank if not using reverse proxy, in which case sqlchain-api serves both files and API."),
+                ('Domain name (if Nginx proxy):',5,0,cfg['apidomain'],5,40,45,0,"Set your (virtual host) domain name if using Nginx to serve web files.")
+                ],title="Web / API Server Options",item_help=True)
+            if code == d.OK:
+                cfg['wwwdir'],cfg['listen'],cfg['sslpath'],cfg['nginx'],cfg['apidomain'] = tmp
+        elif tag[1] == '8':
+            if d.yesno("Overwrite config files?",5,35) == d.OK:
+                doUpdate(d, cfg)
+                return cfg
+
+def doUpdate(d, cfg):
+    log = CheckDirs(cfg)
+    log += ConfigSystemd(cfg)
+    log += SetupDB(d, cfg)
+    log += ConfigDaemons(cfg)
+    if cfg['logrotate']:
+        log += ConfigLogging(cfg)
+    if cfg['nginx']:
+        log += ConfigProxy(cfg)
+    d.msgbox(log,25,80)
+
+def CheckDirs(cfg): #pylint:disable=too-many-branches
+    log = '\n'
+    os.chdir(SQLCHAIN_INSTALL_PATH)
+
+    ## Create user for running coin and sqlchain daemons
+    try:
+        usr = pwd.getpwnam(cfg['coinuser'])
+    except KeyError:
+        log += "Creating user: %s\n" % cfg['coinuser']
+        os.system('useradd -r -s /bin/false '+cfg['coinuser'])
+        usr = pwd.getpwnam(cfg['coinuser'])
+
+    ### Create directories if not already
+    if not os.path.exists(cfg['cfgdir']):
+        log += "Creating directory: %s\n" % cfg['cfgdir']
+        os.makedirs(cfg['cfgdir'])
+        os.chown(cfg['cfgdir'], usr.pw_uid, usr.pw_gid)
+    if not os.path.exists(cfg['coindir']):
+        log += "Creating directory: %s\n" % cfg['coindir']
+        os.makedirs(cfg['coindir'])
+        os.chown(cfg['coindir'], usr.pw_uid, usr.pw_gid)
+    if not os.path.exists(cfg['sqldir']):
+        log += "Creating directory: %s\n" % cfg['sqldir']
+        os.makedirs(cfg['sqldir'])
+        os.chown(cfg['sqldir'], usr.pw_uid, usr.pw_gid)
+    if cfg['wwwdir'] in ['n','N','/','none']:
+        cfg['wwwdir'] = ''
+    elif not os.path.exists(cfg['wwwdir']):
+        log += "Creating directory: %s\n" % cfg['wwwdir']
+        os.makedirs(cfg['wwwdir'])
+        os.chown(cfg['wwwdir'], usr.pw_uid, usr.pw_gid)
+        log += "Copying demo web app files:"
+        for root, dirs, files in os.walk('www'):
+            dst = root[root.index('/'):] if '/'  in root else '/'
+            for d in dirs:
+                os.mkdir(os.path.join(cfg['wwwdir']+dst, d))
+                os.chown(os.path.join(cfg['wwwdir']+dst, d), usr.pw_uid, usr.pw_gid)
+            for f in files:
+                shutil.copy2(os.path.join(root, f), os.path.join(cfg['wwwdir']+dst, f))
+                os.chown(os.path.join(cfg['wwwdir']+dst, f), usr.pw_uid, usr.pw_gid)
+        if cfg['cointype'] != 'bitcoin':
+            if democvt(os.path.join('www', 'main.html'), os.path.join(cfg['wwwdir'], 'main.html'), cfg['cointype']):
+                log += " main.html converted to %s\n" % cfg['cointype']
+            else:
+                log += " no demo page for %s, using bitcoin\n" % cfg['cointype']
+
+    ### Create empty data files and set ownership
+    for f in ['/blobs.0.dat','/hdrs.dat']:
+        try:
+            os.utime(cfg['sqldir']+f, None)
+        except OSError:
+            log += "Creating data file: %s" % cfg['sqldir']+f+'\n'
+            open(cfg['sqldir']+f, 'a').close()
+            os.chown(cfg['sqldir']+f, usr.pw_uid, usr.pw_gid)
+    return log
+
+def ConfigSystemd(cfg):
+    log = '\n'
+    initsrc = open('docs/systemd.template').read()
+    coinbin = '/usr/local/bin/'+coin_var[cfg['cointype']][DAEMON_BIN]
+    if not os.path.exists(coinbin):
+        coinbin = '/usr/bin/'+coin_var[cfg['cointype']][DAEMON_BIN]
+
+    initfile = '/lib/systemd/system/%s.service' % cfg['cointype']
+    try:
+        os.utime(initfile, None)
+    except OSError:
+        log += "Creating systemd init file: %s\n" % initfile
+        with open(initfile, 'w') as f:
+            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%s.pid --chuid %s:%s --exec %s -- -conf=%s/%s.conf -datadir=%s\n" % (cfg['sqldir'],coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinuser'],cfg['coinuser'],coinbin,cfg['cfgdir'],cfg['cointype'],cfg['coindir'])
+            f.write(initsrc.replace('ExecStart',s).replace('title','%s Daemon' % coin_var[cfg['cointype']][DAEMON_BIN]))
+    log += mkSysdBoot(cfg['coinboot'] == 'Yes', '%s.service', cfg['cointype'])
+
+    initfile = '/lib/systemd/system/sqlchain@.service'
+    try:
+        os.utime(initfile, None)
+    except OSError:
+        log += "Creating systemd init file: %s\n" % initfile
+        with open(initfile, 'w') as f:
+            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/daemon.pid --exec /usr/local/bin/sqlchaind -- %s/sqlchain.%%i.cfg\n" % (sqlroot,cfg['cfgdir'])
+            f.write(initsrc.replace('Type=forking\n','').replace('ExecStart',s).replace('title','SQL Sync Daemon'))
+    log += mkSysdBoot(cfg['sqlboot'] == 'Yes', 'sqlchain@%s.service', cfg['cointype'])
+
+    initfile = '/lib/systemd/system/sqlchain-api@.service'
+    try:
+        os.utime(initfile, None)
+    except OSError:
+        log += "Creating systemd init file: %s" % initfile
+        with open(initfile, 'w') as f:
+            s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.%%i.cfg\n" % (sqlroot,cfg['cfgdir'])
+            f.write(initsrc.replace('Type=forking\n','').replace('ExecStart',s).replace('title','Web/API Server Daemon'))
+    log += mkSysdBoot(cfg['coinboot'] == 'Yes', 'sqlchain-api@%s.service', cfg['cointype'])
+    return log
+
+def mkSysdBoot(boot, target, cointype=''):
+    if boot and not os.path.exists('/lib/systemd/system/multi-user.target.wants/'+target%cointype):
+        os.symlink('../'+target%'', '/lib/systemd/system/multi-user.target.wants/'+target%cointype)
+        return "Inserting "+target%cointype+" boot link\n"
+    elif not boot and os.path.exists('/lib/systemd/system/multi-user.target.wants/'+target%cointype):
+        os.unlink('/lib/systemd/system/multi-user.target.wants/'+target%cointype)
+        return "Removing "+target%cointype+" boot link\n"
+    return ''
+
+def SetupDB(d, cfg):
+    log = '\n'
+    code,rootpwd = d.passwordbox("Enter MySQL root password (to create database & user):",insecure=True)
+    if code in [d.CANCEL,d.ESC]:
+        return 'Database setup skipped: canceled by user\n'
+    sqldef = cwd+'/%s.sql' % cfg['dbname']          # user supplied dbname overrides custom dbname
+    if not os.path.exists(sqldef):
+        sqldef = 'docs/%s.sql' % cfg['dbname']      # custom dbname overrides cointype
+    if not os.path.exists(sqldef):
+        sqldef = 'docs/%s.sql' % cfg['cointype']    # cointype overrides default
+    if not os.path.exists(sqldef):
+        sqldef = 'docs/sqlchain.sql'                # default sqlchain schema
+    log += "Creating MySQL database: %s using schema: %s\n\n" % (cfg['dbname'], os.path.split(sqldef)[1])
+    try:
+        sqlcode = ''
+        sqlsrc = open(sqldef).read().format(**cfg)
+        for line in sqlsrc.splitlines():
+            if line != '' and line[:2] != '--':
+                sqlcode += line
+        sql = db.connect(user='root', passwd=rootpwd)
+        cur = sql.cursor()
+        for stmnt in sqlcode.split(';'):
+            if stmnt:
+                cur.execute(stmnt)
+    except (IOError, ImportError):
+        log += "Cannot open: /usr/local/share/sqlchain/docs/sqlchain.sql\n"
+        log += "Skipping further MySQL DB setup\n"
+    except db.Error, e: # pylint:disable=no-member
+        log += "MySQL Error: %s\n" % str(e)
+        log += "Skipping further MySQL DB setup\n"
+    return log
+
+def ConfigDaemons(cfg):
+    log = '\n'
+    usr = pwd.getpwnam(cfg['coinuser'])
+    cfgcoin = {}
+    try: # try to read existing conf, if exists
+        conf = open(cfg['cfgdir']+'/%s.conf' % cfg['cointype']).read()
+        log += "Updating file: %s/%s.conf\n" % (cfg['cfgdir'],cfg['cointype'])
+        for line in conf.splitlines():
+            if '=' in line:
+                k,v = line.split('=')
+                cfgcoin[k] = v
+    except (IOError, ImportError):
+        log += "Creating node conf file: %s/%s.conf\n" % (cfg['cfgdir'],cfg['cointype'])
+
+    # Write blockchain node conf
+    cfgcoin.update({'server':1, 'daemon':1, 'prune':1 if cfg['coinprune'] == 'Yes' else 0, 'rpcport':coin_var[cfg['cointype']][DEF_RPC_PORT], \
+                  'datadir':cfg['coindir'], 'pid':cfg['sqldir']+'/%s.pid' % coin_var[cfg['cointype']][DAEMON_BIN], 'disablewallet':1 })
+    if cfg['coinrpc'] != 'Yes':
+        cfgcoin.update({'rpcuser':cfg['coinrpc'], 'rpcpassword':cfg['coinpwd'] })
+    elif 'rpcuser' not in cfgcoin:
+        cfgcoin.update({'rpcuser':'%s' % coin_var[cfg['cointype']][DEF_COIN_USER], 'rpcpassword':cfg['coinpwd'] })
+    if cfg['cointype'] == 'testnet':
+        cfgcoin.update({'testnet':1 })
+
+    with open(cfg['cfgdir']+'/%s.conf' % cfg['cointype'], 'w') as f:
+        for k in cfgcoin:
+            f.write("%s=%s\n" % (k,cfgcoin[k]))
+    os.chown(cfg['cfgdir']+'/%s.conf' % cfg['cointype'], usr.pw_uid, usr.pw_gid)
+    os.chmod(cfg['cfgdir']+'/%s.conf' % cfg['cointype'], 0660)
+
+    ### Write sqlchaind.cfg
+    sqlcfg = { "log": cfg['sqldir']+"/daemon.log", "pid": cfg['sqldir']+"/daemon.pid", "path": cfg['sqldir'], "db": "localhost:%s:%s:%s" % (cfg['dbuser'],cfg['dbpwd'],cfg['dbname']), \
+               "queue": 8, "rpc": "http://%s:%s@localhost:%d" % (cfgcoin['rpcuser'],cfgcoin['rpcpassword'],coin_var[cfg['cointype']][DEF_RPC_PORT]), \
+               "debug": False, "user": cfg['coinuser'], "no-sigs": cfg['nosigs'] == 'Yes', "cointype": cfg['cointype'] }
+    if cfg['blkdat'] == 'Yes':
+        sqlcfg["blkdat"] = cfg['coindir'] + '/' + coin_var[cfg['cointype']][BLKDAT_DIR]
+    log += 'Writing config file: '+cfg['cfgdir']+'/sqlchain.%s.cfg\n' % cfg['cointype']
+    with open(cfg['cfgdir']+'/sqlchain.%s.cfg' % cfg['cointype'], 'w') as f:
+        json.dump(sqlcfg, f, indent=2)
+    os.chown(cfg['cfgdir']+'/sqlchain.%s.cfg' % cfg['cointype'], usr.pw_uid, usr.pw_gid)
+    os.chmod(cfg['cfgdir']+'/sqlchain.%s.cfg' % cfg['cointype'], 0660)
+
+    ### Write sqlchain-api.cfg
+    apicfg = { "www": cfg['wwwdir'], "user": cfg['coinuser'], "db": "localhost:%s:%s:%s" % (cfg['dbuser'],cfg['dbpwd'],cfg['dbname']), "dbinfo": -1, "dbinfo-ts": "0", \
+               "rpc": "http://%s:%s@localhost:%d" % (cfgcoin['rpcuser'],cfgcoin['rpcpassword'],coin_var[cfg['cointype']][DEF_RPC_PORT]), \
+               "pool": 4, "log": cfg['sqldir']+"/api.log", "pid": cfg['sqldir']+"/api.pid", "cointype": cfg['cointype'], \
+               "path": cfg['sqldir'], "debug": False, "block": 0, "listen": "localhost:%d" % coin_var[cfg['cointype']][DEF_API_PORT], "sync": 0 }
+    log += 'Writing config file: '+cfg['cfgdir']+'/sqlchain-api.%s.cfg\n' % cfg['cointype']
+    with open(cfg['cfgdir']+'/sqlchain-api.%s.cfg' % cfg['cointype'], 'w') as f:
+        json.dump(apicfg, f, indent=2)
+    os.chown(cfg['cfgdir']+'/sqlchain-api.%s.cfg' % cfg['cointype'], usr.pw_uid, usr.pw_gid)
+    os.chmod(cfg['cfgdir']+'/sqlchain-api.%s.cfg' % cfg['cointype'], 0660)
+    return log
+
+def ConfigLogging(cfg):
+    log = '\n'
+    logconf = open('docs/node.log.template').read()
+    logconfpath = '/etc/logrotate.d/sqlchain.%s' % cfg['cointype']
+    if not os.path.exists(logconfpath):
+        log += "Creating logrotate file: %s\n" % logconfpath
+        with open(logconfpath, 'w') as f:
+            f.write(logconf.format(**cfg))
+    logconf =  open('docs/sqlchain.log.template').read()
+    logconfpath = '/etc/logrotate.d/%s' % cfg['cointype']
+    if not os.path.exists(logconfpath):
+        log += "Creating logrotate file: %s\n" % logconfpath
+        with open(logconfpath, 'w') as f:
+            f.write(logconf.format(**cfg))
+    return log
+
+def ConfigProxy(cfg):
+    log = '\n'
+    nginxconf = open('docs/nginx.template').read()
+    nginx_path,_ = os.path.split(cfg['nginx'])
+    if not os.path.exists(nginx_path):
+        log += "Creating directory: "+nginx_path
+        os.makedirs(nginx_path)
+    try:
+        os.utime(cfg['nginx'], None)
+        log += "Nginx config exists, not modified: "+cfg['nginx']
+    except OSError:
+        print "Creating nginx config: "+cfg['nginx']
+        with open(cfg['nginx'], 'w') as f:
+            f.write(nginxconf.format(**cfg))
+    return log
+
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, sigterm_handler)
     locale.setlocale(locale.LC_ALL, '')
     doCfg()
-
-    

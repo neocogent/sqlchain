@@ -49,13 +49,14 @@ demos = {
 
 def democvt(src, dest, cointype):
     if not os.path.exists(src) or not cointype in demos:
-        return
+        return False
     html = open(src).read()
     for k in demos[cointype].keys():
         for n,s in enumerate(demos[cointype][k]):
             html = html.replace(demos['bitcoin'][k][n], s)
     with open(dest, 'w') as f:
         f.write(html)
+    return True
 
 if __name__ == '__main__':
 

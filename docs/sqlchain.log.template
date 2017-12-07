@@ -1,0 +1,9 @@
+{coindir}/debug.log {
+    weekly
+    copytruncate
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+}

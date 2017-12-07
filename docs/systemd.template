@@ -1,0 +1,10 @@
+[Unit]
+Description=sqlChain - title
+
+[Service]
+Type=forking
+ExecStart
+TimeoutStopSec=2min
+
+[Install]
+WantedBy=multi-user.target
