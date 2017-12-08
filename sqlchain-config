@@ -205,7 +205,7 @@ def CheckDirs(cfg): #pylint:disable=too-many-branches
         log += "Creating directory: %s\n" % cfg['wwwdir']
         os.makedirs(cfg['wwwdir'])
         os.chown(cfg['wwwdir'], usr.pw_uid, usr.pw_gid)
-        log += "Copying demo web app files:"
+        log += "Copying demo web app files."
         for root, dirs, files in os.walk('www'):
             dst = root[root.index('/'):] if '/'  in root else '/'
             for d in dirs:
@@ -216,16 +216,16 @@ def CheckDirs(cfg): #pylint:disable=too-many-branches
                 os.chown(os.path.join(cfg['wwwdir']+dst, f), usr.pw_uid, usr.pw_gid)
         if cfg['cointype'] != 'bitcoin':
             if democvt(os.path.join('www', 'main.html'), os.path.join(cfg['wwwdir'], 'main.html'), cfg['cointype']):
-                log += " main.html converted to %s\n" % cfg['cointype']
+                log += " Demo main.html converted to %s\n" % cfg['cointype']
             else:
-                log += " no demo page for %s, using bitcoin\n" % cfg['cointype']
+                log += " No demo page for %s, using bitcoin\n" % cfg['cointype']
 
     ### Create empty data files and set ownership
     for f in ['/blobs.0.dat','/hdrs.dat']:
         try:
             os.utime(cfg['sqldir']+f, None)
         except OSError:
-            log += "Creating data file: %s" % cfg['sqldir']+f+'\n'
+            log += "\nCreating data file: %s" % cfg['sqldir']+f+'\n'
             open(cfg['sqldir']+f, 'a').close()
             os.chown(cfg['sqldir']+f, usr.pw_uid, usr.pw_gid)
     return log
@@ -388,9 +388,9 @@ def ConfigProxy(cfg):
         os.makedirs(nginx_path)
     try:
         os.utime(cfg['nginx'], None)
-        log += "Nginx config exists, not modified: "+cfg['nginx']
+        log += "\nNginx config exists, not modified: "+cfg['nginx']
     except OSError:
-        log += "Creating nginx config: "+cfg['nginx']
+        log += "\nCreating nginx config: "+cfg['nginx']
         with open(cfg['nginx'], 'w') as f:
             f.write(nginxconf.format(**cfg))
     return log
