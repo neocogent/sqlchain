@@ -19,6 +19,7 @@ siteurl = None
 
 sqlmk='''
 CREATE TABLE IF NOT EXISTS calls ( id INTEGER PRIMARY KEY, site INTEGER, url TEXT, result TEXT, rtt INTEGER );
+CREATE TABLE IF NOT EXISTS tests ( id INTEGER PRIMARY KEY, call INTEGER, url TEXT, result TEXT, diff TEXT, rtt INTEGER );
 CREATE TABLE IF NOT EXISTS sites ( site INTEGER PRIMARY KEY, url TEXT );
 '''
 
