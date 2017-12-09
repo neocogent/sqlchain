@@ -1,2 +1,3 @@
 *.geany
 .cache
+livetest.db

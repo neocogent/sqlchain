@@ -37,7 +37,7 @@ def testdb(request):
         cur.execute("drop database unittest;")
     sqlsrc = open('docs/sqlchain.sql').read()
     sqlcode = ''
-    for k,v in [('MyISAM','Memory'),('--CREATE','CREATE'),('--GRANT','GRANT'),('--FLUSH','FLUSH'),('coindb','unittest'),('sqlpwd','fakepwd'),('sqluser','test')]:
+    for k,v in [('{dbeng}','Memory'),('{dbname}','unittest'),('{dbpwd}','fakepwd'),('{dbuser}','test')]:
         sqlsrc = sqlsrc.replace(k, v)
     for line in sqlsrc.splitlines():
         if line != '' and line[:2] != '--':
