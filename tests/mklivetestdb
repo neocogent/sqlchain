@@ -12,7 +12,7 @@ import sys, time, signal, random, requests
 millis = lambda: int(round(time.time() * 1000))
 
 tx_per_block = 12
-call_count = 0
+call_count,err_count = 0,0
 call_ts = millis()
 siteID = None
 siteurl = None
@@ -27,9 +27,9 @@ def clean_exit(_signo, _stack_frame=None):
     sys.exit(_signo)
 
 def api_call(cur, sid, url, apistr, save=True):
-    global call_count,call_ts #pylint:disable=global-statement
+    global call_count,err_count,call_ts #pylint:disable=global-statement
     if sid is None:
-        modestr = "order by random()" if sys.argv[1] != 'all' else "where site=%d" % ((call_count % site_count)+1)
+        modestr = "order by random()" if sys.argv[1] != 'all' else "where site=%d" % (((call_count+err_count) % site_count)+1)
         cur.execute("select site,url from sites %s limit 1;" % modestr)
         sid,url = cur.fetchone()
     if call_ts+tick-millis() > 0:
@@ -37,6 +37,8 @@ def api_call(cur, sid, url, apistr, save=True):
     call_ts = millis()
     try:
         r = requests.get(url+apistr)
+        if 'X-RateLimit-Limit' in r.headers and call_count % 30 < site_count:
+            print "LIMIT:",r.headers['X-RateLimit-Remaining'], url
         if r.status_code == requests.codes.ok: #pylint:disable=no-member
             if save and cur is not None:
                 rtt = millis()-call_ts
@@ -48,6 +50,7 @@ def api_call(cur, sid, url, apistr, save=True):
             print "===",r.status_code,url+apistr
     except requests.exceptions.ConnectionError:
         print "Connect Error:",url+apistr
+    err_count += 1
     return None
 
 if __name__ == '__main__':
@@ -94,7 +97,7 @@ if __name__ == '__main__':
     print "Last Block", lastblk
 
     # get random blocks
-    for bn in random.sample(xrange(1,lastblk),reqcount//tx_per_block):
+    for bn in random.sample(xrange(1,lastblk),max(reqcount//tx_per_block,1)):
         if call_count > reqcount:
             break
         data = api_call(cur, siteID, siteurl, '/block-index/%d' % bn)
@@ -166,5 +169,5 @@ if __name__ == '__main__':
                         addr = txdata['vout'][n]['scriptPubKey']['addresses'][0]
                         api_call(cur, siteID, siteurl, '/txs/?address=%s' % addr)
     
-    print "Done - %d calls" % call_count
+    print "Done - %d calls, %d errors" % (call_count,err_count)
     sql.close()
