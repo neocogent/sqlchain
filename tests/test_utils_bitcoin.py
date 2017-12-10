@@ -28,14 +28,14 @@ def testdb(request):
     if 'MySQLdb' not in sys.modules:
         print "No test db available"
         return None
-    sql = db.connect('localhost','root','root','')
+    sql = db.connect('localhost','test','hohoho','')
     cur = sql.cursor()
     cur.execute("set sql_notes=0;")
     cur.execute("show databases like 'unittest';")
     if cur.rowcount > 0:
         print "\nClearing test db"
         cur.execute("drop database unittest;")
-    sqlsrc = open('docs/sqlchain.sql').read()
+    sqlsrc = open('/usr/local/share/sqlchain/docs/sqlchain.sql').read()
     sqlcode = ''
     for k,v in [('{dbeng}','Memory'),('{dbname}','unittest'),('{dbpwd}','fakepwd'),('{dbuser}','test')]:
         sqlsrc = sqlsrc.replace(k, v)
