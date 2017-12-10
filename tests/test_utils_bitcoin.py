@@ -28,7 +28,11 @@ def testdb(request):
     if 'MySQLdb' not in sys.modules:
         print "No test db available"
         return None
-    sql = db.connect('localhost','test','hohoho','')
+    dbuser,dbpwd = request.config.getoption("--dbuser").split(':')
+    try:
+        sql = db.connect('localhost',dbuser,dbpwd,'')
+    except db.OperationalError:
+        return None
     cur = sql.cursor()
     cur.execute("set sql_notes=0;")
     cur.execute("show databases like 'unittest';")
@@ -37,7 +41,7 @@ def testdb(request):
         cur.execute("drop database unittest;")
     sqlsrc = open('/usr/local/share/sqlchain/docs/sqlchain.sql').read()
     sqlcode = ''
-    for k,v in [('{dbeng}','Memory'),('{dbname}','unittest'),('{dbpwd}','fakepwd'),('{dbuser}','test')]:
+    for k,v in [('{dbeng}','Memory'),('{dbname}','unittest'),('{dbpwd}',dbpwd),('{dbuser}',dbuser)]:
         sqlsrc = sqlsrc.replace(k, v)
     for line in sqlsrc.splitlines():
         if line != '' and line[:2] != '--':
@@ -218,6 +222,8 @@ def test_VarInt():
             assert decodeVarInt(encodeVarInt(N)) == ( N,L )
 
 def test_insertAddress(testdb, monkeypatch):
+    if testdb is None:
+        pytest.skip("requires test db to run")
     addrs = [ '1FomKJy8btcmuyKBFXeZmje94ibnQxfDEf','1EWpTBe9rE27NT9boqg8Zsc643bCFCEdbh','1MBxxUgVF27trqqBMnoz8Rr7QATEoz1u2Y',
               '1EWpTBe9rE27NT9b1qg8Zsc643bCFCEdbh','3EWpTBe9rE27NT9boqg8Zsc643bCFCEdbh','3De5zB9JKmwU4zP85EEazYS3MEDVXSmvvm',
               '3MixsgkBB8NBQe5GAxEj4eGx5YPxvbaSk9','3HQR7C1Ag53BoaxKDeaA97wTh9bpGuUpgg','2MixsgkBB8NBQe5GAxEj4eGx5YPxvbaSk9',
@@ -234,8 +240,10 @@ def test_insertAddress(testdb, monkeypatch):
         insertAddress(testdb, addr)
     testdb.execute("select count(1) from address where id !=0;")
     assert testdb.fetchone()[0] == 11 # 13 minus 2 addresses not inserted 
-    
+
 def test_findTx(testdb):
+    if testdb is None:
+        pytest.skip("requires test db to run")
     trxs = []
     tx1 = bytearray(os.urandom(32))
     for x in range(16):

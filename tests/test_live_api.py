@@ -22,10 +22,7 @@ import pytest
 millis = lambda: int(round(time.time() * 1000))
 server = None
 
-live = pytest.mark.skipif(
-    not pytest.config.getoption("--runlive"),
-    reason = "need --runlive option to run"
-)
+live = pytest.mark.skipif(not pytest.config.getoption("--runlive"), reason = "need --runlive option to run")
 
 # livetest db created by mklivetestdb.py
 @pytest.fixture(scope="module")
