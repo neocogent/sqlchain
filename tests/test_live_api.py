@@ -29,7 +29,7 @@ live = pytest.mark.skipif(not pytest.config.getoption("--runlive"), reason = "ne
 def testdb(request):
     global server
     if 'sqlite3' not in sys.modules:
-        print "No test db available"
+        pytest.skip("sqlite3 module not available.")
         return None
     server = request.config.getoption("--server")
     cwd = str(request.fspath.join('..'))
@@ -37,7 +37,7 @@ def testdb(request):
     cur = sql.cursor()
     cur.execute("select name from sqlite_master where name='calls';")
     if cur.fetchone() is None:
-        print "livetest.db not initialized."
+        pytest.skip("livetest.db not initialized.")
         return None
     if not request.config.getoption("--append"):
         cur.execute("delete from tests;")
@@ -68,14 +68,10 @@ def api_diff(cur, sqlstr, **kwargs):
 
 @live
 def test_live_api_block(testdb):
-    if testdb is None:
-        pytest.skip("requires test db to run")
     assert api_diff(testdb, '/block/%') == {}
 
 @live
 def test_live_api_block_index(testdb):
-    if testdb is None:
-        pytest.skip("requires test db to run")
     assert api_diff(testdb, '/block-index/%') == {}
 
 @live
