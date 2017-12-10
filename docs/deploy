@@ -7,6 +7,7 @@
 
 declare -A branch
 branch["dev"]="/usr/local" 
+branch["tests"]="/usr/local" 
 
 if [[ "${branch[$1]}" ]]; then
     target=${branch[$1]}
