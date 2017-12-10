@@ -18,6 +18,7 @@ __builtins__.sqc = dotdict()  # container for super globals
 
 sqc.cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain', 'cointype':'bitcoin' }
 sqc.bestblk = 120000
+sqc.zmq = True
 blksecs = []
 memPool = set()
 
@@ -43,9 +44,12 @@ def getBlocks(blk):
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
         if blk > blkinfo['blocks']:
-            checkMemPool(cur)
-            sql.commit()
-            time.sleep(5)
+            if sqc.zmq and 'zmq' in sqc.cfg:
+                ZMQHandler(cur)
+            else:
+                checkMemPool(cur)
+                sql.commit()
+                time.sleep(5)
             continue
         if blockQ.qsize() >= sqc.cfg['queue']:
             time.sleep(min(poll_delay,5))
@@ -146,6 +150,29 @@ def OutputHandler():
                 print "Flushed outQ - outs %d - ins %d" % (len(outs), len(ins))
                 return
             ins,outs = [],[]
+
+def ZMQHandler(cur):
+    try:
+        import zmq#.green as zmq
+    except ImportError:
+        logts("Error: Could not find pyzmq; ZMQ disabled")
+        sqc.zmq = False
+        return
+    logts("Initializing ZMQ at %s" % sqc.cfg['zmq'])
+    zctx = zmq.Context()
+    zsck = zctx.socket(zmq.SUB) # pylint:disable=no-member
+    zsck.connect(sqc.cfg['zmq'])
+    while not sqc.done.isSet():
+        started = time.time()
+        msg = zsck.recv_multipart()
+        (topic,body),_ = msg[:1],msg[-1]
+        if topic == "rawblock":
+            data = decodeBlock(body)
+            data['rpc'] = time.time()-started
+            blockQ.put(data)
+        elif topic == "rawtx":
+            insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
+    zctx.destroy()
 
 def checkMemPool(cur):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
