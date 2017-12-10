@@ -50,6 +50,7 @@ def api_call(url):
         if r.status_code == requests.codes.ok:
             return r.json(),millis()-call_ts
     except requests.exceptions.ConnectionError:
+        pytest.skip("requires api connection to run")
         return { "error": "Connect Error: http://"+server+url },0
     return { "error": r.status_code },0
 
@@ -67,13 +68,15 @@ def api_diff(cur, sqlstr, **kwargs):
 
 @live
 def test_live_api_block(testdb):
-    if testdb is not None:
-        assert api_diff(testdb, '/block/%') == {}
+    if testdb is None:
+        pytest.skip("requires test db to run")
+    assert api_diff(testdb, '/block/%') == {}
 
 @live
 def test_live_api_block_index(testdb):
-    if testdb is not None:
-        assert api_diff(testdb, '/block-index/%') == {}
+    if testdb is None:
+        pytest.skip("requires test db to run")
+    assert api_diff(testdb, '/block-index/%') == {}
 
 @live
 def test_live_api_rawblock(testdb):

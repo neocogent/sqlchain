@@ -26,12 +26,13 @@ sqc.cfg = { 'cointype':'bitcoin' }
 @pytest.fixture(scope="module")
 def testdb(request):
     if 'MySQLdb' not in sys.modules:
-        print "No test db available"
+        pytest.skip("requires MySQLdb to run")
         return None
     dbuser,dbpwd = request.config.getoption("--dbuser").split(':')
     try:
         sql = db.connect('localhost',dbuser,dbpwd,'')
     except db.OperationalError:
+        pytest.skip("requires mysql running + admin user/pwd to run")
         return None
     cur = sql.cursor()
     cur.execute("set sql_notes=0;")
@@ -222,8 +223,6 @@ def test_VarInt():
             assert decodeVarInt(encodeVarInt(N)) == ( N,L )
 
 def test_insertAddress(testdb, monkeypatch):
-    if testdb is None:
-        pytest.skip("requires test db to run")
     addrs = [ '1FomKJy8btcmuyKBFXeZmje94ibnQxfDEf','1EWpTBe9rE27NT9boqg8Zsc643bCFCEdbh','1MBxxUgVF27trqqBMnoz8Rr7QATEoz1u2Y',
               '1EWpTBe9rE27NT9b1qg8Zsc643bCFCEdbh','3EWpTBe9rE27NT9boqg8Zsc643bCFCEdbh','3De5zB9JKmwU4zP85EEazYS3MEDVXSmvvm',
               '3MixsgkBB8NBQe5GAxEj4eGx5YPxvbaSk9','3HQR7C1Ag53BoaxKDeaA97wTh9bpGuUpgg','2MixsgkBB8NBQe5GAxEj4eGx5YPxvbaSk9',
@@ -242,8 +241,6 @@ def test_insertAddress(testdb, monkeypatch):
     assert testdb.fetchone()[0] == 11 # 13 minus 2 addresses not inserted 
 
 def test_findTx(testdb):
-    if testdb is None:
-        pytest.skip("requires test db to run")
     trxs = []
     tx1 = bytearray(os.urandom(32))
     for x in range(16):
