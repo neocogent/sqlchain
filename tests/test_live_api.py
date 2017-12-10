@@ -42,6 +42,8 @@ def testdb(request):
     if cur.fetchone() is None:
         print "livetest.db not initialized."
         return None
+    if not request.config.getoption("--append"):
+        cur.execute("delete from tests;")
     return cur
 
 def api_call(url):
@@ -64,17 +66,17 @@ def api_diff(cur, sqlstr, **kwargs):
         cur.execute("insert into tests (url,result,diff,rtt) values (?,?,?,?);", (url,rtn,diff,rtt))
         if diff != {}:
             return diff
-    return True
+    return {}
 
 @live
 def test_live_api_block(testdb):
     if testdb is not None:
-        assert api_diff(testdb, '/block/%')
+        assert api_diff(testdb, '/block/%') == {}
 
 @live
 def test_live_api_block_index(testdb):
     if testdb is not None:
-        assert api_diff(testdb, '/block-index/%')
+        assert api_diff(testdb, '/block-index/%') == {}
 
 @live
 def test_live_api_rawblock(testdb):
