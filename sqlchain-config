@@ -3,7 +3,9 @@
 import os, sys, signal, pwd, locale, random, string, shutil, json
 import MySQLdb as db
 
+from cStringIO import StringIO
 from dialog import Dialog
+
 from sqlchain.version import version
 from sqlchain.democvt import democvt
 
@@ -296,11 +298,14 @@ def SetupDB(d, cfg):
         for line in sqlsrc.splitlines():
             if line != '' and line[:2] != '--':
                 sqlcode += line
+        sys.stdout = StringIO()
         sql = db.connect(user='root', passwd=rootpwd)
         cur = sql.cursor()
         for stmnt in sqlcode.split(';'):
             if stmnt:
                 cur.execute(stmnt)
+        log += sys.stdout.getvalue()
+        sys.stdout = sys.__stdout__
     except (IOError, ImportError):
         log += "Cannot open: /usr/local/share/sqlchain/docs/sqlchain.sql\n"
         log += "Skipping further MySQL DB setup\n"
