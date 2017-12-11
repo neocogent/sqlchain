@@ -49,7 +49,7 @@ def initcfg(d, cfg, cointype):
     'dbpwd':''.join(random.sample(string.ascii_letters+string.digits,20)),'coinprune':'No','blkdat':'No','nosigs':'Yes',
     'dbname':cointype,'dbeng':'MyISAM','wwwdir':'/var/www/'+cointype,'nginx':'/etc/nginx/conf.d/%s.conf' % cointype,
     'apidomain':'api.%s.info' % cointype,'sslpath':'/etc/letsencrypt/live/api.%s.info' % cointype,
-    'listen':"localhost:%d" % coin_var[cointype][DEF_API_PORT],'logrotate':'Yes'
+    'listen':"localhost:%d" % coin_var[cointype][DEF_API_PORT],'logrotate':'Yes','coinzmq':'Yes'
     }
 
 def sigterm_handler(_signo, _stack_frame):
@@ -132,7 +132,8 @@ def doCoinSettings(d, cfg): # pylint:disable=too-many-branches,too-many-statemen
                     ('1','Enable %s pruning (save space)' % coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinprune']=='Yes'),
                     ('2','Direct read blockchain, not RPC (faster)',cfg['blkdat']=='Yes'),
                     ('3','Discard signature/witness data (save space)',cfg['nosigs']=='Yes'),
-                    ('4','Enable weekly log rotation',cfg['logrotate']=='Yes')
+                    ('4','Enable weekly log rotation',cfg['logrotate']=='Yes'),
+                    ('5','Enable ZMQ sync with %s',% coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinzmq']=='Yes')
                     ],title="Operating Modes",list_height=4,help_button=True)
                 if code == d.HELP:
                     d.msgbox(op_mode_help[int(tmp)-1],20,75)
@@ -142,6 +143,7 @@ def doCoinSettings(d, cfg): # pylint:disable=too-many-branches,too-many-statemen
                     cfg['blkdat'] = 'Yes' if '2' in tmp else 'No'
                     cfg['nosigs'] = 'Yes' if '3' in tmp else 'No'
                     cfg['logrotate'] = 'Yes' if '4' in tmp else 'No'
+                    cfg['coinzmq'] = 'Yes' if '5' in tmp else 'No'
                 break
         elif tag[1] == '5':
             code,tmp = d.form("",[
@@ -337,6 +339,8 @@ def ConfigDaemons(cfg):
         cfgcoin.update({'rpcuser':'%s' % coin_var[cfg['cointype']][DEF_COIN_USER], 'rpcpassword':cfg['coinpwd'] })
     if cfg['cointype'] == 'testnet':
         cfgcoin.update({'testnet':1 })
+    if cfg['coinzmq'] == 'Yes':
+        cfgcoin.update({'zmqpubrawtx':'tcp://127.0.0.1:28332','zmqpubrawblock':'tcp://127.0.0.1:28332'})
 
     with open(cfg['cfgdir']+'/%s.conf' % cfg['cointype'], 'w') as f:
         for k in cfgcoin:
@@ -350,6 +354,8 @@ def ConfigDaemons(cfg):
                "debug": False, "user": cfg['coinuser'], "no-sigs": cfg['nosigs'] == 'Yes', "cointype": cfg['cointype'] }
     if cfg['blkdat'] == 'Yes':
         sqlcfg["blkdat"] = cfg['coindir'] + '/' + coin_var[cfg['cointype']][BLKDAT_DIR]
+    if cfg['coinzmq'] == 'Yes':
+        sqlcfg['zmq'] = 'tcp://127.0.0.1:28332'
     log += 'Writing config file: '+cfg['cfgdir']+'/sqlchain.%s.cfg\n' % cfg['cointype']
     with open(cfg['cfgdir']+'/sqlchain.%s.cfg' % cfg['cointype'], 'w') as f:
         json.dump(sqlcfg, f, indent=2)
