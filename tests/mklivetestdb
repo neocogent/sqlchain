@@ -30,7 +30,7 @@ def clean_exit(_signo, _stack_frame=None):
 def api_call(cur, sid, url, apistr, save=True):
     global call_count,err_count,call_ts #pylint:disable=global-statement
     if sid is None:
-        modestr = "order by random()" if sys.argv[1] != 'all' else "where site=%d" % (((call_count+err_count) % site_count)+1)
+        modestr = "order by random()" if len(sys.argv) > 2 and sys.argv[3] != 'all' else "where site=%d" % (((call_count+err_count) % site_count)+1)
         cur.execute("select site,url from sites %s limit 1;" % modestr)
         sid,url = cur.fetchone()
     if call_ts+tick-millis() > 0:
@@ -57,28 +57,31 @@ def api_call(cur, sid, url, apistr, save=True):
 if __name__ == '__main__':
 
     if len(sys.argv) < 2:
-        print "Usage: %s all|random|<api site url> [req-count] [limit/min]\nMakes random api calls to site and populates livetest db." % sys.argv[0]
+        print "Usage: %s <coin> [all|random|<api site url>] [req-count] [limit/min]\nMakes random api calls to site and populates livetest db." % sys.argv[0]
+        print "<coin> required, use btc,ltc,tbc... just selects db varaint."
         print "Site URL like: https://someplace.com/api (include any path prefix)\nDefaults: req-count is 300, rate limit is 60 call/min.\n"
-        print "all=round-robin, random=cycle randomly, with past sites in db\n"
+        print "all=round-robin (default), random=cycle randomly, all past sites in db."
+        print "You cannot skip args if using a later one.\n"
         sys.exit(0)
     signal.signal(signal.SIGINT, clean_exit)
-    reqcount = 300 if len(sys.argv) < 3 else int(sys.argv[2])
-    rate = 60 if len(sys.argv) < 4 else int(sys.argv[3])
+    coin = sys.argv[1]
+    reqcount = 300 if len(sys.argv) < 4 else int(sys.argv[3])
+    rate = 60 if len(sys.argv) < 5 else int(sys.argv[4])
     tick = 60000/rate
 
-    sql = db.connect('livetest.db',isolation_level=None)
+    sql = db.connect('livetest.%s.db' % coin,isolation_level=None)
     cur = sql.cursor()
     for line in sqlmk.split(';'):
         cur.execute(line)
     
-    if sys.argv[1].lower() == 'all':
+    if len(sys.argv) < 3 or sys.argv[2].lower() == 'all':
         cur.execute("select count(*) from sites;")
         site_count = cur.fetchone()[0]
         if site_count == 0:
             print "No sites in db. Must provide at least one"
             clean_exit(1)
-    elif sys.argv[1].lower() != 'random':
-        siteurl = sys.argv[1] if sys.argv[1][-1] != '/' else sys.argv[1][:-1]
+    elif sys.argv[2].lower() != 'random':
+        siteurl = sys.argv[2] if sys.argv[2][-1] != '/' else sys.argv[2][:-1]
         cur.execute("select site from sites where url=?;", (siteurl,))
         row = cur.fetchone()
         if row is not None:
