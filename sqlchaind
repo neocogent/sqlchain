@@ -162,6 +162,8 @@ def ZMQHandler(cur):
     logts("Initializing ZMQ at %s" % sqc.cfg['zmq'])
     zctx = zmq.Context()
     zsck = zctx.socket(zmq.SUB) # pylint:disable=no-member
+    zctx.setsockopt(zmq.SUBSCRIBE, "rawblock")
+    zctx.setsockopt(zmq.SUBSCRIBE, "rawtx")
     zsck.connect(sqc.cfg['zmq'])
     while not sqc.done.isSet():
         started = time.time()

@@ -344,7 +344,8 @@ def ConfigDaemons(cfg):
     if cfg['cointype'] == 'testnet':
         cfgcoin.update({'testnet':1 })
     if cfg['coinzmq'] == 'Yes':
-        cfgcoin.update({'zmqpubrawtx':'tcp://127.0.0.1:28332','zmqpubrawblock':'tcp://127.0.0.1:28332'})
+        zmqport = coin_var[cfg['cointype']][DEF_RPC_PORT]+100
+        cfgcoin.update({'zmqpubrawtx':'tcp://127.0.0.1:%d'%zmqport,'zmqpubrawblock':'tcp://127.0.0.1:%d'%zmqport})
 
     with open(cfg['cfgdir']+'/%s.conf' % cfg['cointype'], 'w') as f:
         for k in cfgcoin:
@@ -359,7 +360,7 @@ def ConfigDaemons(cfg):
     if cfg['blkdat'] == 'Yes':
         sqlcfg["blkdat"] = cfg['coindir'] + '/' + coin_var[cfg['cointype']][BLKDAT_DIR]
     if cfg['coinzmq'] == 'Yes':
-        sqlcfg['zmq'] = 'tcp://127.0.0.1:28332'
+        sqlcfg['zmq'] = 'tcp://127.0.0.1:%d' % (coin_var[cfg['cointype']][DEF_RPC_PORT]+100)
     log += 'Writing config file: '+cfg['cfgdir']+'/sqlchain.%s.cfg\n' % cfg['cointype']
     with open(cfg['cfgdir']+'/sqlchain.%s.cfg' % cfg['cointype'], 'w') as f:
         json.dump(sqlcfg, f, indent=2)
