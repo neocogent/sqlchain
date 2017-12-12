@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 #
 #   live api test - unit test module
+#     - supports multiple coins by selecting the db based on cointype
 #     - read api urls from livetest db and call live api
 #     - compare json returned to livetest db json
 #
@@ -32,12 +33,13 @@ def testdb(request):
         pytest.skip("sqlite3 module not available.")
         return None
     server = request.config.getoption("--server")
+    coin = request.config.getoption("--coin")
     cwd = str(request.fspath.join('..'))
-    sql = db.connect(cwd+'/livetest.db',isolation_level=None)
+    sql = db.connect(cwd+'/livetest.%s.db' % coin,isolation_level=None)
     cur = sql.cursor()
     cur.execute("select name from sqlite_master where name='calls';")
     if cur.fetchone() is None:
-        pytest.skip("livetest.db not initialized.")
+        pytest.skip("livetest.%s.db not initialized." % coin)
         return None
     if not request.config.getoption("--append"):
         cur.execute("delete from tests;")

@@ -49,7 +49,7 @@ def initcfg(d, cfg, cointype):
     'dbpwd':''.join(random.sample(string.ascii_letters+string.digits,20)),'coinprune':'No','blkdat':'No','nosigs':'Yes',
     'dbname':cointype,'dbeng':'MyISAM','wwwdir':'/var/www/'+cointype,'nginx':'/etc/nginx/conf.d/%s.conf' % cointype,
     'apidomain':'api.%s.info' % cointype,'sslpath':'/etc/letsencrypt/live/api.%s.info' % cointype,
-    'listen':"localhost:%d" % coin_var[cointype][DEF_API_PORT],'logrotate':'Yes'
+    'listen':"localhost:%d" % coin_var[cointype][DEF_API_PORT],'logrotate':'Yes','coinzmq':'Yes'
     }
 
 def sigterm_handler(_signo, _stack_frame):
@@ -90,7 +90,7 @@ def doCoinSettings(d, cfg): # pylint:disable=too-many-branches,too-many-statemen
                            choices=[("(1)", "File Locations => %s, %s" % (cfg['coindir'], cfg['sqldir'])),
                                     ("(2)", "System Boot Options => Node:%s, sqlChain:%s, API:%s" % (cfg['coinboot'],cfg['sqlboot'],cfg['apiboot'])),
                                     ("(3)", "User Options & Pwds => Node:%s, RPC:%s, DB:%s" % (cfg['coinuser'],cfg['coinrpc'],cfg['dbuser'])),
-                                    ("(4)", "Operating Modes => Prune:%s, Direct:%s, NoSigs:%s, Logs:%s" % (cfg['coinprune'],cfg['blkdat'],cfg['nosigs'],cfg['logrotate'])),
+                                    ("(4)", "Operating Modes => Prune:%s, Direct:%s, NoSigs:%s, ZMQ:%s" % (cfg['coinprune'],cfg['blkdat'],cfg['nosigs'],cfg['coinzmq'])),
                                     ("(5)", "Database Config => Name:%s, Engine:%s" % (cfg['dbname'],cfg['dbeng'])),
                                     ("(6)", "Web/API Server Options => Root:%s, Proxy:%s" % (cfg['wwwdir'],'No' if cfg['nginx'] =='' else 'Yes')),
                                     ("", ""),
@@ -132,8 +132,9 @@ def doCoinSettings(d, cfg): # pylint:disable=too-many-branches,too-many-statemen
                     ('1','Enable %s pruning (save space)' % coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinprune']=='Yes'),
                     ('2','Direct read blockchain, not RPC (faster)',cfg['blkdat']=='Yes'),
                     ('3','Discard signature/witness data (save space)',cfg['nosigs']=='Yes'),
-                    ('4','Enable weekly log rotation',cfg['logrotate']=='Yes')
-                    ],title="Operating Modes",list_height=4,help_button=True)
+                    ('4','Enable weekly log rotation',cfg['logrotate']=='Yes'),
+                    ('5','Enable ZMQ sync with %s'% coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinzmq']=='Yes')
+                    ],title="Operating Modes",list_height=5,help_button=True)
                 if code == d.HELP:
                     d.msgbox(op_mode_help[int(tmp)-1],20,75)
                     continue
@@ -142,6 +143,7 @@ def doCoinSettings(d, cfg): # pylint:disable=too-many-branches,too-many-statemen
                     cfg['blkdat'] = 'Yes' if '2' in tmp else 'No'
                     cfg['nosigs'] = 'Yes' if '3' in tmp else 'No'
                     cfg['logrotate'] = 'Yes' if '4' in tmp else 'No'
+                    cfg['coinzmq'] = 'Yes' if '5' in tmp else 'No'
                 break
         elif tag[1] == '5':
             code,tmp = d.form("",[
@@ -223,11 +225,12 @@ def CheckDirs(cfg): #pylint:disable=too-many-branches
                 log += " No demo page for %s, using bitcoin\n" % cfg['cointype']
 
     ### Create empty data files and set ownership
+    log += "\n"
     for f in ['/blobs.0.dat','/hdrs.dat']:
         try:
             os.utime(cfg['sqldir']+f, None)
         except OSError:
-            log += "\nCreating data file: %s" % cfg['sqldir']+f+'\n'
+            log += "Creating data file: %s" % cfg['sqldir']+f+'\n'
             open(cfg['sqldir']+f, 'a').close()
             os.chown(cfg['sqldir']+f, usr.pw_uid, usr.pw_gid)
     return log
@@ -293,25 +296,28 @@ def SetupDB(d, cfg):
         sqldef = 'docs/sqlchain.sql'                # default sqlchain schema
     log += "Creating MySQL database: %s using schema: %s\n\n" % (cfg['dbname'], os.path.split(sqldef)[1])
     try:
+        sys.stderr = StringIO()
         sqlcode = ''
-        sqlsrc = open(sqldef).read().format(**cfg)
+        sqlsrc = open(sqldef).read().format(**cfg) # read and replace vars
         for line in sqlsrc.splitlines():
             if line != '' and line[:2] != '--':
                 sqlcode += line
-        sys.stdout = StringIO()
         sql = db.connect(user='root', passwd=rootpwd)
         cur = sql.cursor()
         for stmnt in sqlcode.split(';'):
             if stmnt:
                 cur.execute(stmnt)
-        log += sys.stdout.getvalue()
-        sys.stdout = sys.__stdout__
+        sqllog = sys.stderr.getvalue()
+        if  len(sqllog) > 0:
+            log += '---- from mysql server ----\n'+sqllog+'---- end mysql server ----\n'
     except (IOError, ImportError):
-        log += "Cannot open: /usr/local/share/sqlchain/docs/sqlchain.sql\n"
+        log += "Cannot open: %s\n" % sqldef
         log += "Skipping further MySQL DB setup\n"
     except db.Error, e: # pylint:disable=no-member
         log += "MySQL Error: %s\n" % str(e)
         log += "Skipping further MySQL DB setup\n"
+    finally:
+        sys.stderr = sys.__stderr__
     return log
 
 def ConfigDaemons(cfg):
@@ -337,6 +343,8 @@ def ConfigDaemons(cfg):
         cfgcoin.update({'rpcuser':'%s' % coin_var[cfg['cointype']][DEF_COIN_USER], 'rpcpassword':cfg['coinpwd'] })
     if cfg['cointype'] == 'testnet':
         cfgcoin.update({'testnet':1 })
+    if cfg['coinzmq'] == 'Yes':
+        cfgcoin.update({'zmqpubrawtx':'tcp://127.0.0.1:28332','zmqpubrawblock':'tcp://127.0.0.1:28332'})
 
     with open(cfg['cfgdir']+'/%s.conf' % cfg['cointype'], 'w') as f:
         for k in cfgcoin:
@@ -350,6 +358,8 @@ def ConfigDaemons(cfg):
                "debug": False, "user": cfg['coinuser'], "no-sigs": cfg['nosigs'] == 'Yes', "cointype": cfg['cointype'] }
     if cfg['blkdat'] == 'Yes':
         sqlcfg["blkdat"] = cfg['coindir'] + '/' + coin_var[cfg['cointype']][BLKDAT_DIR]
+    if cfg['coinzmq'] == 'Yes':
+        sqlcfg['zmq'] = 'tcp://127.0.0.1:28332'
     log += 'Writing config file: '+cfg['cfgdir']+'/sqlchain.%s.cfg\n' % cfg['cointype']
     with open(cfg['cfgdir']+'/sqlchain.%s.cfg' % cfg['cointype'], 'w') as f:
         json.dump(sqlcfg, f, indent=2)
@@ -389,13 +399,13 @@ def ConfigProxy(cfg):
     nginxconf = open('docs/nginx.template').read()
     nginx_path,_ = os.path.split(cfg['nginx'])
     if not os.path.exists(nginx_path):
-        log += "Creating directory: "+nginx_path
+        log += "Creating directory: %s\n" % nginx_path
         os.makedirs(nginx_path)
     try:
         os.utime(cfg['nginx'], None)
-        log += "\nNginx config exists, not modified: "+cfg['nginx']
+        log += "Nginx config exists, not modified: "+cfg['nginx']
     except OSError:
-        log += "\nCreating nginx config: "+cfg['nginx']
+        log += "Creating nginx config: "+cfg['nginx']
         with open(cfg['nginx'], 'w') as f:
             f.write(nginxconf.format(**cfg))
     return log
