@@ -24,7 +24,8 @@ coin_var = {
     'bitcoin': [ 'bitcoin',  '',         'bitcoind',  'btc', 8332,  8085,  True, True ],
     'testnet': [ 'bitcoin',  'testnet3', 'bitcoind',  'btc', 18332, 18085, True, True ],
     'litecoin':[ 'litecoin', '',         'litecoind', 'ltc', 10332, 8086,  True, False ],
-    'reddcoin':[ 'reddcoin', '',         'reddcoind', 'rdd', 45443, 8087,  False, False ]
+    'reddcoin':[ 'reddcoin', '',         'reddcoind', 'rdd', 45443, 8087,  False, False ],
+    'dogecoin':[ 'dogecoin', '',         'dogecoind', 'doge', 22555, 8088,  False, False ]
 }
 cwd = os.getcwd()
 sqlroot = "/var/data/sqlchain"

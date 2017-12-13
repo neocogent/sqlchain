@@ -17,7 +17,8 @@ coin_cfg = {
     'bitcoin': [ '1',  0,   '3',  5,   'bc',  0xD9B4BEF9, 500 ],
     'testnet': [ 'mn', 111, '2',  196, 'tb',  0x0709110B, 8000 ],
     'litecoin':[ 'L',  48,  '3M', 50,  'ltc', 0xDBB6C0FB, 500 ],
-    'reddcoin':[ 'R',  48,  '3',  5,   'rdd', 0xDBB6C0FB, 500 ]
+    'reddcoin':[ 'R',  48,  '3',  5,   'rdd', 0xDBB6C0FB, 500 ],
+    'dogecoin':[ 'D',  30,  '9A',  22, 'doge', 0xC0C0C0C0, 500 ]
 }
 
 def coincfg(IDX):
