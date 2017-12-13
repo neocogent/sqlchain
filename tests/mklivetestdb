@@ -12,7 +12,7 @@ import sys, time, signal, random, requests
 millis = lambda: int(round(time.time() * 1000))
 
 tx_per_block = 12
-call_count,err_count = 0,0
+site_count,call_count,err_count = 0,0,0
 call_ts = millis()
 siteID = None
 siteurl = None
@@ -59,12 +59,12 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         print "Usage: %s <coin> [all|random|<api site url>] [req-count] [limit/min]\nMakes random api calls to site and populates livetest db." % sys.argv[0]
         print "<coin> required, use btc,ltc,tbc... just selects db varaint."
-        print "Site URL like: https://someplace.com/api (include any path prefix)\nDefaults: req-count is 300, rate limit is 60 call/min.\n"
+        print "Site URL like: https://someplace.com/api (include any path prefix)\nDefaults: req-count is 300, rate limit is 60 call/min."
         print "all=round-robin (default), random=cycle randomly, all past sites in db."
         print "You cannot skip args if using a later one.\n"
         sys.exit(0)
     signal.signal(signal.SIGINT, clean_exit)
-    coin = sys.argv[1]
+    coin = sys.argv[1][:4]
     reqcount = 300 if len(sys.argv) < 4 else int(sys.argv[3])
     rate = 60 if len(sys.argv) < 5 else int(sys.argv[4])
     tick = 60000/rate
