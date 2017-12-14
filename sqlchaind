@@ -69,12 +69,6 @@ def getBlocksDirect(cur, blk):
     blkscan.start()
     log("Using blkdat mode: %s" % sqc.cfg['blkdat'])
     while not sqc.done.isSet():
-        cur.execute("show tables like 'blkdat';")
-        if cur.rowcount > 0:
-            break
-        time.sleep(5)
-        logts("Waiting for blkdat to be ready")
-    while not sqc.done.isSet():
         if blockQ.qsize() >= sqc.cfg['queue']:
             time.sleep(0.01)
             continue
