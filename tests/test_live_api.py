@@ -77,7 +77,7 @@ def test_live_api_block_index(testdb):
     assert api_diff(testdb, '/block-index/%') == {}
 
 @live
-def test_live_api_rawblock(testdb):
+def test_live_api_rawblock(testdb): # not currently supported
     assert True
 
 @live
@@ -86,7 +86,7 @@ def test_live_api_blocks(testdb): # not currently supported
 
 @live
 def test_live_api_tx(testdb):
-    assert True
+    assert api_diff(testdb, '/tx/%') == {}
 
 @live
 def test_live_api_rawtx(testdb):
