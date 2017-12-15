@@ -575,6 +575,8 @@ class rpcPool(object): # pylint:disable=too-few-public-methods
 
     def __call__(self, *args):
         name = self.name
+        start = time.time()
+        wait = 3
         rpc_lock.release()
         rpc_obj = AuthServiceProxy(self.url, None, self.timeout, None)
         while True:
@@ -585,10 +587,13 @@ class rpcPool(object): # pylint:disable=too-few-public-methods
                 if e.code == -5:
                     return None
             except Exception as e: # pylint:disable=broad-except
-                log( 'RPC Error ' + str(e) + ' (retrying)' )
+                log( 'RPC Error ' + str(e) + ' (retrying in %d seconds)' % wait )
                 print "===>", name, args
                 rpc_obj = AuthServiceProxy(self.url, None, self.timeout, None) # maybe broken, make new connection
-                time.sleep(3) # slow down, in case gone away
+                if time.time()-start > 300:  # max wait time
+                    return None
+                wait = min(wait*2,60)
+                time.sleep(wait) # slow down, in case gone away
         return result
 
 def sqlchain_overlay(pattern):

@@ -123,6 +123,8 @@ def linkMainChain(cur, highblk, blkhash, verbose):
 
 def getBlkRPC(blkhash):
     blk = sqc.rpc.getblock(blkhash[::-1].encode('hex'))
+    if blk is None:
+        return 0,''
     blkhash = sqc.rpc.getblockhash(blk['height']-120) # offset to avoid reorg, order problems
     return ( blk['height']-120,blkhash.decode('hex')[::-1] )
 

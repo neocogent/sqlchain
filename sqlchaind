@@ -33,7 +33,9 @@ def getBlocks(blk):
         cur.execute('select ifnull(max(id), -1) from blocks')
         blk = int(cur.fetchone()[0] + 1)
     startblk = blk
-    blkinfo = sqc.rpc.getblockchaininfo()
+    blkinfo = sqc.rpc.getblockchaininfo() # wait for node to be ready
+    if blkinfo is None:
+        return 0
     sqc.bestblk = blkinfo['headers'] if 'headers' in blkinfo else 0
     if 'blkdat' in sqc.cfg and (sqc.bestblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
         blk = getBlocksDirect(cur, blk) # use direct file access for catch up
@@ -42,7 +44,7 @@ def getBlocks(blk):
     poll_delay = 0.05
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
-        if blk > blkinfo['blocks']:
+        if blkinfo is None or blk > blkinfo['blocks']:
             checkMemPool(cur)
             sql.commit()
             time.sleep(5)
@@ -101,7 +103,7 @@ def getBlocksDirect(cur, blk):
 def chkPruning(blk):
     if blk > 120000 and blk % 100 == 0:
         blkinfo = sqc.rpc.getblockchaininfo()
-        if blkinfo['pruned']:
+        if blkinfo is not None and blkinfo['pruned']:
             keep = 20 if not 'prune' in sqc.cfg else max(sqc.cfg['prune'], 20)
             sqc.rpc.pruneblockchain(blk-keep) # keep at least 20 blocks for reorgs but can now config higher
         sqc.bestblk = blkinfo['headers']
@@ -148,13 +150,14 @@ def checkMemPool(cur):
     if len(memPool) == 0:
         cur.execute("delete from mempool;")
     trxs = sqc.rpc.getrawmempool()
-    for tx in trxs:
-        txx = tx.decode('hex')[::-1][:8] # uses 1/4 space, only for detecting changes in mempool
-        if txx not in memPool:
-            rawtx = sqc.rpc.getrawtransaction(tx,0)
-            if rawtx is not None:
-                insertTxMemPool(cur, decodeTx(rawtx.decode('hex')), sync_id+1)
-                memPool.add(txx)
+    if trxs is not None:
+        for tx in trxs:
+            txx = tx.decode('hex')[::-1][:8] # uses 1/4 space, only for detecting changes in mempool
+            if txx not in memPool:
+                rawtx = sqc.rpc.getrawtransaction(tx,0)
+                if rawtx is not None:
+                    insertTxMemPool(cur, decodeTx(rawtx.decode('hex')), sync_id+1)
+                    memPool.add(txx)
 
 def addOrphan(cur, height):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
@@ -175,6 +178,9 @@ def checkReOrg(cur, data):
             break
         height -= 1
         blkhash = sqc.rpc.getblockhash(height).decode('hex')[::-1]
+        if blkhash is None:
+            log("Rewind failure during ReOrg - Check manually.")
+            return
     height += 1
     if height < data['height']:
         sqc.flushed.wait() # make sure all outputs committed before we start re-org
@@ -185,6 +191,9 @@ def checkReOrg(cur, data):
 def doReOrg(cur, data, height):
     while height < data['height']:
         blkhash = sqc.rpc.getblockhash(height)
+        if blkhash is None:
+            log("Block failure during ReOrg - Check manually.")
+            return
         data = decodeBlock(sqc.rpc.getblock(blkhash, False).decode('hex')) # get good chain blocks
         if data:
             for n,tx in enumerate(data['tx']):
