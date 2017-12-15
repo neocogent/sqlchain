@@ -365,7 +365,7 @@ def findTx(cur, txhash, mkNew=False, limit=32):
         tx_id += 1
 
 def coin_reward(height):
-    return float(coincfg(BLK_REWARD) >> (height / coincfg(HALF_BLKS)))/1e8 + 0.0
+    return float(int(coincfg(BLK_REWARD)) >> int(height // coincfg(HALF_BLKS)))/float(1e8)
 
 def bits2diff(bits):
     return float(0x00ffff * 2**(8*(0x1d - 3))) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3)))

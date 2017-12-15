@@ -70,7 +70,7 @@ def api_diff(cur, sqlstr, **kwargs):
 
 @live
 def test_live_api_block(testdb):
-    assert api_diff(testdb, '/block/%') == {}
+    assert api_diff(testdb, '/block/%', exclude_paths={"root['reward']","root['confirmations']"}) == {}
 
 @live
 def test_live_api_block_index(testdb):

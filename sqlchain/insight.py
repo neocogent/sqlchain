@@ -91,7 +91,7 @@ def apiBlock(cur, blkhash):
         data.update(gethdr(data['height'], sqc.cfg))
         data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
         data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
-        data['difficulty'] = bits2diff(data['bits'])
+        data['difficulty'] = float(int(bits2diff(data['bits'])*1e8)/1e8)
         data['bits'] = '%08x' % data['bits']
         data['reward'] = coin_reward(data['height'])
         data['isMainChain'] = True
