@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS `blocks` (
   `id` int(11) NOT NULL,
   `hash` binary(32) NOT NULL,
   `coinbase` varbinary(100) NOT NULL,
+  `chainwork` binary(32) NOT NULL,
+  `blksize` int(11) NOT NULL,  
   PRIMARY KEY (`id`)
 ) ENGINE={dbeng} DEFAULT CHARSET=latin1;
 

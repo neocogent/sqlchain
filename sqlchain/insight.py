@@ -84,8 +84,8 @@ def apiHeader(cur, blk, args):
 
 def apiBlock(cur, blkhash):
     data = { 'hash':blkhash, 'tx':[] }
-    cur.execute("select id from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
-    for blk, in cur:
+    cur.execute("select id,chainwork,blksize from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
+    for blk,work,blksz in cur:
         data['height'] = int(blk)
         data['confirmations'] = sqc.cfg['block'] - data['height'] + 1
         data.update(gethdr(data['height'], sqc.cfg))
@@ -95,6 +95,9 @@ def apiBlock(cur, blkhash):
         data['bits'] = '%08x' % data['bits']
         data['reward'] = coin_reward(data['height'])
         data['isMainChain'] = True
+        data['size'] = blksz
+        data['chainwork'] = work
+        data['poolInfo'] = {}
         cur.execute("select hash from trxs where block_id>=%s and block_id<%s;", (blk*MAX_TX_BLK, blk*MAX_TX_BLK+MAX_TX_BLK))
         for txhash, in cur:
             data['tx'].append(txhash[::-1].encode('hex'))
