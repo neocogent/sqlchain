@@ -96,7 +96,7 @@ def apiBlock(cur, blkhash):
         data['reward'] = coin_reward(data['height'])
         data['isMainChain'] = True
         data['size'] = blksz
-        data['chainwork'] = work
+        data['chainwork'] = work.encode('hex')
         data['poolInfo'] = {}
         cur.execute("select hash from trxs where block_id>=%s and block_id<%s;", (blk*MAX_TX_BLK, blk*MAX_TX_BLK+MAX_TX_BLK))
         for txhash, in cur:
