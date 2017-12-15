@@ -12,7 +12,7 @@ from gevent import sleep
 
 from sqlchain.version import version, MAX_TX_BLK, MAX_IO_TX
 from sqlchain.util import is_address, mkaddr, addr2id, txh2id, mkSPK, getBlobHdr, readBlob, getBlobsSize, is_BL32
-from sqlchain.util import decodeVarInt, encodeVarInt, gethdr, bits2diff, mkOpCodeStr, logts
+from sqlchain.util import decodeVarInt, encodeVarInt, gethdr, coin_reward, bits2diff, mkOpCodeStr, logts
 
 RESULT_ROW_LIMIT = 1000
 
@@ -93,7 +93,7 @@ def apiBlock(cur, blkhash):
         data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
         data['difficulty'] = bits2diff(data['bits'])
         data['bits'] = '%08x' % data['bits']
-        data['reward'] = float((50 * 100000000) >> (data['height'] / 210000))/1e8
+        data['reward'] = coin_reward(data['height'])
         data['isMainChain'] = True
         cur.execute("select hash from trxs where block_id>=%s and block_id<%s;", (blk*MAX_TX_BLK, blk*MAX_TX_BLK+MAX_TX_BLK))
         for txhash, in cur:

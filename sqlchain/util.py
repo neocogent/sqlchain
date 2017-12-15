@@ -11,7 +11,7 @@ from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 
 from backports.functools_lru_cache import lru_cache # pylint:disable=relative-import
 from sqlchain.version import coincfg, ADDR_PREFIX, P2SH_PREFIX, P2SH_CHAR, BECH_HRP, BECH32_FLAG, BECH32_LONG, P2SH_FLAG
-from sqlchain.version import S3_BLK_SIZE, BLOB_SPLIT_SIZE
+from sqlchain.version import S3_BLK_SIZE, BLOB_SPLIT_SIZE, BLK_REWARD, HALF_BLKS
 
 tidylog = threading.Lock()
 
@@ -364,6 +364,12 @@ def findTx(cur, txhash, mkNew=False, limit=32):
             return (None,False) if mkNew else None
         tx_id += 1
 
+def coin_reward(height):
+    return float(coincfg(BLK_REWARD) >> (height / coincfg(HALF_BLKS)))/1e8 + 0.0
+
+def bits2diff(bits):
+    return float(0x00ffff * 2**(8*(0x1d - 3))) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3)))
+
 # blob and header file support stuff
 def puthdr(blk, cfg, hdr):
     with open(cfg['path']+'/hdrs.dat', 'r+b') as f:
@@ -382,9 +388,6 @@ def getChunk(chunk, cfg):
     with open(cfg['path']+'/hdrs.dat', 'rb') as f:
         f.seek(chunk*80*2016)
         return f.read(80*2016)
-
-def bits2diff(bits):
-    return 0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3)))
 
 def getBlobHdr(pos, cfg):
     buf = readBlob(int(pos), 13, cfg)
