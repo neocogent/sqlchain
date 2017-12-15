@@ -63,7 +63,7 @@ def api_diff(cur, sqlstr, **kwargs):
         if 'error' in rtn:
             return rtn
         diff = DeepDiff(result, rtn, ignore_order=True, **kwargs)
-        cur.execute("insert into tests (url,result,diff,rtt) values (?,?,?,?);", (url,rtn,diff,rtt))
+        cur.execute("insert into tests (url,result,diff,rtt) values (?,?,?,?);", (url,str(rtn),str(diff),rtt))
         if diff != {}:
             return diff
     return {}
