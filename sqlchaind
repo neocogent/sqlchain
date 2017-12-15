@@ -261,7 +261,7 @@ def insertBlock(cur, data):
         txlist.append(insertTx(cur, tx, tx_id, blk_id + n))
 
     cur.executemany("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", txlist)
-    cur.execute("insert ignore into blocks (id,hash,coinbase) values (%s,%s,%s);", (data['height'], data['hash'], data['coinbase']))
+    cur.execute("insert ignore into blocks (id,hash,coinbase,chainwork,blksize) values (%s,%s,%s,%s,%s);", (data['height'], data['hash'], data['coinbase'], data['chainwork'], data['size']))
     puthdr(data['height'], sqc.cfg, data['hdr'])
 
     blktime = time.time() - blkstart
