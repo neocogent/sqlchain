@@ -20,10 +20,10 @@ demos = {
 
     'testnet': {
         'text':['Bitcoin Testnet SQL Blockchain Explorer'],
-        'height':['892679','167324'],
-        'blockhash':['0000000000003431c5b86d3788a953eeaeef2bd5b3491dff0f4e0a931aa4f8f3'],
-        'addr':['muPawjrif323ikE2oJM3FbPxvTjGP1zNin','n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ','n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ',
-                'n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ','muPawjrif323ikE2oJM3FbPxvTjGP1zNin'],
+        'height':['303303','167324'],
+        'blockhash':['000000000000291b489ae609b2f303af605ed5b7b4e2ad786958a3ef65ab6160'],
+        'addr':['muPawjrif323ikE2oJM3FbPxvTjGP1zNin','n4CLirZ5vrWxtNvEDDwkddN8g88TQk99WJ','mzvpbN1K77mmU9SHftKBEitmybGFb3CPq7',
+                '2N3ccQQtsvEo6VDfzcJqcKGgQQCszym9CTp','2N9c1JWFnAy7XZdhxq9ZNZgfE6jW53sv1fF'],
         'txid':['1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35',
                 '1851c0248739bb3a71ae6d207748b35b9005d5cc31e2dc255c54a7278edc4c35'] },
 
@@ -43,7 +43,16 @@ demos = {
         'addr':['Ru4EobrFWYapv6MehxhF7eZBfRKFjAWqqf','RgQ8kpboZvAXAWcRUByfu5n3ZBHf6ZEkQ','Rk3asChtuHfnQfMibyNZxn6FELK3412uEK',
                 'RjA6kSne8LPjJe68YX8bnPj2UiGqMZwryd','Rsu6jg9TvE84vxgVD1DMThKFX9rtupdrSf'],
         'txid':['b9c6fc72eaa058851992d7e6ac73b57168e558c4bb270ed3c45f3b026a751d7e',
-                'dcd1567e56ae0b059d171cce848435569f9b755830228bde152c94dc37bbc18f'] }
+                'dcd1567e56ae0b059d171cce848435569f9b755830228bde152c94dc37bbc18f'] },
+                
+    'dogecoin': {
+        'text':['Dogecoin SQL Blockchain Explorer'],    
+        'height':['303303','167327'],
+        'blockhash':['935cfc6d4cb8488ea57aef1d554c04e33ba42f064df9846464512aa31d74c52c'],
+        'addr':['D9dA2K4oqd8YiQ9t8VczCpJGhmKRwznHWr','DMJk1faLQL6bhGJsFgz36BBmcyALCegjKA','DSrtdtVgYxGShc57mZ63s85Me6r7LmDmPn',
+                'DM7hNeVygTiuZbDBaoeDhu4ZRbQKJ3U9Vx','DJ6rJ9E7bDmQgP591reRjkgoKDnEfJWDSw'],
+        'txid':['c08cb98e668c717f097b047d77dcb48408e34ea59b9c684bdc3816ea589119c5',
+                'd34b2a454851d902aafdc7e2ef9de347c4fc84531e66f8a9b7b664682a87113f'] }
 }
 
 
