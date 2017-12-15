@@ -427,7 +427,7 @@ def mkBlobHdr(tx, ins, outs, nosigs):
         flags |= 0x04
     if nosigs:
         flags |= 0x02
-    if tx['segwit']:
+    if 'segwit' in tx and tx['segwit']:
         flags |= 0x01
     # max hdr = 13 bytes but most will be only 1 flag byte
     return ins,outs,sz,pack('<B', flags) + hdr
@@ -594,12 +594,14 @@ class rpcPool(object): # pylint:disable=too-few-public-methods
 def sqlchain_overlay(pattern):
     if not pattern[-3:].lower() =='.py':
         pattern += '.py'
-    ovrlist = glob('overlay/'+pattern)
+    ovrlist = glob(os.path.dirname(os.path.abspath(__file__))+'/overlay/'+pattern)
     for ovr in ovrlist:
         try:
             modname,_ = os.path.splitext(os.path.split(ovr)[1])
             module = import_module('sqlchain.overlay.'+modname)
+            log("Overlay module loaded: %s" % modname)
         except ImportError:
+            log("Cannot load overlay: %s" % modname)
             return
         globals().update(
             {n: getattr(module, n) for n in module.__all__} if hasattr(module, '__all__')

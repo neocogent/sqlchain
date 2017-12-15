@@ -68,6 +68,17 @@ CREATE TABLE IF NOT EXISTS `orphans` (
   KEY (`sync_id`)
 ) ENGINE={dbeng} DEFAULT CHARSET=latin1;
 
+CREATE TABLE `blkdat` (
+  `id` int(11) NOT NULL,
+  `hash` binary(32) NOT NULL,
+  `prevhash` binary(32) NOT NULL,
+  `filenum` int(11) NOT NULL,
+  `filepos` int(11) NOT NULL,
+  UNIQUE KEY `filenum` (`filenum`,`filepos`),
+  KEY `id` (`id`),
+  KEY `hash` (`hash`)
+) ENGINE={dbeng} DEFAULT CHARSET=latin1;
+
 CREATE TABLE IF NOT EXISTS `info` (
   `class` varchar(12) NOT NULL,
   `key` varchar(32) NOT NULL,
