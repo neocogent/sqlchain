@@ -229,7 +229,7 @@ def apiTx(cur, txhash, args):
             del data['fees']
             data['isCoinBase'] = True
         return data
-    return []
+    return {}
 
 def apiInputs(cur, height, txdata, ins):
     total = 0
