@@ -19,7 +19,7 @@ __builtins__.sqc = dotdict()  # container for super globals
 
 sqc.cfg = { 'log':sys.argv[0]+'.log', 'listen':'localhost:8085', 'www':'www', 'block':0,
             'pool':4, 'dbinfo-ts':datetime.now().strftime('%s'),
-            'dbinfo':-1, 'path':'/var/data/sqlchain' }
+            'dbinfo':-1, 'path':'/var/data/sqlchain', 'cointype':'bitcoin' }
 
 sqc.server = {}
 sqc.clients = {} # active websockets we publish to

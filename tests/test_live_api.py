@@ -6,7 +6,7 @@
 #     - compare json returned to livetest db json
 #
 
-import sys, time, requests
+import sys, time, requests, json
 
 try:
     from deepdiff import DeepDiff
@@ -62,7 +62,7 @@ def api_diff(cur, sqlstr, **kwargs):
         rtn,rtt = api_call(url)
         if 'error' in rtn:
             return rtn
-        diff = DeepDiff(result, rtn, ignore_order=True, **kwargs)
+        diff = DeepDiff(json.loads(result), rtn, ignore_order=True, **kwargs)
         cur.execute("insert into tests (url,result,diff,rtt) values (?,?,?,?);", (url,str(rtn),str(diff),rtt))
         if diff != {}:
             return diff
@@ -70,7 +70,7 @@ def api_diff(cur, sqlstr, **kwargs):
 
 @live
 def test_live_api_block(testdb):
-    assert api_diff(testdb, '/block/%') == {}
+    assert api_diff(testdb, '/block/%', exclude_paths={"root['reward']","root['confirmations']"}) == {}
 
 @live
 def test_live_api_block_index(testdb):
