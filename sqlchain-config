@@ -130,8 +130,8 @@ def doCoinSettings(d, cfg): # pylint:disable=too-many-branches,too-many-statemen
         elif tag[1] == '4':
             while True:
                 code,tmp = d.checklist("Mark the options to enable:", 12, 60, choices=[
-                    ('1','Enable %s pruning (save space)' % coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinprune']=='Yes'),
-                    ('2','Direct read blockchain, not RPC (faster)',cfg['blkdat']=='Yes'),
+                    ('1','Enable %s pruning (save space)' % coin_var[cfg['cointype']][DAEMON_BIN], coin_var[cfg['cointype']][CAN_PRUNE] and cfg['coinprune']=='Yes'),
+                    ('2','Direct read blockchain, not RPC (faster)', coin_var[cfg['cointype']][CAN_BLKDAT] and cfg['blkdat']=='Yes'),
                     ('3','Discard signature/witness data (save space)',cfg['nosigs']=='Yes'),
                     ('4','Enable weekly log rotation',cfg['logrotate']=='Yes'),
                     ('5','Enable ZMQ sync with %s'% coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinzmq']=='Yes')
@@ -140,8 +140,8 @@ def doCoinSettings(d, cfg): # pylint:disable=too-many-branches,too-many-statemen
                     d.msgbox(op_mode_help[int(tmp)-1],20,75)
                     continue
                 elif code == d.OK:
-                    cfg['coinprune'] = 'Yes' if '1' in tmp else 'No'
-                    cfg['blkdat'] = 'Yes' if '2' in tmp else 'No'
+                    cfg['coinprune'] = 'Yes' if coin_var[cfg['cointype']][CAN_PRUNE] and '1' in tmp else 'No'
+                    cfg['blkdat'] = 'Yes' if coin_var[cfg['cointype']][CAN_BLKDAT] and '2' in tmp else 'No'
                     cfg['nosigs'] = 'Yes' if '3' in tmp else 'No'
                     cfg['logrotate'] = 'Yes' if '4' in tmp else 'No'
                     cfg['coinzmq'] = 'Yes' if '5' in tmp else 'No'
