@@ -210,6 +210,7 @@ def decodeBlock(data):
         block['tx'].append(tx)
         off += tx['size']
         txcnt -= 1
+    block['size'] = off
     block['height'] = 0
     block['coinbase'] = block['tx'][0]['vin'][0]['coinbase']
     if block['version'] > 1 and block['height'] >= 227836 and block['coinbase'][0] == '\x03':
