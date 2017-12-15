@@ -231,7 +231,7 @@ def insertTx(cur, tx, tx_id, blk_id): # pylint:disable=too-many-locals
             txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
     outQ.put((outlist,inlist))
     ins,outs,sz,txhdr = mkBlobHdr(tx, len(inlist), len(outlist), sqc.cfg['no-sigs'])
-    if (not sqc.cfg['no-sigs']) and tx['segwit']:
+    if (not sqc.cfg['no-sigs']) and 'segwit' in tx and tx['segwit']:
         txdata += tx['witness']
     return ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, sqc.cfg), blk_id )
 
