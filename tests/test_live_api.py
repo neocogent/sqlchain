@@ -24,6 +24,7 @@ millis = lambda: int(round(time.time() * 1000))
 server = None
 
 live = pytest.mark.skipif(not pytest.config.getoption("--runlive"), reason = "need --runlive option to run")
+nosigs = pytest.mark.skipif(pytest.config.getoption("--nosigs"), reason = "cannot test with nosigs db")
 
 # livetest db created by mklivetestdb.py
 @pytest.fixture(scope="module")
@@ -77,6 +78,7 @@ def test_live_api_block_index(testdb):
     assert api_diff(testdb, '/block-index/%') == {}
 
 @live
+@nosigs
 def test_live_api_rawblock(testdb): # not currently supported
     assert True
 
@@ -89,8 +91,9 @@ def test_live_api_tx(testdb):
     assert api_diff(testdb, '/tx/%') == {}
 
 @live
+@nosigs
 def test_live_api_rawtx(testdb):
-    assert True
+    assert api_diff(testdb, '/rawtx/%') == {}
 
 @live
 def test_live_api_addr(testdb):
