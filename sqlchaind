@@ -210,7 +210,8 @@ def doReOrg(cur, data, height):
                 else:
                     insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan block
             addOrphan(cur, height)
-            cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
+            data['chainwork'] = sqc.rpc.getblockheader(data['hash'][::-1].encode('hex'))['chainwork'].decode('hex')
+            cur.execute("update blocks set hash=%s,coinbase=%s,chainwork=%s,blksize=%s where id=%s;", (data['hash'], data['coinbase'], data['chainwork'], data['size'], height))
             puthdr(data['height'], sqc.cfg, data['hdr'])
         height += 1
 
