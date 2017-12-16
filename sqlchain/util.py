@@ -371,6 +371,7 @@ def coin_reward(height):
 def bits2diff(bits):
     return float(0x00ffff * 2**(8*(0x1d - 3))) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3)))
 def blockwork(bits):
+    bits = int(bits,16)
     return 2**256/((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))+1)
 def int2bin32(val):
     return unhexlify('%064x' % val)
