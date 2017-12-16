@@ -1,0 +1,43 @@
+#!/usr/bin/env python
+#
+#   fix chainwork when missing
+#
+
+cfg = { 'dbinfo':"localhost:btc:pwd:testnet", 'path':'/var/data/sqlchain/testnet' }
+
+blk = 0
+max_blk = 907843
+chainwork = 0
+
+from struct import unpack_from
+from binascii import unhexlify
+import MySQLdb as db
+
+def blockwork(bits):
+    return 2**256/((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))+1)
+def int2bin32(val):
+    return unhexlify('%064x' % val)
+    
+def gethdr(blk, cfg, var=None):
+    with open(cfg['path']+'/hdrs.dat', 'rb') as f:
+        f.seek(blk*80)
+        data = f.read(80)
+    hdr = dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
+    return hdr if var is None else hdr[var] if var != 'raw' else data
+
+
+sql = db.connect(*cfg['dbinfo'].split(':'))
+cur = sql.cursor()
+
+while blk < max_blk:
+    bits = gethdr(blk, cfg, 'bits')
+    chainwork += blockwork(bits)
+    cur.execute("update blocks set chainwork=%s where id=%s;", (int2bin32(chainwork),blk))
+    if blk % 1000 == 0:
+        print blk
+    blk += 1
+    
+sql.commit()
+
+print "Done",blk
+
