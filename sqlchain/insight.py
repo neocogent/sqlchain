@@ -28,7 +28,7 @@ def do_API(env, send_resp):
     elif args[0] == "block":
         if len(args[1]) == 64 and all(c in hexdigits for c in args[1]):
             result = json.dumps(apiBlock(cur, args[1]))
-    elif args[0] in ["tx","raw"]:
+    elif args[0] in ["tx","rawtx"]:
         if len(args[1]) == 64 and all(c in hexdigits for c in args[1]):
             result = json.dumps(apiTx(cur, args[1], args))
     elif args[0] == "txs":
@@ -212,7 +212,7 @@ def apiTx(cur, txhash, args):
     txh = txhash.decode('hex')[::-1]
     cur.execute("select id,hash,txdata,block_id,ins,outs,txsize from trxs where id>=%s and hash=%s limit 1;", (txh2id(txh), txh))
     for tid,txh,txdata,blkid,ins,outs,txsize in cur:
-        if [i for i in ['raw','html'] if i in args]:
+        if [i for i in ['rawtx','html'] if i in args]:
             return mkRawTx(cur, args, tid, txdata, blkid, ins, outs)
         data['confirmations'] = sqc.cfg['block'] - int(blkid)//MAX_TX_BLK + 1 if blkid >= 0 else 0
         data['version'],data['locktime'] = getBlobHdr(txdata, sqc.cfg)[4:6]
@@ -385,31 +385,35 @@ def mkRawTx(cur, args, txid, txdata, blkid, ins, outs):
         buf = readBlob(vpos, ins*7, sqc.cfg)
         if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
             for n in range(ins):
-                out += [ '\0'*32, '\0'*4, '', '', '' ]
+                out += [ '\0'*32, '\0'*4, '\0', '', '\xFF'*4 ]
         else:
             vpos += ins*7
             for n in range(ins):
                 in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
                 cur.execute("select hash from trxs where id=%s limit 1;", (in_id // MAX_IO_TX,))
                 out += [ cur.fetchone()[0][:32], pack('<I', in_id % MAX_IO_TX) ]
-                vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg)) if not hdr[7] else (0,0) # no-sigs flag
-                sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4), sqc.cfg)
-                out += [ sigbuf[:off], sigbuf[off:off+vsz], ('\xFF'*4 if hdr[6] else sigbuf[off+vsz:]) ]
-                vpos += off+vsz+(0 if hdr[6] else 4)
+                if not hdr[7]: # no-sigs flag
+                    vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg)) 
+                    sigbuf = readBlob(vpos, off+vsz+(0 if hdr[6] else 4), sqc.cfg)
+                    out += [ sigbuf[:off], sigbuf[off:off+vsz], ('\xFF'*4 if hdr[6] else sigbuf[off+vsz:]) ]
+                    vpos += off+vsz+(0 if hdr[6] else 4)
+                else:
+                    out += [ '\0', '', '\xFF'*4 ]
     out += encodeVarInt(outs)
     for n in range(outs):
         cur.execute("select value,addr_id from outputs o where o.id=%s limit 1;", (txid*MAX_IO_TX + n,))
         row = cur.fetchall()
         for value,aid in row:
-            cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
-            addr = cur.fetchone()[0]
+            if aid != 0:
+                cur.execute("select addr from {0} where id=%s limit 1;".format('bech32' if is_BL32(int(aid)) else 'address'), (aid,))
+                addr = cur.fetchone()[0]
             out += [ pack('<Q', int(value)) ]
             vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))
             pkbuf = readBlob(vpos, off+vsz, sqc.cfg)
             out += [ pkbuf[:off], pkbuf[off:] ] if vsz > 0 else mkSPK(addr, int(aid))
             vpos += off+vsz
     out += [ pack('<I', hdr[5]) ]
-    return rawHTML(out, ins, outs) if 'html' in args else ''.join(out).encode('hex')
+    return rawHTML(out, ins, outs) if 'html' in args else {'rawtx':''.join(out).encode('hex')}
 
 def apiRPC(cmd, arg):
     rpc = AuthServiceProxy(sqc.cfg['rpc'])
