@@ -18,11 +18,13 @@
 
 Database sync code updated for SQL transactional engines. Tested with MariaDB using the [RocksDB](https://en.wikipedia.org/wiki/MyRocks) engine. This engine has some nice features but the main ones of interest here are storage size reduction and indexing (instead of Btree) more suited to high entropy keys (tx,address ids). In my tests RocksDB was not much faster initially but didn't drop in speed so much as DB size grows. It's a bit early to fully recommend but initially it looks like a nice option. I'll update the install guide with RocksDB steps (soonish).
 
-Added **bech32** address support (p2wpkh and p2sh). This requires a database upgrade and **sqlchain-upgrade-db** has been provided for this. sqlchaind will detect and stop on old version databases. The upgrade takes quite some time and if you cannot wait then revert your version (< 0.2.5) for now. The upgrade re-encodes how address ids are stored and expands tx/block and outputs/tx limits to better deal with segwit increases. Finally, the part which takes the longest (but can be killed/restarted) is retro-fixing any past bech32 tx outputs that were ignored. If you have the space you may be better off syncing a new db and then quick-switching it in rather than taking a live db down to do the upgrade. It's also probably safer in case of an upgrade bug.
+Added **bech32** address support (p2wpkh and p2sh). This requires a database upgrade and along with other changes the best option is to re-sync the blockchain. sqlchain will stop if it detects an old db and if re-sync is not possible then reverting to pre v0.2.5 is best.
 
 Now supports multiple blockchains and testnet variants. Currently Litecoin, Dogecoin and Reddcoin have been added as test cases (with demo pages) and I hope to add a few more before long. Each coin requires it's own daemon process but sqlchain-config (sqlchain-init replacement) now takes advantage of systemd "instances" so that several can coexist. This means the systemctl commands are now like `systemctl start sqlchain@bitcoin`, and similarly for other coins. There is only one sqlchain@.service and it creates variant instances for each coin described by it's cfg. Upstart (Ubuntu 14.04) support has been removed - it probably works fine but the setup process now only automates Ubuntu 16.04 (systemd) and newer platforms.
 
 As part of new altcoin support there is now an "overlay" feature where custom modules can be loaded based on cointype or for extending an api. SQL schema can be overridden likewise based on cointype or db name. If you have a custom schema you can have it initialized by sqlchain-config simply by using a matching custom db name. Both these options allow customizing and extending code while easing the burden of merging updates.
+
+New unit tests have been added, see the README in the tests directory. Many bugs fixed and api behaviour improved as a result.
 
 #### Supported Features (with more tested history)
 

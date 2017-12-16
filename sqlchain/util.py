@@ -5,6 +5,7 @@ import os, sys, pwd, time, json, threading, re, urllib2, hashlib
 
 from datetime import datetime
 from struct import pack, unpack, unpack_from
+from binascii import unhexlify
 from glob import glob
 from importlib import import_module
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
@@ -211,7 +212,6 @@ def decodeBlock(data):
         off += tx['size']
         txcnt -= 1
     block['size'] = off
-    block['chainwork'] = '\0'*32
     block['height'] = 0
     block['coinbase'] = block['tx'][0]['vin'][0]['coinbase']
     if block['version'] > 1 and block['height'] >= 227836 and block['coinbase'][0] == '\x03':
@@ -368,9 +368,12 @@ def findTx(cur, txhash, mkNew=False, limit=32):
 
 def coin_reward(height):
     return float(int(coincfg(BLK_REWARD)) >> int(height // coincfg(HALF_BLKS)))/float(1e8)
-
 def bits2diff(bits):
     return float(0x00ffff * 2**(8*(0x1d - 3))) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3)))
+def blockwork(bits):
+    return 2**256/((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))+1)
+def int2bin32(val):
+    return unhexlify('%064x' % val)
 
 # blob and header file support stuff
 def puthdr(blk, cfg, hdr):

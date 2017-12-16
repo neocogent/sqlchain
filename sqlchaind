@@ -10,7 +10,7 @@ import os, sys, socket, getopt, time, signal, threading, daemon
 import MySQLdb as db
 
 from sqlchain.version import version, coincfg, BLKDAT_NEAR_SYNC, BLKDAT_MAGIC, MAX_IO_TX, MAX_TX_BLK
-from sqlchain.util import dotdict, sqlchain_overlay, loadcfg, savecfg, drop2user, rpcPool, log, logts
+from sqlchain.util import dotdict, sqlchain_overlay, loadcfg, savecfg, drop2user, rpcPool, blockwork, int2bin32, log, logts
 from sqlchain.util import encodeVarInt, decodeBlock, decodeTx, findTx, insertAddress, mkBlobHdr, insertBlob, puthdr, gethdr
 from sqlchain.blkdat import BlkDatHandler
 
@@ -32,13 +32,16 @@ def getBlocks(blk):
     if blk == 0:
         cur.execute('select ifnull(max(id), -1) from blocks')
         blk = int(cur.fetchone()[0] + 1)
+        cur.execute("select hex(chainwork) from blocks where id=%s;", (blk-1,))
+        row = cur.fetchone()
+        chainwork = int(row[0],16) if row is not None else 0
     startblk = blk
     blkinfo = sqc.rpc.getblockchaininfo() # wait for node to be ready
     if blkinfo is None:
         return 0
     sqc.bestblk = blkinfo['headers'] if 'headers' in blkinfo else 0
     if 'blkdat' in sqc.cfg and (sqc.bestblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
-        blk = getBlocksDirect(cur, blk) # use direct file access for catch up
+        blk = getBlocksDirect(cur, blk, chainwork) # use direct file access for catch up
     if not sqc.done.isSet():
         log("Using rpc mode. Monitoring blocks / mempool on " + sqc.cfg['cointype'])
     poll_delay = 0.05
@@ -61,12 +64,14 @@ def getBlocks(blk):
         if blkhash is not None:
             data = decodeBlock(sqc.rpc.getblock(blkhash, False).decode('hex'))
             data['height'] = blk
+            chainwork += blockwork(data['bits'])
+            data['chainwork'] = int2bin32(chainwork)
             data['rpc'] = time.time()-rpcstart
             blockQ.put(data)
             blk += 1
     return blk - startblk
 
-def getBlocksDirect(cur, blk):
+def getBlocksDirect(cur, blk, chainwork):
     blkscan = threading.Thread(target = BlkDatHandler, args=(True,))
     blkscan.start()
     log("Using blkdat mode: %s" % sqc.cfg['blkdat'])
@@ -91,6 +96,8 @@ def getBlocksDirect(cur, blk):
                     return blk
                 data = decodeBlock(fd.read(blksize))
                 data['height'] = blk
+                chainwork += blockwork(data['bits'])
+                data['chainwork'] = int2bin32(chainwork)
                 data['rpc'] = time.time()-started
                 blockQ.put(data)
                 blk += 1
