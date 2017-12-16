@@ -366,6 +366,7 @@ def findTx(cur, txhash, mkNew=False, limit=32):
             return (None,False) if mkNew else None
         tx_id += 1
 
+# work and difficulty
 def coin_reward(height):
     return float(int(coincfg(BLK_REWARD)) >> int(height // coincfg(HALF_BLKS)))/float(1e8)
 def bits2diff(bits):
@@ -410,6 +411,45 @@ def getBlobHdr(pos, cfg):
     out.append( ord(buf[0])&0x02 != 0 )  # nosigs
     out.append( ord(buf[0])&0x01 != 0 )  # segwit
     return out # out[0] is hdr size
+
+def getBlobData(txdata, ins, outs=0, txsize=0):
+    data = { 'hdr':getBlobHdr(txdata, sqc.cfg), 'ins':[], 'outs':[] }
+    if ins >= 0xC0:
+        ins = ((ins&0x3F)<<8) + data['hdr'][1]
+    if outs >= 0xC0:
+        outs = ((outs&0x3F)<<8) + data['hdr'][2]
+    if txsize >= 0xFF00:
+        txsize = ((txsize&0xFF)<<16) + data['hdr'][3]
+    data['size'] = txsize
+    vpos = int(txdata) + data['hdr'][0]
+    buf = readBlob(vpos, ins*7, sqc.cfg)
+    if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
+        data['error'] = 'missing data'
+        return data
+    vpos += ins*7
+    for n in range(ins):
+        data['ins'].append({ 'outid': unpack('<Q', buf[n*7:n*7+7]+'\0')[0] })
+    if not data['hdr'][7]: # no-sigs flag
+        for n in range(ins):
+            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))
+            sigbuf = readBlob(vpos, off+vsz+(0 if data['hdr'][6] else 4), sqc.cfg)
+            data['ins'][n]['sigs'] = sigbuf[off:off+vsz]
+            data['ins'][n]['seq'] = '\xFF'*4 if data['hdr'][6] else sigbuf[off+vsz:]
+            vpos += off+vsz+(0 if data['hdr'][6] else 4)
+    elif not data['hdr'][6]: # non-std seq flag
+        buf = readBlob(vpos, ins*4, sqc.cfg)
+        for n in range(ins):
+            data['ins'][n]['seq'] = buf[n*4:n*4+4]
+        vpos += ins*4
+    else:
+        for n in range(ins):
+            data['ins'][n]['seq'] = '\xFF'*4
+    for n in range(outs):
+        vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))
+        pkbuf = readBlob(vpos+off, vsz, sqc.cfg)
+        data['outs'].append(pkbuf)
+        vpos += off+vsz
+    return data
 
 def mkBlobHdr(tx, ins, outs, nosigs):
     flags,hdr = 0,''
