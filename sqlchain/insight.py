@@ -15,6 +15,7 @@ from sqlchain.util import is_address, mkaddr, addr2id, txh2id, mkSPK, getBlobDat
 from sqlchain.util import encodeVarInt, gethdr, coin_reward, bits2diff, mkOpCodeStr, logts
 
 RESULT_ROW_LIMIT = 1000
+zF = lambda x: int(x) if int(x) == x else x
 
 #main entry point for api calls
 def do_API(env, send_resp): # pylint:disable=too-many-branches
@@ -80,7 +81,7 @@ def apiHeader(cur, blk, args):
             return { 'block_height':int(blkid), 'version':hdr['version'], 'time':hdr['time'], 'bits':hdr['bits'], 'nonce':hdr['nonce'],
                      'merkle_root':hdr['merkleroot'][::-1].encode('hex'), 'prev_block_hash':hdr['previousblockhash'][::-1].encode('hex') }
         return { 'blockHash': blkhash[::-1].encode('hex') }
-    return []
+    return {}
 
 def apiBlock(cur, blkhash):
     data = { 'hash':blkhash, 'tx':[] }
@@ -91,9 +92,9 @@ def apiBlock(cur, blkhash):
         data.update(gethdr(data['height'], sqc.cfg))
         data['previousblockhash'] = data['previousblockhash'][::-1].encode('hex')
         data['merkleroot'] = data['merkleroot'][::-1].encode('hex')
-        data['difficulty'] = float(int(bits2diff(data['bits'])*1e8)/1e8)
+        data['difficulty'] = zF(int(bits2diff(data['bits'])*1e8)/1e8)
         data['bits'] = '%08x' % data['bits']
-        data['reward'] = coin_reward(data['height'])
+        data['reward'] = zF(coin_reward(data['height']))
         data['isMainChain'] = True
         data['size'] = blksz
         data['chainwork'] = work.encode('hex')
@@ -105,7 +106,7 @@ def apiBlock(cur, blkhash):
         for txhash, in cur:
             data['nextblockhash'] = txhash[::-1].encode('hex')
         return data
-    return []
+    return {}
 
 def apiAddr(cur, addrs, args, get):
     data = []
@@ -114,7 +115,7 @@ def apiAddr(cur, addrs, args, get):
             addr_id = addr2id(addr, cur)
             if addr_id:
                 if 'utxo' in args:
-                    data.append(addrUTXOs(cur, addr_id, addr))
+                    data.append(addrUTXOs(cur, addr_id, addr, get))
                 else:
                     data.append(addrTXs(cur, addr_id, addr, args, get))
     return data if len(data) != 1 else data[0]
@@ -135,12 +136,11 @@ def addrTXs(cur, addr_id, addr, args, get): # pylint:disable=too-many-locals
         spend = 1 if tx_id == spend_id else 0
         sums[uncfmd][spend] += value
 
-        if spend == 0 and count >= offset and count < offset+limit:
+        if count >= offset and count < offset+limit:
             txhash = txhash[::-1].encode('hex')
             if incTxs and txhash not in txs:
                 txs.append(txhash)
-        if spend == 0:
-            count += 1
+        count += 1
 
     if 'balance' in args:
         return int(sums[0][0]-sums[0][1])
@@ -154,12 +154,13 @@ def addrTXs(cur, addr_id, addr, args, get): # pylint:disable=too-many-locals
     return { 'addrStr':addr, 'balanceSat':int(sums[0][0]-sums[0][1]), 'balance':float(sums[0][0]-sums[0][1])/1e8 or 0, 'totalReceivedSat':int(sums[0][0]),
              'totalReceived': float(sums[0][0])/1e8, 'totalSentSat':int(sums[0][1]), 'totalSent':float(sums[0][1])/1e8,
              'unconfirmedBalanceSat':int(sums[1][0]-sums[1][1]), 'unconfirmedBalance':float(sums[1][0]-sums[1][1])/1e8 or 0,
-             'txApperances':count, 'transactions':txs, 'unconfirmedTxApperances':untxs }
+             'txApperances':len(txs), 'transactions':txs, 'unconfirmedTxApperances':untxs }
 
-def addrUTXOs(cur, addr_id, addr):
+def addrUTXOs(cur, addr_id, addr, get):
+    offset = int(get['from'][0]) if 'from' in get else 0
+    limit = min(int(get['to'][0])-offset, RESULT_ROW_LIMIT) if 'to' in get else RESULT_ROW_LIMIT
     data = []
-    cur.execute("select value,o.id,hash,block_id div {1} from trxs t left join outputs o on t.id=(o.id div {0}) and o.tx_id is null where addr_id=%s order by block_id;".format(MAX_IO_TX,MAX_TX_BLK), (addr_id,))
-    #cur.execute("select value,o.id,t.hash,block_id/{1} from outputs o, trxs t, blocks b where tx_id is null and addr_id=%s and t.id=floor(o.id/{0}) and b.id=t.block_id/{0};".format(MAX_IO_TX,MAX_TX_BLK), (addr_id,))
+    cur.execute("select value,o.id,hash,block_id div {1} from trxs t left join outputs o on t.id=(o.id div {0}) and o.tx_id is null where addr_id=%s order by block_id limit %s,%s;".format(MAX_IO_TX,MAX_TX_BLK), (addr_id,limit,offset))
     for value,out_id,txhash,blk in cur:
         data.append({ 'address':addr, 'txid':txhash[::-1].encode('hex'), 'vout':int(out_id)%MAX_IO_TX, 'amount':float(value)/1e8,
                       'confirmations':sqc.cfg['block']-int(blk)+1 if blk>=0 else 0, 'ts':gethdr(int(blk), sqc.cfg, 'time') if blk>=0 else 0 })
@@ -210,22 +211,22 @@ def apiTx(cur, txhash, args):
         return txAddrs(cur, txhash)
     data = { 'txid':txhash }
     txh = txhash.decode('hex')[::-1]
-    cur.execute("select id,hash,txdata,block_id,ins,outs,txsize from trxs where id>=%s and hash=%s limit 1;", (txh2id(txh), txh))
+    cur.execute("select id,hash,txdata,block_id div {0},ins,outs,txsize from trxs where id>=%s and hash=%s limit 1;".format(MAX_TX_BLK), (txh2id(txh), txh))
     for tid,txh,txdata,blkid,ins,outs,txsize in cur:
         blob = getBlobData(txdata, ins, outs, txsize)
         if [i for i in ['rawtx','html'] if i in args]:
             return mkRawTx(cur, args, tid, blob, blkid)
-        data['blockheight'] = int(blkid//MAX_TX_BLK)
-        data['confirmations'] = sqc.cfg['block'] - int(blkid)//MAX_TX_BLK + 1 if blkid >= 0 else 0
+        data['blockheight'] = blkid
+        data['confirmations'] = sqc.cfg['block'] - blkid + 1 if blkid >= 0 else 0
         data['version'],data['locktime'] = blob['hdr'][4],blob['hdr'][5]
-        data['valueIn'],data['vin'] = apiInputs(cur, blkid//MAX_TX_BLK, blob['ins'])
+        data['valueIn'],data['vin'] = apiInputs(cur, blkid, blob['ins'])
         data['valueOut'],data['vout'] = apiOutputs(cur, int(tid), blob['outs'])
         data['fees'] = round(data['valueIn'] - data['valueOut'],8)
         data['size'] = blob['size']
-        cur.execute("select hash from blocks where id=%s limit 1;", (int(blkid)//MAX_TX_BLK,))
+        cur.execute("select hash from blocks where id=%s limit 1;", (blkid,))
         for txhash2, in cur:
             data['blockhash'] = txhash2[::-1].encode('hex')
-            data['time'] = data['blocktime'] = gethdr(int(blkid//MAX_TX_BLK), sqc.cfg, 'time')
+            data['time'] = data['blocktime'] = gethdr(blkid, sqc.cfg, 'time')
         if 'coinbase' in data['vin'][0]:
             del data['valueIn']
             del data['fees']
@@ -278,9 +279,9 @@ def apiOutputs(cur, txid, outs):
 def apiSpent(cur, txid, out_id):
     cur.execute("select txdata,hash,block_id div {0},ins from trxs where id=%s limit 1;".format(MAX_TX_BLK), (txid,))
     for txdata,txh,blk,ins in cur:
-        blob = getBlobData(txdata, ins, 0)
-        for n in range(len(blob['ins'])):
-            if blob['ins'][n]['outid'] == out_id:
+        blob = getBlobData(txdata, ins)
+        for n,xin in enumerate(blob['ins']):
+            if xin['outid'] == out_id:
                 return { 'spentTxId':txh[::-1].encode('hex'), 'spentIndex':n, 'spentHeight':int(blk) }
     return {}
 
@@ -306,8 +307,6 @@ def txAddrs(cur, txhash):
     txins = cur.fetchall()
     for txdata,ins in txins:
         blob = getBlobData(int(txdata), ins)
-        if 'error' in blob: # means missing blob data
-            return []
         if ins > 0:
             for _,xin in enumerate(blob['ins']):
                 cur.execute("select addr_id from outputs o where o.id=%s limit 1;", (xin['outid'],))

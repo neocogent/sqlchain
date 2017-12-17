@@ -348,10 +348,9 @@ def insertAddress(cur, addr):
                 return addr_id
             addr_id += 1
 
-def findTx(cur, txhash, mkNew=False, limit=32):
+def findTx(cur, txhash, mkNew=False, warn=32):
     tx_id = txh2id(txhash)
-    limit_id = tx_id+limit
-    #start_id = tx_id
+    warn_id = tx_id+warn
     while True:
         cur.execute("select hash from trxs where id=%s", (tx_id,))
         row = cur.fetchone()
@@ -361,9 +360,9 @@ def findTx(cur, txhash, mkNew=False, limit=32):
             return None
         if str(row[0]) == str(txhash):
             return (tx_id,True) if mkNew else tx_id
-        if tx_id > limit_id:
-            logts("*** Tx Id limit exceeded %s ***" % txhash)
-            return (None,False) if mkNew else None
+        if tx_id > warn_id:
+            logts("*** TxId collisions excessive %d => %s ***" % (tx_id,txhash))
+            #return (None,False) if mkNew else None
         tx_id += 1
 
 # work and difficulty
@@ -423,9 +422,6 @@ def getBlobData(txdata, ins, outs=0, txsize=0):
     data['size'] = txsize
     vpos = int(txdata) + data['hdr'][0]
     buf = readBlob(vpos, ins*7, sqc.cfg)
-    if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
-        data['error'] = 'missing data'
-        return data
     vpos += ins*7
     for n in range(ins):
         data['ins'].append({ 'outid': unpack('<Q', buf[n*7:n*7+7]+'\0')[0] })

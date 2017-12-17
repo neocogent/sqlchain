@@ -58,20 +58,22 @@ def api_call(url):
     return { "error": r.status_code },0
 
 def api_diff(cur, sqlstr, **kwargs):
+    log,diff = [],{}
     cur.execute("select url,result from calls where %s;" % sqlstr)
     for url,result in cur:
         rtn,rtt = api_call(url)
         if 'error' in rtn:
             return rtn
         diff = DeepDiff(json.loads(result), rtn, ignore_order=True, **kwargs)
-        cur.execute("insert into tests (url,result,diff,rtt) values (?,?,?,?);", (url,str(rtn),str(diff),rtt))
+        log.append((url,str(rtn),str(diff),rtt))
         if diff != {}:
-            return diff
-    return {}
+            break
+    cur.executemany("insert into tests (url,result,diff,rtt) values (?,?,?,?);", log )
+    return diff
 
 @live
 def test_live_api_block(testdb):
-    assert api_diff(testdb, "url like '/block/%'", exclude_paths={"root['reward']","root['confirmations']"}) == {}
+    assert api_diff(testdb, "url like '/block/%'", exclude_paths={"root['confirmations']"}) == {}
 
 @live
 def test_live_api_block_index(testdb):
@@ -88,7 +90,7 @@ def test_live_api_blocks(testdb): # not currently supported
 
 @live
 def test_live_api_tx(testdb):
-    assert api_diff(testdb, "url like '/tx/%' order by url") == {}
+    assert api_diff(testdb, "url like '/tx/%'") == {}
 
 @live
 @nosigs
