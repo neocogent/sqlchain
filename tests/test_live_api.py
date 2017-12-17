@@ -58,7 +58,7 @@ def api_call(url):
     return { "error": r.status_code },0
 
 def api_diff(cur, sqlstr, **kwargs):
-    cur.execute("select url,result from calls where url like ?;", (sqlstr,))
+    cur.execute("select url,result from calls where %s;" % sqlstr)
     for url,result in cur:
         rtn,rtt = api_call(url)
         if 'error' in rtn:
@@ -71,11 +71,11 @@ def api_diff(cur, sqlstr, **kwargs):
 
 @live
 def test_live_api_block(testdb):
-    assert api_diff(testdb, '/block/%', exclude_paths={"root['reward']","root['confirmations']"}) == {}
+    assert api_diff(testdb, "url like '/block/%'", exclude_paths={"root['reward']","root['confirmations']"}) == {}
 
 @live
 def test_live_api_block_index(testdb):
-    assert api_diff(testdb, '/block-index/%') == {}
+    assert api_diff(testdb, "url like '/block-index/%'") == {}
 
 @live
 @nosigs
@@ -88,20 +88,20 @@ def test_live_api_blocks(testdb): # not currently supported
 
 @live
 def test_live_api_tx(testdb):
-    assert api_diff(testdb, '/tx/%') == {}
+    assert api_diff(testdb, "url like '/tx/%' order by url") == {}
 
 @live
 @nosigs
 def test_live_api_rawtx(testdb):
-    assert api_diff(testdb, '/rawtx/%') == {}
+    assert api_diff(testdb, "url like '/rawtx/%'") == {}
 
 @live
 def test_live_api_addr(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/addr/%' and url not like '%?%' and url not like '%/%/%/%'") == {}
 
 @live
 def test_live_api_utxo(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/addr/%/utxo'") == {}
 
 @live
 def test_live_api_txs_block(testdb):

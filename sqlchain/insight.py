@@ -151,9 +151,9 @@ def addrTXs(cur, addr_id, addr, args, get): # pylint:disable=too-many-locals
     if 'totalSent' in args:
         return int(sums[0][1])
 
-    return { 'addStr':addr, 'balanceSat':int(sums[0][0]-sums[0][1]), 'balance':float(sums[0][0]-sums[0][1])/1e8, 'totalReceivedSat':int(sums[0][0]),
+    return { 'addrStr':addr, 'balanceSat':int(sums[0][0]-sums[0][1]), 'balance':float(sums[0][0]-sums[0][1])/1e8 or 0, 'totalReceivedSat':int(sums[0][0]),
              'totalReceived': float(sums[0][0])/1e8, 'totalSentSat':int(sums[0][1]), 'totalSent':float(sums[0][1])/1e8,
-             'unconfirmedBalanceSat':int(sums[1][0]-sums[1][1]), 'unconfirmedBalance':float(sums[1][0]-sums[1][1])/1e8,
+             'unconfirmedBalanceSat':int(sums[1][0]-sums[1][1]), 'unconfirmedBalance':float(sums[1][0]-sums[1][1])/1e8 or 0,
              'txApperances':count, 'transactions':txs, 'unconfirmedTxApperances':untxs }
 
 def addrUTXOs(cur, addr_id, addr):
