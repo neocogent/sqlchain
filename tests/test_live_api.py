@@ -99,7 +99,7 @@ def test_live_api_rawtx(testdb):
 
 @live
 def test_live_api_addr(testdb):
-    assert api_diff(testdb, "url like '/addr/%' and url not like '%?%' and url not like '%/%/%/%'") == {}
+    assert api_diff(testdb, "url like '/addr/%'") == {}
 
 @live
 def test_live_api_utxo(testdb):

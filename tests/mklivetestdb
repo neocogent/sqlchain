@@ -27,7 +27,7 @@ def clean_exit(_signo, _stack_frame=None):
     sql.close()
     sys.exit(_signo)
 
-def api_call(cur, sid, url, apistr, save=True):
+def api_call(cur, sid, url, apistr, save=True): #pylint:disable=redefined-outer-name
     global call_count,err_count,call_ts #pylint:disable=global-statement
     if sid is None:
         modestr = "order by random()" if len(sys.argv) > 2 and sys.argv[3] != 'all' else "where site=%d" % (((call_count+err_count) % site_count)+1)
@@ -73,7 +73,7 @@ if __name__ == '__main__':
     cur = sql.cursor()
     for line in sqlmk.split(';'):
         cur.execute(line)
-    
+
     if len(sys.argv) < 3 or sys.argv[2].lower() == 'all':
         cur.execute("select count(*) from sites;")
         site_count = cur.fetchone()[0]
@@ -162,8 +162,8 @@ if __name__ == '__main__':
                     api_call(cur, siteID, siteurl, '/addr/%s/utxo' % addr)
 
                 # get unspent outputs for multiple input addresses ~10%, max 5
-                if tn % 10 == 5 and vinN > 2:
-                    addrs = ','.join([vinx['addr'] for vinx in txdata['vin']][:5])
+                if tn % 10 >= 7 and vinN > 2:
+                    addrs = ','.join([vinx['addr'] for vinx in txdata['vin'] if vinx['addr'] is not None][:5] )
                     api_call(cur, siteID, siteurl, '/addrs/%s/utxo' % addrs)
 
                 # get txs for output address for ~10%
@@ -172,6 +172,6 @@ if __name__ == '__main__':
                     if 'addresses' in txdata['vout'][n]['scriptPubKey']:
                         addr = txdata['vout'][n]['scriptPubKey']['addresses'][0]
                         api_call(cur, siteID, siteurl, '/txs/?address=%s' % addr)
-    
+
     print "Done - %d calls, %d errors" % (call_count,err_count)
     sql.close()
