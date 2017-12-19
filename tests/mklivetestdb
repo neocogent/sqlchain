@@ -29,6 +29,10 @@ def clean_exit(_signo, _stack_frame=None):
 
 def api_call(cur, sid, url, apistr, save=True): #pylint:disable=redefined-outer-name
     global call_count,err_count,call_ts #pylint:disable=global-statement
+    cur.execute("select id from calls where url=?;", (apistr,))
+    if cur.fetchone() is not None:
+        print "%03d DUPLICATE CANCEL %s" % (call_count,apistr)
+        return None
     if sid is None:
         modestr = "order by random()" if len(sys.argv) > 2 and sys.argv[3] != 'all' else "where site=%d" % (((call_count+err_count) % site_count)+1)
         cur.execute("select site,url from sites %s limit 1;" % modestr)
