@@ -40,8 +40,9 @@ op_mode_help = [
 def initcfg(d, cfg, cointype):
     if cfg is not None and  d.yesno("Copy last settings for %s?" % cointype.capitalize()) == d.OK:
         oldtype = cfg['cointype']
+        olduser = cfg['coinuser']
         for x in cfg:
-            cfg[x] = cfg[x].replace(oldtype, cointype)
+            cfg[x] = cfg[x].replace(oldtype, cointype).replace(olduser, coin_var[cointype][DEF_COIN_USER])
         return cfg
     dbeng = 'MyISAM' if not os.path.exists('/var/lib/mysql/.rocksdb') else 'RocksDB' 
     return {
