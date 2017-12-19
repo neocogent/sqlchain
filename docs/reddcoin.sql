@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS `orphans` (
   KEY (`sync_id`)
 ) ENGINE={dbeng} DEFAULT CHARSET=latin1;
 
-CREATE TABLE `blkdat` (
+CREATE TABLE IF NOT EXISTS `blkdat` (
   `id` int(11) NOT NULL,
   `hash` binary(32) NOT NULL,
   `prevhash` binary(32) NOT NULL,
@@ -82,8 +82,8 @@ CREATE TABLE `blkdat` (
 ) ENGINE={dbeng} DEFAULT CHARSET=latin1;
 
 CREATE TABLE IF NOT EXISTS `info` (
-  `class` varchar(12) NOT NULL,
-  `key` varchar(32) NOT NULL,
+  `class` varbinary(12) NOT NULL,
+  `key` varbinary(32) NOT NULL,
   `value` varchar(64) DEFAULT NULL,
   PRIMARY KEY `class` (`class`,`key`)
 ) ENGINE={dbeng} DEFAULT CHARSET=latin1;
