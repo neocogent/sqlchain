@@ -43,12 +43,13 @@ def initcfg(d, cfg, cointype):
         for x in cfg:
             cfg[x] = cfg[x].replace(oldtype, cointype)
         return cfg
+    dbeng = 'MyISAM' if not os.path.exists('/var/lib/mysql/.rocksdb') else 'RocksDB' 
     return {
     'cointype':cointype,'coindir':"/var/data/"+coin_var[cointype][DATA_DIR],'sqldir':sqlroot+'/'+cointype,'cfgdir':'/etc/sqlchain',
     'coinboot':'No','sqlboot':'No','apiboot':'No','coinuser':coin_var[cointype][DEF_COIN_USER],'coinrpc':coin_var[cointype][DEF_COIN_USER],
     'dbuser':coin_var[cointype][DEF_COIN_USER],'coinpwd':''.join(random.sample(string.ascii_letters+string.digits,20)),
     'dbpwd':''.join(random.sample(string.ascii_letters+string.digits,20)),'coinprune':'No','blkdat':'No','nosigs':'Yes',
-    'dbname':cointype,'dbeng':'MyISAM','wwwdir':'/var/www/'+cointype,'nginx':'/etc/nginx/conf.d/%s.conf' % cointype,
+    'dbname':cointype,'dbeng':dbeng,'wwwdir':'/var/www/'+cointype,'nginx':'/etc/nginx/conf.d/%s.conf' % cointype,
     'apidomain':'api.%s.info' % cointype,'sslpath':'/etc/letsencrypt/live/api.%s.info' % cointype,
     'listen':"localhost:%d" % coin_var[cointype][DEF_API_PORT],'logrotate':'Yes','coinzmq':'Yes'
     }
