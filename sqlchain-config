@@ -238,7 +238,7 @@ def CheckDirs(cfg): #pylint:disable=too-many-branches
 
 def ConfigSystemd(cfg):
     log = '\n'
-    initsrc = open('docs/systemd.template').read()
+    initsrc = open('etc/systemd.template').read()
     coinbin = '/usr/local/bin/'+coin_var[cfg['cointype']][DAEMON_BIN]
     if not os.path.exists(coinbin):
         coinbin = '/usr/bin/'+coin_var[cfg['cointype']][DAEMON_BIN]
@@ -290,11 +290,11 @@ def SetupDB(d, cfg):
         return 'Database setup skipped: canceled by user\n'
     sqldef = cwd+'/%s.sql' % cfg['dbname']          # user supplied dbname overrides custom dbname
     if not os.path.exists(sqldef):
-        sqldef = 'docs/%s.sql' % cfg['dbname']      # custom dbname overrides cointype
+        sqldef = 'etc/%s.sql' % cfg['dbname']      # custom dbname overrides cointype
     if not os.path.exists(sqldef):
-        sqldef = 'docs/%s.sql' % cfg['cointype']    # cointype overrides default
+        sqldef = 'etc/%s.sql' % cfg['cointype']    # cointype overrides default
     if not os.path.exists(sqldef):
-        sqldef = 'docs/sqlchain.sql'                # default sqlchain schema
+        sqldef = 'etc/sqlchain.sql'                # default sqlchain schema
     log += "Creating MySQL database: %s using schema: %s\n\n" % (cfg['dbname'], os.path.split(sqldef)[1])
     try:
         sys.stderr = StringIO()
@@ -381,13 +381,13 @@ def ConfigDaemons(cfg):
 
 def ConfigLogging(cfg):
     log = '\n'
-    logconf = open('docs/node.log.template').read()
+    logconf = open('etc/node.log.template').read()
     logconfpath = '/etc/logrotate.d/sqlchain.%s' % cfg['cointype']
     if not os.path.exists(logconfpath):
         log += "Creating logrotate file: %s\n" % logconfpath
         with open(logconfpath, 'w') as f:
             f.write(logconf.format(**cfg))
-    logconf =  open('docs/sqlchain.log.template').read()
+    logconf =  open('etc/sqlchain.log.template').read()
     logconfpath = '/etc/logrotate.d/%s' % cfg['cointype']
     if not os.path.exists(logconfpath):
         log += "Creating logrotate file: %s\n" % logconfpath
@@ -397,7 +397,7 @@ def ConfigLogging(cfg):
 
 def ConfigProxy(cfg):
     log = '\n'
-    nginxconf = open('docs/nginx.template').read()
+    nginxconf = open('etc/nginx.template').read()
     nginx_path,_ = os.path.split(cfg['nginx'])
     if not os.path.exists(nginx_path):
         log += "Creating directory: %s\n" % nginx_path

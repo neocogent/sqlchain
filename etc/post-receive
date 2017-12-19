@@ -8,8 +8,8 @@ do
     mkdir -p "${DEPLOY_WORK}"
     GIT_WORK_TREE="${DEPLOY_WORK}" git checkout -f "${branch}" 
     cd "${DEPLOY_WORK}"
-    if [ -f docs/deploy ]; then
-        docs/deploy "${branch##*/}"
+    if [ -f etc/deploy ]; then
+        etc/deploy "${branch##*/}"
     fi
     rm -rf "${DEPLOY_WORK}"
 done

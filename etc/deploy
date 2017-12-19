@@ -15,7 +15,7 @@ if [[ "${branch[$1]}" ]]; then
     echo "Copying executable and package files"
     cp sqlchaind sqlchain-api sqlchain-config sqlchain-electrum $target/bin/
     cp -r sqlchain/* $target/lib/python2.7/dist-packages/sqlchain/
-    cp -r docs $target/share/sqlchain/
+    cp -r etc $target/share/sqlchain/
     cp -r tests /home/chris/
     
 else
