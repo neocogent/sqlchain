@@ -84,7 +84,7 @@ if __name__ == '__main__':
         if site_count == 0:
             print "No sites in db. Must provide at least one"
             clean_exit(1)
-    elif sys.argv[2].lower() != 'random':
+    elif sys.argv[2].lower() != 'random' and sys.argv[2][:7].lower() == 'http://':
         siteurl = sys.argv[2] if sys.argv[2][-1] != '/' else sys.argv[2][:-1]
         cur.execute("select site from sites where url=?;", (siteurl,))
         row = cur.fetchone()
@@ -95,6 +95,9 @@ if __name__ == '__main__':
             cur.execute("insert into sites (url) values (?);", (siteurl,))
             siteID = cur.lastrowid
             print "Adding site id:",siteID
+    else:
+        print "Unknown site/method: %s" % sys.argv[2]
+        clean_exit(2)
 
     # get current block count as upper limit for random blocks
     blks = api_call(cur, siteID, siteurl, '/blocks?limit=1', save=False)
