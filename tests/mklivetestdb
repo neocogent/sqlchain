@@ -144,28 +144,28 @@ if __name__ == '__main__':
                 if tn % 10 == 0:
                     api_call(cur, siteID, siteurl, '/rawtx/%s' % blkdata['tx'][tn])
 
-                # get input address for ~10%
-                if tn % 10 == 1 and vinN > 1:
+                # get input address for ~50%
+                if tn % 10 >= 5 and vinN > 1:
                     addr = txdata['vin'][random.randint(0,len(txdata['vin'])-1)]['addr']
                     api_call(cur, siteID, siteurl, '/addr/%s' % addr)
 
-                # get output address for ~10% with ?noTxList=1
-                if tn % 10 == 2 and voutN > 1:
+                # get output address for ~30% with ?noTxList=1
+                if tn % 10 >= 3 and voutN > 1:
                     n = random.randint(0,len(txdata['vout'])-1)
                     if 'addresses' in txdata['vout'][n]['scriptPubKey']:
                         addr = txdata['vout'][n]['scriptPubKey']['addresses'][0]
                         api_call(cur, siteID, siteurl, '/addr/%s?noTxList=1' % addr)
 
-                # get output address for ~10% with random property
-                if tn % 10 == 3:
+                # get output address for ~50% with random property
+                if tn % 10 <= 5:
                     n = random.randint(0,len(txdata['vout'])-1)
                     if 'addresses' in txdata['vout'][n]['scriptPubKey']:
                         prop = ['balance','totalReceived','totalSent','unconfirmedBalance'][random.randint(0,3)]
                         addr = txdata['vout'][n]['scriptPubKey']['addresses'][0]
                         api_call(cur, siteID, siteurl, '/addr/%s/%s' % (addr,prop))
 
-                # get unspent outputs for input address ~10%
-                if tn % 10 == 4 and vinN > 1:
+                # get unspent outputs for input address ~20%
+                if tn % 10 >= 8 and vinN > 1:
                     addr = txdata['vin'][random.randint(0,len(txdata['vin'])-1)]['addr']
                     api_call(cur, siteID, siteurl, '/addr/%s/utxo' % addr)
 
