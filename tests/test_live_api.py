@@ -107,15 +107,15 @@ def test_live_api_utxo(testdb):
 
 @live
 def test_live_api_txs_block(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/txs/?block=%'") == {}
 
 @live
 def test_live_api_txs_addr(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/txs/?address=%'") == {}
 
 @live
 def test_live_api_addrs(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/addrs/%/utxo'") == {}
 
 @live
 def test_live_api_status(testdb):
