@@ -11,7 +11,7 @@ import sys, time, signal, random, requests
 
 millis = lambda: int(round(time.time() * 1000))
 
-tx_per_block = 12
+tx_per_block = 4
 site_count,call_count,err_count = 0,0,0
 call_ts = millis()
 siteID = None
@@ -108,9 +108,10 @@ if __name__ == '__main__':
     print "Last Block", lastblk
 
     # get random blocks
-    for bn in random.sample(xrange(1,lastblk),max(reqcount//tx_per_block,1)):
+    while True:
         if call_count > reqcount:
             break
+        bn = random.randint(1,lastblk)
         data = api_call(cur, siteID, siteurl, '/block-index/%d' % bn)
         if data is None:
             continue
@@ -133,7 +134,7 @@ if __name__ == '__main__':
         txsBlk = len(blkdata['tx'])
         if txsBlk > 1:
             # get random txs
-            for tn in random.sample(xrange(0,txsBlk),min(tx_per_block,txsBlk//2)):
+            for tn in random.sample(xrange(0,txsBlk), min(tx_per_block,txsBlk//2)):
                 txdata = api_call(cur, siteID, siteurl, '/tx/%s' % blkdata['tx'][tn])
                 if txdata is None:
                     break
@@ -169,7 +170,7 @@ if __name__ == '__main__':
                     api_call(cur, siteID, siteurl, '/addr/%s/utxo' % addr)
 
                 # get unspent outputs for multiple input addresses ~10%, max 5
-                if tn % 10 >= 7 and vinN > 2:
+                if tn % 10 >= 7 and vinN > 4:
                     addrs = ','.join([vinx['addr'] for vinx in txdata['vin'] if vinx['addr'] is not None][:5] )
                     api_call(cur, siteID, siteurl, '/addrs/%s/utxo' % addrs)
 
