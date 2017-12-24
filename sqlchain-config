@@ -4,6 +4,7 @@ import os, sys, signal, pwd, locale, random, string, shutil, json
 import MySQLdb as db
 
 from cStringIO import StringIO
+from collections import OrderedDict
 from dialog import Dialog
 
 from sqlchain.version import version
@@ -20,14 +21,14 @@ DEF_API_PORT = 5
 CAN_PRUNE = 6
 CAN_BLKDAT = 7
 
-coin_var = {
-    'bitcoin': [ 'bitcoin',  '',         'bitcoind',  'btc',  8332,  8085, True, True ],
-    'testnet': [ 'bitcoin',  'testnet3', 'bitcoind',  'btc', 18332, 18085, True, True ],
-    'litecoin':[ 'litecoin', '',         'litecoind', 'ltc',  9332, 8086,  True, False ],
-    'reddcoin':[ 'reddcoin', '',         'reddcoind', 'rdd', 45443, 8087,  False, False ],
-    'dogecoin':[ 'dogecoin', '',         'dogecoind', 'doge',22555, 8088,  False, False ],
-    'vertcoin':[ 'vertcoin', '',         'vertcoind', 'vtc', 5888, 8089,  False, False ]
-}
+coin_var = OrderedDict([
+    ('bitcoin', [ 'bitcoin',  '',         'bitcoind',  'btc',  8332,  8085, True, True ]),
+    ('testnet', [ 'bitcoin',  'testnet3', 'bitcoind',  'btc', 18332, 18085, True, True ]),
+    ('litecoin',[ 'litecoin', '',         'litecoind', 'ltc',  9332, 8086,  True, False ]),
+    ('reddcoin',[ 'reddcoin', '',         'reddcoind', 'rdd', 45443, 8087,  False, False ]),
+    ('dogecoin',[ 'dogecoin', '',         'dogecoind', 'doge',22555, 8088,  False, False ]),
+    ('vertcoin',[ 'vertcoin', '',         'vertcoind', 'vtc', 5888, 8089,  False, False ])
+])
 cwd = os.getcwd()
 sqlroot = "/var/data/sqlchain"
 op_mode_help = [
@@ -79,7 +80,7 @@ def doCfg():
     if d.yesno(intro,15,70) == d.OK:
         cfg = None
         while True:
-            code,coins_todo = d.checklist("",15,60, choices=[ (c.capitalize(),'',False) for c in coin_var ][::-1],
+            code,coins_todo = d.checklist("",15,60, choices=[ (c.capitalize(),'',False) for c in coin_var ],
                 title='You can choose multiple and configure each in turn:', backtitle='Only One Blockchain Rules Them All',
                 ok_label='Configure', cancel_label='Quit')
             if code in [d.CANCEL,d.ESC]:
