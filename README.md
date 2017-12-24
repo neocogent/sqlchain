@@ -20,11 +20,15 @@ Database sync code updated for SQL transactional engines. Tested with MariaDB us
 
 Added **bech32** address support (p2wpkh and p2sh). This requires a database upgrade and along with other changes the best option is to re-sync the blockchain. sqlchain will stop if it detects an old db and if re-sync is not possible then reverting to pre v0.2.5 is best.
 
-Now supports multiple blockchains and testnet variants. Currently Litecoin, Dogecoin and Reddcoin have been added as test cases (with demo pages) and I hope to add a few more before long. Each coin requires it's own daemon process but sqlchain-config (sqlchain-init replacement) now takes advantage of systemd "instances" so that several can coexist. This means the systemctl commands are now like `systemctl start sqlchain@bitcoin`, and similarly for other coins. There is only one sqlchain@.service and it creates variant instances for each coin described by it's cfg. Upstart (Ubuntu 14.04) support has been removed - it probably works fine but the setup process now only automates Ubuntu 16.04 (systemd) and newer platforms.
+Now supports multiple blockchains and testnet variants. Currently Litecoin, Dogecoin and Reddcoin have been added as test cases (with demo pages) and I hope to add a few more before long. Each coin requires it's own daemon process but sqlchain-config (sqlchain-init replacement) now takes advantage of systemd "instances" so that several can coexist. This means the systemctl commands are now like `systemctl start sqlchain@bitcoin`, and similarly for other coins. There is only one sqlchain@.service and it creates variant instances for each coin described by it's cfg. 
+
+Upstart (Ubuntu 14.04) support has been removed - it probably works fine but the setup process now only automates Ubuntu 16.04 (systemd) and newer platforms.
 
 As part of new altcoin support there is now an "overlay" feature where custom modules can be loaded based on cointype or for extending an api. SQL schema can be overridden likewise based on cointype or db name. If you have a custom schema you can have it initialized by sqlchain-config simply by using a matching custom db name. Both these options allow customizing and extending code while easing the burden of merging updates.
 
 New unit tests have been added, see the README in the tests directory. Many bugs fixed and api behaviour improved as a result.
+
+See re-organized **docs** directory for more detailed info on adding new altcoins and running with alternative database engines.
 
 #### Supported Features (with more tested history)
 
