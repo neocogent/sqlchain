@@ -74,6 +74,7 @@ def getBlocks(blk):
 def getBlocksDirect(cur, blk, chainwork):
     blkscan = threading.Thread(target = BlkDatHandler, args=(True,))
     blkscan.start()
+    idle_count = 0
     log("Using blkdat mode: %s" % sqc.cfg['blkdat'])
     while not sqc.done.isSet():
         if blockQ.qsize() >= sqc.cfg['queue']:
@@ -82,6 +83,9 @@ def getBlocksDirect(cur, blk, chainwork):
         chkPruning(blk - blockQ.qsize())
         if (sqc.bestblk - blk) < coincfg(BLKDAT_NEAR_SYNC):
             logts("Near sync %d. Aborting direct mode" % blk)
+            return blk
+        if idle_count >= 20:
+            logts("No blkdat activity, 60 seconds. Aborting direct mode")
             return blk
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
         row = cur.fetchone()
@@ -100,9 +104,11 @@ def getBlocksDirect(cur, blk, chainwork):
                 data['chainwork'] = int2bin32(chainwork)
                 data['rpc'] = time.time()-started
                 blockQ.put(data)
+                idle_count = 0
                 blk += 1
         else:
             time.sleep(3)
+            idle_count += 1
     log("Waiting for blkdat handler to finish")
     blkscan.join()
     return blk
