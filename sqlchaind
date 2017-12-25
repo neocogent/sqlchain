@@ -172,7 +172,6 @@ def ZMQHandler():
         return
     sql = db.connect(*sqc.cfg['db'].split(':'))
     cur = sql.cursor()
-    log("Using ZMQ at %s" % sqc.cfg['zmq'])
     zctx = zmq.Context()
     zsck = zctx.socket(zmq.SUB)
     zsck.setsockopt(zmq.SUBSCRIBE, "rawblock")
@@ -180,6 +179,7 @@ def ZMQHandler():
     zsck.setsockopt(zmq.RCVTIMEO, 1000)
     zsck.setsockopt(zmq.LINGER, 0)
     zsck.connect(sqc.cfg['zmq'])
+    log("Using ZMQ at %s" % sqc.cfg['zmq'])
     while not sqc.done.isSet():
         try:
             msg = zsck.recv_multipart()
