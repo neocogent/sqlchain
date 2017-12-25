@@ -180,10 +180,8 @@ def ZMQHandler():
     while not sqc.done.isSet():
         try:
             msg = zsck.recv_multipart()
-            log("ZMQ msg recv: "+str(msg))
-            (topic,body),_ = msg[:1],msg[-1]
+            topic,body = msg[:2]
             if topic == "rawblock":
-                logts("ZMQ rawblock decoding")
                 started = time.time()
                 data = decodeBlock(body)
                 data['rpc'] = time.time()-started
@@ -192,7 +190,6 @@ def ZMQHandler():
                 log("ZMQ rawtx inserting")
                 insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
         except zmq.Again:
-            log("ZMQ msg recv timeout")
             pass
     zctx.destroy()
 
