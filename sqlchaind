@@ -179,10 +179,12 @@ def ZMQHandler(cur):
         msg = zsck.recv_multipart()
         (topic,body),_ = msg[:1],msg[-1]
         if topic == "rawblock":
+            logts("ZMQ rawblock decoding")
             data = decodeBlock(body)
             data['rpc'] = time.time()-started
             blockQ.put(data)
         elif topic == "rawtx":
+            logts("ZMQ rawtx inserting")
             insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
     zctx.destroy()
 
