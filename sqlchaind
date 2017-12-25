@@ -171,21 +171,24 @@ def ZMQHandler(cur):
     logts("Initializing ZMQ at %s" % sqc.cfg['zmq'])
     zctx = zmq.Context()
     zsck = zctx.socket(zmq.SUB) # pylint:disable=no-member
+    zctx.setsockopt(zmq.RCVTIMEO, 3000) 
+    zctx.setsockopt(zmq.LINGER, 0)
     zctx.setsockopt(zmq.SUBSCRIBE, "rawblock")
     zctx.setsockopt(zmq.SUBSCRIBE, "rawtx")
     zsck.connect(sqc.cfg['zmq'])
     while not sqc.done.isSet():
         started = time.time()
         msg = zsck.recv_multipart()
-        (topic,body),_ = msg[:1],msg[-1]
-        if topic == "rawblock":
-            logts("ZMQ rawblock decoding")
-            data = decodeBlock(body)
-            data['rpc'] = time.time()-started
-            blockQ.put(data)
-        elif topic == "rawtx":
-            logts("ZMQ rawtx inserting")
-            insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
+        if msg not None:
+            (topic,body),_ = msg[:1],msg[-1]
+            if topic == "rawblock":
+                logts("ZMQ rawblock decoding")
+                data = decodeBlock(body)
+                data['rpc'] = time.time()-started
+                blockQ.put(data)
+            elif topic == "rawtx":
+                logts("ZMQ rawtx inserting")
+                insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
     zctx.destroy()
 
 def checkMemPool(cur):
