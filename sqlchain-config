@@ -4,6 +4,7 @@ import os, sys, signal, pwd, locale, random, string, shutil, json
 import MySQLdb as db
 
 from cStringIO import StringIO
+from collections import OrderedDict
 from dialog import Dialog
 
 from sqlchain.version import version
@@ -20,12 +21,14 @@ DEF_API_PORT = 5
 CAN_PRUNE = 6
 CAN_BLKDAT = 7
 
-coin_var = {
-    'bitcoin': [ 'bitcoin',  '',         'bitcoind',  'btc', 8332,  8085,  True, True ],
-    'testnet': [ 'bitcoin',  'testnet3', 'bitcoind',  'btc', 18332, 18085, True, True ],
-    'litecoin':[ 'litecoin', '',         'litecoind', 'ltc', 10332, 8086,  True, False ],
-    'reddcoin':[ 'reddcoin', '',         'reddcoind', 'rdd', 45443, 8087,  False, False ]
-}
+coin_var = OrderedDict([
+    ('bitcoin', [ 'bitcoin',  '',         'bitcoind',  'btc',  8332,  8085, True, True ]),
+    ('testnet', [ 'bitcoin',  'testnet3', 'bitcoind',  'btc', 18332, 18085, True, True ]),
+    ('litecoin',[ 'litecoin', '',         'litecoind', 'ltc',  9332, 8086,  True, False ]),
+    ('reddcoin',[ 'reddcoin', '',         'reddcoind', 'rdd', 45443, 8087,  False, False ]),
+    ('dogecoin',[ 'dogecoin', '',         'dogecoind', 'doge',22555, 8088,  False, False ]),
+    ('vertcoin',[ 'vertcoin', '',         'vertcoind', 'vtc', 5888, 8089,  False, False ])
+])
 cwd = os.getcwd()
 sqlroot = "/var/data/sqlchain"
 op_mode_help = [
@@ -39,15 +42,17 @@ op_mode_help = [
 def initcfg(d, cfg, cointype):
     if cfg is not None and  d.yesno("Copy last settings for %s?" % cointype.capitalize()) == d.OK:
         oldtype = cfg['cointype']
+        olduser = cfg['coinuser']
         for x in cfg:
-            cfg[x] = cfg[x].replace(oldtype, cointype)
+            cfg[x] = cfg[x].replace(oldtype, cointype).replace(olduser, coin_var[cointype][DEF_COIN_USER])
         return cfg
+    dbeng = 'MyISAM' if not os.path.exists('/var/lib/mysql/.rocksdb') else 'RocksDB' 
     return {
     'cointype':cointype,'coindir':"/var/data/"+coin_var[cointype][DATA_DIR],'sqldir':sqlroot+'/'+cointype,'cfgdir':'/etc/sqlchain',
     'coinboot':'No','sqlboot':'No','apiboot':'No','coinuser':coin_var[cointype][DEF_COIN_USER],'coinrpc':coin_var[cointype][DEF_COIN_USER],
     'dbuser':coin_var[cointype][DEF_COIN_USER],'coinpwd':''.join(random.sample(string.ascii_letters+string.digits,20)),
     'dbpwd':''.join(random.sample(string.ascii_letters+string.digits,20)),'coinprune':'No','blkdat':'No','nosigs':'Yes',
-    'dbname':cointype,'dbeng':'MyISAM','wwwdir':'/var/www/'+cointype,'nginx':'/etc/nginx/conf.d/%s.conf' % cointype,
+    'dbname':cointype,'dbeng':dbeng,'wwwdir':'/var/www/'+cointype,'nginx':'/etc/nginx/conf.d/%s.conf' % cointype,
     'apidomain':'api.%s.info' % cointype,'sslpath':'/etc/letsencrypt/live/api.%s.info' % cointype,
     'listen':"localhost:%d" % coin_var[cointype][DEF_API_PORT],'logrotate':'Yes','coinzmq':'Yes'
     }
@@ -75,7 +80,7 @@ def doCfg():
     if d.yesno(intro,15,70) == d.OK:
         cfg = None
         while True:
-            code,coins_todo = d.checklist("",15,60, choices=[ (c.capitalize(),'',False) for c in coin_var ][::-1],
+            code,coins_todo = d.checklist("",15,60, choices=[ (c.capitalize(),'',False) for c in coin_var ],
                 title='You can choose multiple and configure each in turn:', backtitle='Only One Blockchain Rules Them All',
                 ok_label='Configure', cancel_label='Quit')
             if code in [d.CANCEL,d.ESC]:
@@ -129,8 +134,8 @@ def doCoinSettings(d, cfg): # pylint:disable=too-many-branches,too-many-statemen
         elif tag[1] == '4':
             while True:
                 code,tmp = d.checklist("Mark the options to enable:", 12, 60, choices=[
-                    ('1','Enable %s pruning (save space)' % coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinprune']=='Yes'),
-                    ('2','Direct read blockchain, not RPC (faster)',cfg['blkdat']=='Yes'),
+                    ('1','Enable %s pruning (save space)' % coin_var[cfg['cointype']][DAEMON_BIN], coin_var[cfg['cointype']][CAN_PRUNE] and cfg['coinprune']=='Yes'),
+                    ('2','Direct read blockchain, not RPC (faster)', coin_var[cfg['cointype']][CAN_BLKDAT] and cfg['blkdat']=='Yes'),
                     ('3','Discard signature/witness data (save space)',cfg['nosigs']=='Yes'),
                     ('4','Enable weekly log rotation',cfg['logrotate']=='Yes'),
                     ('5','Enable ZMQ sync with %s'% coin_var[cfg['cointype']][DAEMON_BIN],cfg['coinzmq']=='Yes')
@@ -139,8 +144,8 @@ def doCoinSettings(d, cfg): # pylint:disable=too-many-branches,too-many-statemen
                     d.msgbox(op_mode_help[int(tmp)-1],20,75)
                     continue
                 elif code == d.OK:
-                    cfg['coinprune'] = 'Yes' if '1' in tmp else 'No'
-                    cfg['blkdat'] = 'Yes' if '2' in tmp else 'No'
+                    cfg['coinprune'] = 'Yes' if coin_var[cfg['cointype']][CAN_PRUNE] and '1' in tmp else 'No'
+                    cfg['blkdat'] = 'Yes' if coin_var[cfg['cointype']][CAN_BLKDAT] and '2' in tmp else 'No'
                     cfg['nosigs'] = 'Yes' if '3' in tmp else 'No'
                     cfg['logrotate'] = 'Yes' if '4' in tmp else 'No'
                     cfg['coinzmq'] = 'Yes' if '5' in tmp else 'No'
@@ -237,7 +242,7 @@ def CheckDirs(cfg): #pylint:disable=too-many-branches
 
 def ConfigSystemd(cfg):
     log = '\n'
-    initsrc = open('docs/systemd.template').read()
+    initsrc = open('etc/systemd.template').read()
     coinbin = '/usr/local/bin/'+coin_var[cfg['cointype']][DAEMON_BIN]
     if not os.path.exists(coinbin):
         coinbin = '/usr/bin/'+coin_var[cfg['cointype']][DAEMON_BIN]
@@ -289,11 +294,11 @@ def SetupDB(d, cfg):
         return 'Database setup skipped: canceled by user\n'
     sqldef = cwd+'/%s.sql' % cfg['dbname']          # user supplied dbname overrides custom dbname
     if not os.path.exists(sqldef):
-        sqldef = 'docs/%s.sql' % cfg['dbname']      # custom dbname overrides cointype
+        sqldef = 'etc/%s.sql' % cfg['dbname']      # custom dbname overrides cointype
     if not os.path.exists(sqldef):
-        sqldef = 'docs/%s.sql' % cfg['cointype']    # cointype overrides default
+        sqldef = 'etc/%s.sql' % cfg['cointype']    # cointype overrides default
     if not os.path.exists(sqldef):
-        sqldef = 'docs/sqlchain.sql'                # default sqlchain schema
+        sqldef = 'etc/sqlchain.sql'                # default sqlchain schema
     log += "Creating MySQL database: %s using schema: %s\n\n" % (cfg['dbname'], os.path.split(sqldef)[1])
     try:
         sys.stderr = StringIO()
@@ -345,7 +350,7 @@ def ConfigDaemons(cfg):
         cfgcoin.update({'testnet':1 })
     if cfg['coinzmq'] == 'Yes':
         zmqport = coin_var[cfg['cointype']][DEF_RPC_PORT]+100
-        cfgcoin.update({'zmqpubrawtx':'tcp://127.0.0.1:%d'%zmqport,'zmqpubrawblock':'tcp://127.0.0.1:%d'%zmqport})
+        cfgcoin.update({'zmqpubrawtx':'tcp://127.0.0.1:%d' % zmqport,'zmqpubrawblock':'tcp://127.0.0.1:%d' % zmqport})
 
     with open(cfg['cfgdir']+'/%s.conf' % cfg['cointype'], 'w') as f:
         for k in cfgcoin:
@@ -381,13 +386,13 @@ def ConfigDaemons(cfg):
 
 def ConfigLogging(cfg):
     log = '\n'
-    logconf = open('docs/node.log.template').read()
+    logconf = open('etc/node.log.template').read()
     logconfpath = '/etc/logrotate.d/sqlchain.%s' % cfg['cointype']
     if not os.path.exists(logconfpath):
         log += "Creating logrotate file: %s\n" % logconfpath
         with open(logconfpath, 'w') as f:
             f.write(logconf.format(**cfg))
-    logconf =  open('docs/sqlchain.log.template').read()
+    logconf =  open('etc/sqlchain.log.template').read()
     logconfpath = '/etc/logrotate.d/%s' % cfg['cointype']
     if not os.path.exists(logconfpath):
         log += "Creating logrotate file: %s\n" % logconfpath
@@ -397,7 +402,7 @@ def ConfigLogging(cfg):
 
 def ConfigProxy(cfg):
     log = '\n'
-    nginxconf = open('docs/nginx.template').read()
+    nginxconf = open('etc/nginx.template').read()
     nginx_path,_ = os.path.split(cfg['nginx'])
     if not os.path.exists(nginx_path):
         log += "Creating directory: %s\n" % nginx_path

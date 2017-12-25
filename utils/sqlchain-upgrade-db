@@ -84,7 +84,8 @@ if cur.rowcount == 0:
     log("Updating outputs table - mask, step 7/8.")
     cur.execute("update outputs set id = id&0xFFFFFFFFFFFFF;")
 
-    log("Adding new bech32 table, step 8/8.")
+    log("Adding new cols, and bech32 table, step 8/8.")
+    cur.execute("ALTER TABLE blocks add `chainwork` binary(32), `blksize` int(11);")
     cur.execute("CREATE TABLE IF NOT EXISTS `bech32` (`id` decimal(13) NOT NULL, `addr` binary(32) NOT NULL, PRIMARY KEY (`id`)) ENGINE=MyISAM DEFAULT CHARSET=latin1;")
 else:
     log("Database already upgraded. Skipping to fix up - restart.")

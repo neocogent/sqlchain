@@ -11,7 +11,7 @@ except (IOError, ImportError):
 
 destdir = os.path.join('share','sqlchain')
 datafiles = [(os.path.join(destdir,d), [os.path.join(d,f) for f in files]) for d, folders, files in os.walk('www')]
-datafiles.extend([(os.path.join(destdir,d), [os.path.join(d,f) for f in files]) for d, folders, files in os.walk('docs')])
+datafiles.extend([(os.path.join(destdir,d), [os.path.join(d,f) for f in files]) for d, folders, files in os.walk('etc')])
    
 setup(
     name='sqlchain',
@@ -23,8 +23,8 @@ setup(
     download_url='https://github.com/neocogent/sqlchain/tarball/'+version,
     license='MIT',
     classifiers=[
-    'Development Status :: 3 - Alpha',
-    #'Development Status :: 4 - Beta',
+    #'Development Status :: 3 - Alpha',
+    'Development Status :: 4 - Beta',
     #'Development Status :: 5 - Production/Stable',
     'Intended Audience :: Developers',
     'Intended Audience :: System Administrators',

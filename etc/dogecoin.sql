@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS `blocks` (
   `id` int(11) NOT NULL,
   `hash` binary(32) NOT NULL,
   `coinbase` varbinary(100) NOT NULL,
+  `chainwork` binary(32) NOT NULL,
+  `blksize` int(11) NOT NULL,  
   PRIMARY KEY (`id`)
 ) ENGINE={dbeng} DEFAULT CHARSET=latin1;
 
@@ -35,14 +37,14 @@ CREATE TABLE IF NOT EXISTS `trxs` (
   `outs` tinyint unsigned NOT NULL,
   `txsize` smallint unsigned NOT NULL,
   `txdata` decimal(13) DEFAULT NULL,
-  `block_id` decimal(11) DEFAULT NULL,
+  `block_id` decimal(13) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `block` (`block_id`)
 ) ENGINE={dbeng} DEFAULT CHARSET=latin1;
 
 CREATE TABLE IF NOT EXISTS `outputs` (
   `id` decimal(16) NOT NULL,
-  `value` decimal(16) DEFAULT NULL,
+  `value` decimal(18) DEFAULT NULL,
   `addr_id` decimal(13) DEFAULT NULL,
   `tx_id` decimal(13) DEFAULT NULL,
   PRIMARY KEY (`id`),
@@ -65,7 +67,7 @@ CREATE TABLE IF NOT EXISTS `orphans` (
   KEY (`sync_id`)
 ) ENGINE={dbeng} DEFAULT CHARSET=latin1;
 
-CREATE TABLE `blkdat` (
+CREATE TABLE IF NOT EXISTS `blkdat` (
   `id` int(11) NOT NULL,
   `hash` binary(32) NOT NULL,
   `prevhash` binary(32) NOT NULL,

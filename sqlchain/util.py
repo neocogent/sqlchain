@@ -5,13 +5,14 @@ import os, sys, pwd, time, json, threading, re, urllib2, hashlib
 
 from datetime import datetime
 from struct import pack, unpack, unpack_from
+from binascii import unhexlify
 from glob import glob
 from importlib import import_module
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 
 from backports.functools_lru_cache import lru_cache # pylint:disable=relative-import
 from sqlchain.version import coincfg, ADDR_PREFIX, P2SH_PREFIX, P2SH_CHAR, BECH_HRP, BECH32_FLAG, BECH32_LONG, P2SH_FLAG
-from sqlchain.version import S3_BLK_SIZE, BLOB_SPLIT_SIZE
+from sqlchain.version import S3_BLK_SIZE, BLOB_SPLIT_SIZE, BLK_REWARD, HALF_BLKS
 
 tidylog = threading.Lock()
 
@@ -210,6 +211,7 @@ def decodeBlock(data):
         block['tx'].append(tx)
         off += tx['size']
         txcnt -= 1
+    block['size'] = off
     block['height'] = 0
     block['coinbase'] = block['tx'][0]['vin'][0]['coinbase']
     if block['version'] > 1 and block['height'] >= 227836 and block['coinbase'][0] == '\x03':
@@ -346,10 +348,9 @@ def insertAddress(cur, addr):
                 return addr_id
             addr_id += 1
 
-def findTx(cur, txhash, mkNew=False, limit=32):
+def findTx(cur, txhash, mkNew=False, warn=32):
     tx_id = txh2id(txhash)
-    limit_id = tx_id+limit
-    #start_id = tx_id
+    warn_id = tx_id+warn
     while True:
         cur.execute("select hash from trxs where id=%s", (tx_id,))
         row = cur.fetchone()
@@ -359,10 +360,21 @@ def findTx(cur, txhash, mkNew=False, limit=32):
             return None
         if str(row[0]) == str(txhash):
             return (tx_id,True) if mkNew else tx_id
-        if tx_id > limit_id:
-            logts("*** Tx Id limit exceeded %s ***" % txhash)
-            return (None,False) if mkNew else None
+        if tx_id > warn_id:
+            logts("*** TxId collisions excessive %d => %s ***" % (tx_id,txhash))
+            #return (None,False) if mkNew else None
         tx_id += 1
+
+# work and difficulty
+def coin_reward(height):
+    return float(int(coincfg(BLK_REWARD)) >> int(height // coincfg(HALF_BLKS)))/float(1e8)
+def bits2diff(bits):
+    return float(0x00ffff * 2**(8*(0x1d - 3))) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3)))
+def blockwork(bits):
+    bits = int(bits,16)
+    return 2**256/((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))+1)
+def int2bin32(val):
+    return unhexlify('%064x' % val)
 
 # blob and header file support stuff
 def puthdr(blk, cfg, hdr):
@@ -383,9 +395,6 @@ def getChunk(chunk, cfg):
         f.seek(chunk*80*2016)
         return f.read(80*2016)
 
-def bits2diff(bits):
-    return 0x00ffff * 2**(8*(0x1d - 3)) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3)))
-
 def getBlobHdr(pos, cfg):
     buf = readBlob(int(pos), 13, cfg)
     bits = [ (1,'B',0), (1,'B',0), (2,'H',0), (4,'I',1), (4,'I',0) ]  # ins,outs,tx size,version,locktime
@@ -401,6 +410,42 @@ def getBlobHdr(pos, cfg):
     out.append( ord(buf[0])&0x02 != 0 )  # nosigs
     out.append( ord(buf[0])&0x01 != 0 )  # segwit
     return out # out[0] is hdr size
+
+def getBlobData(txdata, ins, outs=0, txsize=0):
+    data = { 'hdr':getBlobHdr(txdata, sqc.cfg), 'ins':[], 'outs':[] }
+    if ins >= 0xC0:
+        ins = ((ins&0x3F)<<8) + data['hdr'][1]
+    if outs >= 0xC0:
+        outs = ((outs&0x3F)<<8) + data['hdr'][2]
+    if txsize >= 0xFF00:
+        txsize = ((txsize&0xFF)<<16) + data['hdr'][3]
+    data['size'] = txsize
+    vpos = int(txdata) + data['hdr'][0]
+    buf = readBlob(vpos, ins*7, sqc.cfg)
+    vpos += ins*7
+    for n in range(ins):
+        data['ins'].append({ 'outid': unpack('<Q', buf[n*7:n*7+7]+'\0')[0] })
+    if not data['hdr'][7]: # no-sigs flag
+        for n in range(ins):
+            vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))
+            sigbuf = readBlob(vpos, off+vsz+(0 if data['hdr'][6] else 4), sqc.cfg)
+            data['ins'][n]['sigs'] = sigbuf[off:off+vsz]
+            data['ins'][n]['seq'] = '\xFF'*4 if data['hdr'][6] else sigbuf[off+vsz:]
+            vpos += off+vsz+(0 if data['hdr'][6] else 4)
+    elif not data['hdr'][6]: # non-std seq flag
+        buf = readBlob(vpos, ins*4, sqc.cfg)
+        for n in range(ins):
+            data['ins'][n]['seq'] = buf[n*4:n*4+4]
+        vpos += ins*4
+    else:
+        for n in range(ins):
+            data['ins'][n]['seq'] = '\xFF'*4
+    for n in range(outs):
+        vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))
+        pkbuf = readBlob(vpos+off, vsz, sqc.cfg)
+        data['outs'].append(pkbuf)
+        vpos += off+vsz
+    return data
 
 def mkBlobHdr(tx, ins, outs, nosigs):
     flags,hdr = 0,''
@@ -427,7 +472,7 @@ def mkBlobHdr(tx, ins, outs, nosigs):
         flags |= 0x04
     if nosigs:
         flags |= 0x02
-    if tx['segwit']:
+    if 'segwit' in tx and tx['segwit']:
         flags |= 0x01
     # max hdr = 13 bytes but most will be only 1 flag byte
     return ins,outs,sz,pack('<B', flags) + hdr
@@ -575,6 +620,8 @@ class rpcPool(object): # pylint:disable=too-few-public-methods
 
     def __call__(self, *args):
         name = self.name
+        start = time.time()
+        wait = 3
         rpc_lock.release()
         rpc_obj = AuthServiceProxy(self.url, None, self.timeout, None)
         while True:
@@ -585,21 +632,26 @@ class rpcPool(object): # pylint:disable=too-few-public-methods
                 if e.code == -5:
                     return None
             except Exception as e: # pylint:disable=broad-except
-                log( 'RPC Error ' + str(e) + ' (retrying)' )
+                log( 'RPC Error ' + str(e) + ' (retrying in %d seconds)' % wait )
                 print "===>", name, args
                 rpc_obj = AuthServiceProxy(self.url, None, self.timeout, None) # maybe broken, make new connection
-                time.sleep(3) # slow down, in case gone away
+                if time.time()-start > 300:  # max wait time
+                    return None
+                wait = min(wait*2,60)
+                time.sleep(wait) # slow down, in case gone away
         return result
 
 def sqlchain_overlay(pattern):
     if not pattern[-3:].lower() =='.py':
         pattern += '.py'
-    ovrlist = glob('overlay/'+pattern)
+    ovrlist = glob(os.path.dirname(os.path.abspath(__file__))+'/overlay/'+pattern)
     for ovr in ovrlist:
         try:
             modname,_ = os.path.splitext(os.path.split(ovr)[1])
             module = import_module('sqlchain.overlay.'+modname)
+            log("Overlay module loaded: %s" % modname)
         except ImportError:
+            log("Cannot load overlay: %s" % modname)
             return
         globals().update(
             {n: getattr(module, n) for n in module.__all__} if hasattr(module, '__all__')

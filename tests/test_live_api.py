@@ -6,7 +6,7 @@
 #     - compare json returned to livetest db json
 #
 
-import sys, time, requests
+import sys, time, requests, json
 
 try:
     from deepdiff import DeepDiff
@@ -24,6 +24,7 @@ millis = lambda: int(round(time.time() * 1000))
 server = None
 
 live = pytest.mark.skipif(not pytest.config.getoption("--runlive"), reason = "need --runlive option to run")
+nosigs = pytest.mark.skipif(pytest.config.getoption("--nosigs"), reason = "cannot test with nosigs db")
 
 # livetest db created by mklivetestdb.py
 @pytest.fixture(scope="module")
@@ -57,27 +58,30 @@ def api_call(url):
     return { "error": r.status_code },0
 
 def api_diff(cur, sqlstr, **kwargs):
-    cur.execute("select url,result from calls where url like ?;", (sqlstr,))
+    log,diff = [],{}
+    cur.execute("select url,result from calls where %s;" % sqlstr)
     for url,result in cur:
         rtn,rtt = api_call(url)
         if 'error' in rtn:
             return rtn
-        diff = DeepDiff(result, rtn, ignore_order=True, **kwargs)
-        cur.execute("insert into tests (url,result,diff,rtt) values (?,?,?,?);", (url,rtn,diff,rtt))
+        diff = DeepDiff(json.loads(result), rtn, ignore_order=True, **kwargs)
+        log.append((url,str(rtn),str(diff),rtt))
         if diff != {}:
-            return diff
-    return {}
+            break
+    cur.executemany("insert into tests (url,result,diff,rtt) values (?,?,?,?);", log )
+    return diff
 
 @live
 def test_live_api_block(testdb):
-    assert api_diff(testdb, '/block/%') == {}
+    assert api_diff(testdb, "url like '/block/%'", exclude_paths={"root['confirmations']"}) == {}
 
 @live
 def test_live_api_block_index(testdb):
-    assert api_diff(testdb, '/block-index/%') == {}
+    assert api_diff(testdb, "url like '/block-index/%'") == {}
 
 @live
-def test_live_api_rawblock(testdb):
+@nosigs
+def test_live_api_rawblock(testdb): # not currently supported
     assert True
 
 @live
@@ -86,31 +90,32 @@ def test_live_api_blocks(testdb): # not currently supported
 
 @live
 def test_live_api_tx(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/tx/%'") == {}
 
 @live
+@nosigs
 def test_live_api_rawtx(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/rawtx/%'") == {}
 
 @live
 def test_live_api_addr(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/addr/%'") == {}
 
 @live
 def test_live_api_utxo(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/addr/%/utxo'") == {}
 
 @live
 def test_live_api_txs_block(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/txs/?block=%'") == {}
 
 @live
 def test_live_api_txs_addr(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/txs/?address=%'") == {}
 
 @live
 def test_live_api_addrs(testdb):
-    assert True
+    assert api_diff(testdb, "url like '/addrs/%/utxo'") == {}
 
 @live
 def test_live_api_status(testdb):

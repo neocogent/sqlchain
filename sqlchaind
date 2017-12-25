@@ -10,7 +10,7 @@ import os, sys, socket, getopt, time, signal, threading, daemon
 import MySQLdb as db
 
 from sqlchain.version import version, coincfg, BLKDAT_NEAR_SYNC, BLKDAT_MAGIC, MAX_IO_TX, MAX_TX_BLK
-from sqlchain.util import dotdict, sqlchain_overlay, loadcfg, savecfg, drop2user, rpcPool, log, logts
+from sqlchain.util import dotdict, sqlchain_overlay, loadcfg, savecfg, drop2user, rpcPool, blockwork, int2bin32, log, logts
 from sqlchain.util import encodeVarInt, decodeBlock, decodeTx, findTx, insertAddress, mkBlobHdr, insertBlob, puthdr, gethdr
 from sqlchain.blkdat import BlkDatHandler
 
@@ -33,17 +33,22 @@ def getBlocks(blk):
     if blk == 0:
         cur.execute('select ifnull(max(id), -1) from blocks')
         blk = int(cur.fetchone()[0] + 1)
+        cur.execute("select hex(chainwork) from blocks where id=%s;", (blk-1,))
+        row = cur.fetchone()
+        chainwork = int(row[0],16) if row is not None else 0
     startblk = blk
-    blkinfo = sqc.rpc.getblockchaininfo()
+    blkinfo = sqc.rpc.getblockchaininfo() # wait for node to be ready
+    if blkinfo is None:
+        return 0
     sqc.bestblk = blkinfo['headers'] if 'headers' in blkinfo else 0
     if 'blkdat' in sqc.cfg and (sqc.bestblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
-        blk = getBlocksDirect(cur, blk) # use direct file access for catch up
+        blk = getBlocksDirect(cur, blk, chainwork) # use direct file access for catch up
     if not sqc.done.isSet():
         log("Using rpc mode. Monitoring blocks / mempool on " + sqc.cfg['cointype'])
     poll_delay = 0.05
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
-        if blk > blkinfo['blocks']:
+        if blkinfo is None or blk > blkinfo['blocks']:
             if sqc.zmq and 'zmq' in sqc.cfg:
                 ZMQHandler(cur)
             else:
@@ -63,21 +68,18 @@ def getBlocks(blk):
         if blkhash is not None:
             data = decodeBlock(sqc.rpc.getblock(blkhash, False).decode('hex'))
             data['height'] = blk
+            chainwork += blockwork(data['bits'])
+            data['chainwork'] = int2bin32(chainwork)
             data['rpc'] = time.time()-rpcstart
             blockQ.put(data)
             blk += 1
     return blk - startblk
 
-def getBlocksDirect(cur, blk):
+def getBlocksDirect(cur, blk, chainwork):
     blkscan = threading.Thread(target = BlkDatHandler, args=(True,))
     blkscan.start()
+    idle_count = 0
     log("Using blkdat mode: %s" % sqc.cfg['blkdat'])
-    while not sqc.done.isSet():
-        cur.execute("show tables like 'blkdat';")
-        if cur.rowcount > 0:
-            break
-        time.sleep(5)
-        logts("Waiting for blkdat to be ready")
     while not sqc.done.isSet():
         if blockQ.qsize() >= sqc.cfg['queue']:
             time.sleep(0.01)
@@ -85,6 +87,9 @@ def getBlocksDirect(cur, blk):
         chkPruning(blk - blockQ.qsize())
         if (sqc.bestblk - blk) < coincfg(BLKDAT_NEAR_SYNC):
             logts("Near sync %d. Aborting direct mode" % blk)
+            return blk
+        if idle_count >= 20:
+            logts("No blkdat activity, 60 seconds. Aborting direct mode")
             return blk
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
         row = cur.fetchone()
@@ -99,11 +104,15 @@ def getBlocksDirect(cur, blk):
                     return blk
                 data = decodeBlock(fd.read(blksize))
                 data['height'] = blk
+                chainwork += blockwork(data['bits'])
+                data['chainwork'] = int2bin32(chainwork)
                 data['rpc'] = time.time()-started
                 blockQ.put(data)
+                idle_count = 0
                 blk += 1
         else:
             time.sleep(3)
+            idle_count += 1
     log("Waiting for blkdat handler to finish")
     blkscan.join()
     return blk
@@ -111,7 +120,7 @@ def getBlocksDirect(cur, blk):
 def chkPruning(blk):
     if blk > 120000 and blk % 100 == 0:
         blkinfo = sqc.rpc.getblockchaininfo()
-        if blkinfo['pruned']:
+        if blkinfo is not None and blkinfo['pruned']:
             keep = 20 if not 'prune' in sqc.cfg else max(sqc.cfg['prune'], 20)
             sqc.rpc.pruneblockchain(blk-keep) # keep at least 20 blocks for reorgs but can now config higher
         sqc.bestblk = blkinfo['headers']
@@ -183,13 +192,14 @@ def checkMemPool(cur):
     if len(memPool) == 0:
         cur.execute("delete from mempool;")
     trxs = sqc.rpc.getrawmempool()
-    for tx in trxs:
-        txx = tx.decode('hex')[::-1][:8] # uses 1/4 space, only for detecting changes in mempool
-        if txx not in memPool:
-            rawtx = sqc.rpc.getrawtransaction(tx,0)
-            if rawtx is not None:
-                insertTxMemPool(cur, decodeTx(rawtx.decode('hex')), sync_id+1)
-                memPool.add(txx)
+    if trxs is not None:
+        for tx in trxs:
+            txx = tx.decode('hex')[::-1][:8] # uses 1/4 space, only for detecting changes in mempool
+            if txx not in memPool:
+                rawtx = sqc.rpc.getrawtransaction(tx,0)
+                if rawtx is not None:
+                    insertTxMemPool(cur, decodeTx(rawtx.decode('hex')), sync_id+1)
+                    memPool.add(txx)
 
 def addOrphan(cur, height):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
@@ -210,6 +220,9 @@ def checkReOrg(cur, data):
             break
         height -= 1
         blkhash = sqc.rpc.getblockhash(height).decode('hex')[::-1]
+        if blkhash is None:
+            log("Rewind failure during ReOrg - Check manually.")
+            return
     height += 1
     if height < data['height']:
         sqc.flushed.wait() # make sure all outputs committed before we start re-org
@@ -220,6 +233,9 @@ def checkReOrg(cur, data):
 def doReOrg(cur, data, height):
     while height < data['height']:
         blkhash = sqc.rpc.getblockhash(height)
+        if blkhash is None:
+            log("Block failure during ReOrg - Check manually.")
+            return
         data = decodeBlock(sqc.rpc.getblock(blkhash, False).decode('hex')) # get good chain blocks
         if data:
             for n,tx in enumerate(data['tx']):
@@ -229,7 +245,8 @@ def doReOrg(cur, data, height):
                 else:
                     insertTx(cur, tx, tx_id, height*MAX_TX_BLK + n) # occurs if tx wasn't in our mempool or orphan block
             addOrphan(cur, height)
-            cur.execute("update blocks set hash=%s,coinbase=%s where id=%s;", (data['hash'], data['coinbase'], height))
+            data['chainwork'] = sqc.rpc.getblockheader(data['hash'][::-1].encode('hex'))['chainwork'].decode('hex')
+            cur.execute("update blocks set hash=%s,coinbase=%s,chainwork=%s,blksize=%s where id=%s;", (data['hash'], data['coinbase'], data['chainwork'], data['size'], height))
             puthdr(data['height'], sqc.cfg, data['hdr'])
         height += 1
 
@@ -266,9 +283,10 @@ def insertTx(cur, tx, tx_id, blk_id): # pylint:disable=too-many-locals
             txdata += encodeVarInt(len(vout['scriptPubKey']['data'])) + vout['scriptPubKey']['data']
     outQ.put((outlist,inlist))
     ins,outs,sz,txhdr = mkBlobHdr(tx, len(inlist), len(outlist), sqc.cfg['no-sigs'])
-    if (not sqc.cfg['no-sigs']) and tx['segwit']:
+    if (not sqc.cfg['no-sigs']) and 'segwit' in tx and tx['segwit']:
         txdata += tx['witness']
-    return ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, sqc.cfg), blk_id )
+    cur.execute("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", 
+        ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, sqc.cfg), blk_id ))
 
 def insertBlock(cur, data):
     checkReOrg(cur, data)
@@ -284,10 +302,9 @@ def insertBlock(cur, data):
             cur.execute("update trxs set block_id=%s where id=%s limit 1;", (blk_id + n, tx_id))
             if cur.rowcount > 0:
                 continue
-        txlist.append(insertTx(cur, tx, tx_id, blk_id + n))
+        insertTx(cur, tx, tx_id, blk_id + n)
 
-    cur.executemany("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", txlist)
-    cur.execute("insert ignore into blocks (id,hash,coinbase) values (%s,%s,%s);", (data['height'], data['hash'], data['coinbase']))
+    cur.execute("insert ignore into blocks (id,hash,coinbase,chainwork,blksize) values (%s,%s,%s,%s,%s);", (data['height'], data['hash'], data['coinbase'], data['chainwork'], data['size']))
     puthdr(data['height'], sqc.cfg, data['hdr'])
 
     blktime = time.time() - blkstart

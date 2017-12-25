@@ -18,7 +18,7 @@ import os
 from struct import unpack
 from time import sleep
 from hashlib import sha256
-
+from warnings import filterwarnings
 import MySQLdb as db
 
 from sqlchain.version import coincfg, BLKDAT_MAGIC
@@ -26,6 +26,7 @@ from sqlchain.util import log
 
 todo = {}
 lastpos = (0,0)
+filterwarnings('ignore', category = db.Warning) # pylint:disable=no-member
 
 sqlmk='''
 CREATE TABLE `blkdat` (
@@ -51,7 +52,7 @@ def BlkDatHandler(verbose = False):
                 linkMainChain(cur, blk, blkhash, verbose)
 
 def findBlocks(cur, blockpath, verbose):
-    global lastpos
+    global lastpos # pylint:disable=global-statement
     filenum,pos = lastpos
     startpos = pos
     blkhash = None
@@ -92,7 +93,7 @@ def findBlocks(cur, blockpath, verbose):
         return None
 
 def linkMainChain(cur, highblk, blkhash, verbose):
-    global todo
+    global todo # pylint:disable=global-statement
     todo[highblk] = blkhash
     if verbose:
         print "TODO", [ (blk,todo[blk][::-1].encode('hex')) for blk in todo ]
@@ -122,11 +123,13 @@ def linkMainChain(cur, highblk, blkhash, verbose):
 
 def getBlkRPC(blkhash):
     blk = sqc.rpc.getblock(blkhash[::-1].encode('hex'))
+    if blk is None:
+        return 0,''
     blkhash = sqc.rpc.getblockhash(blk['height']-120) # offset to avoid reorg, order problems
     return ( blk['height']-120,blkhash.decode('hex')[::-1] )
 
 def initdb():
-    global todo,lastpos
+    global todo,lastpos # pylint:disable=global-statement
     sql = db.connect(*sqc.cfg['db'].split(':'))
     sql.autocommit(True)
     cur = sql.cursor()

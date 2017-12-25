@@ -11,8 +11,8 @@ import sys, time, signal, random, requests
 
 millis = lambda: int(round(time.time() * 1000))
 
-tx_per_block = 12
-call_count,err_count = 0,0
+tx_per_block = 4
+site_count,call_count,err_count = 0,0,0
 call_ts = millis()
 siteID = None
 siteurl = None
@@ -27,10 +27,14 @@ def clean_exit(_signo, _stack_frame=None):
     sql.close()
     sys.exit(_signo)
 
-def api_call(cur, sid, url, apistr, save=True):
+def api_call(cur, sid, url, apistr, save=True): #pylint:disable=redefined-outer-name
     global call_count,err_count,call_ts #pylint:disable=global-statement
+    cur.execute("select id from calls where url=?;", (apistr,))
+    if cur.fetchone() is not None:
+        print "%03d DUPLICATE CANCEL %s" % (call_count,apistr)
+        return None
     if sid is None:
-        modestr = "order by random()" if len(sys.argv) > 2 and sys.argv[3] != 'all' else "where site=%d" % (((call_count+err_count) % site_count)+1)
+        modestr = "order by random()" if len(sys.argv) > 2 and sys.argv[2] != 'all' else "where site=%d" % (((call_count+err_count) % site_count)+1)
         cur.execute("select site,url from sites %s limit 1;" % modestr)
         sid,url = cur.fetchone()
     if call_ts+tick-millis() > 0:
@@ -59,12 +63,12 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         print "Usage: %s <coin> [all|random|<api site url>] [req-count] [limit/min]\nMakes random api calls to site and populates livetest db." % sys.argv[0]
         print "<coin> required, use btc,ltc,tbc... just selects db varaint."
-        print "Site URL like: https://someplace.com/api (include any path prefix)\nDefaults: req-count is 300, rate limit is 60 call/min.\n"
+        print "Site URL like: https://someplace.com/api (include any path prefix)\nDefaults: req-count is 300, rate limit is 60 call/min."
         print "all=round-robin (default), random=cycle randomly, all past sites in db."
         print "You cannot skip args if using a later one.\n"
         sys.exit(0)
     signal.signal(signal.SIGINT, clean_exit)
-    coin = sys.argv[1]
+    coin = sys.argv[1][:4]
     reqcount = 300 if len(sys.argv) < 4 else int(sys.argv[3])
     rate = 60 if len(sys.argv) < 5 else int(sys.argv[4])
     tick = 60000/rate
@@ -73,14 +77,14 @@ if __name__ == '__main__':
     cur = sql.cursor()
     for line in sqlmk.split(';'):
         cur.execute(line)
-    
+
     if len(sys.argv) < 3 or sys.argv[2].lower() == 'all':
         cur.execute("select count(*) from sites;")
         site_count = cur.fetchone()[0]
         if site_count == 0:
             print "No sites in db. Must provide at least one"
             clean_exit(1)
-    elif sys.argv[2].lower() != 'random':
+    elif sys.argv[2].lower() != 'random' and sys.argv[2][:7].lower() == 'http://':
         siteurl = sys.argv[2] if sys.argv[2][-1] != '/' else sys.argv[2][:-1]
         cur.execute("select site from sites where url=?;", (siteurl,))
         row = cur.fetchone()
@@ -91,6 +95,9 @@ if __name__ == '__main__':
             cur.execute("insert into sites (url) values (?);", (siteurl,))
             siteID = cur.lastrowid
             print "Adding site id:",siteID
+    else:
+        print "Unknown site/method: %s" % sys.argv[2]
+        clean_exit(2)
 
     # get current block count as upper limit for random blocks
     blks = api_call(cur, siteID, siteurl, '/blocks?limit=1', save=False)
@@ -101,9 +108,10 @@ if __name__ == '__main__':
     print "Last Block", lastblk
 
     # get random blocks
-    for bn in random.sample(xrange(1,lastblk),max(reqcount//tx_per_block,1)):
+    while True:
         if call_count > reqcount:
             break
+        bn = random.randint(1,lastblk)
         data = api_call(cur, siteID, siteurl, '/block-index/%d' % bn)
         if data is None:
             continue
@@ -126,7 +134,7 @@ if __name__ == '__main__':
         txsBlk = len(blkdata['tx'])
         if txsBlk > 1:
             # get random txs
-            for tn in random.sample(xrange(0,txsBlk),min(tx_per_block,txsBlk//2)):
+            for tn in random.sample(xrange(0,txsBlk), min(tx_per_block,txsBlk//2)):
                 txdata = api_call(cur, siteID, siteurl, '/tx/%s' % blkdata['tx'][tn])
                 if txdata is None:
                     break
@@ -136,34 +144,34 @@ if __name__ == '__main__':
                 if tn % 10 == 0:
                     api_call(cur, siteID, siteurl, '/rawtx/%s' % blkdata['tx'][tn])
 
-                # get input address for ~10%
-                if tn % 10 == 1 and vinN > 1:
+                # get input address for ~50%
+                if tn % 10 >= 5 and vinN > 1:
                     addr = txdata['vin'][random.randint(0,len(txdata['vin'])-1)]['addr']
                     api_call(cur, siteID, siteurl, '/addr/%s' % addr)
 
-                # get output address for ~10% with ?noTxList=1
-                if tn % 10 == 2 and voutN > 1:
+                # get output address for ~30% with ?noTxList=1
+                if tn % 10 >= 3 and voutN > 1:
                     n = random.randint(0,len(txdata['vout'])-1)
                     if 'addresses' in txdata['vout'][n]['scriptPubKey']:
                         addr = txdata['vout'][n]['scriptPubKey']['addresses'][0]
                         api_call(cur, siteID, siteurl, '/addr/%s?noTxList=1' % addr)
 
-                # get output address for ~10% with random property
-                if tn % 10 == 3:
+                # get output address for ~50% with random property
+                if tn % 10 <= 5:
                     n = random.randint(0,len(txdata['vout'])-1)
                     if 'addresses' in txdata['vout'][n]['scriptPubKey']:
                         prop = ['balance','totalReceived','totalSent','unconfirmedBalance'][random.randint(0,3)]
                         addr = txdata['vout'][n]['scriptPubKey']['addresses'][0]
                         api_call(cur, siteID, siteurl, '/addr/%s/%s' % (addr,prop))
 
-                # get unspent outputs for input address ~10%
-                if tn % 10 == 4 and vinN > 1:
+                # get unspent outputs for input address ~20%
+                if tn % 10 >= 8 and vinN > 1:
                     addr = txdata['vin'][random.randint(0,len(txdata['vin'])-1)]['addr']
                     api_call(cur, siteID, siteurl, '/addr/%s/utxo' % addr)
 
                 # get unspent outputs for multiple input addresses ~10%, max 5
-                if tn % 10 == 5 and vinN > 2:
-                    addrs = ','.join([vinx['addr'] for vinx in txdata['vin']][:5])
+                if tn % 10 >= 7 and vinN > 4:
+                    addrs = ','.join(set([vinx['addr'] for vinx in txdata['vin'] if vinx['addr'] is not None][:5]))
                     api_call(cur, siteID, siteurl, '/addrs/%s/utxo' % addrs)
 
                 # get txs for output address for ~10%
@@ -172,6 +180,6 @@ if __name__ == '__main__':
                     if 'addresses' in txdata['vout'][n]['scriptPubKey']:
                         addr = txdata['vout'][n]['scriptPubKey']['addresses'][0]
                         api_call(cur, siteID, siteurl, '/txs/?address=%s' % addr)
-    
+
     print "Done - %d calls, %d errors" % (call_count,err_count)
     sql.close()
