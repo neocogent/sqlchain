@@ -49,12 +49,10 @@ def getBlocks(blk):
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
         if blkinfo is None or blk > blkinfo['blocks']:
-            if sqc.zmq and 'zmq' in sqc.cfg:
-                ZMQHandler(cur)
-            else:
+            if not sqc.zmq:
                 checkMemPool(cur)
                 sql.commit()
-                time.sleep(5)
+            time.sleep(5)
             continue
         if blockQ.qsize() >= sqc.cfg['queue']:
             time.sleep(min(poll_delay,5))
@@ -161,13 +159,15 @@ def OutputHandler():
                 return
             ins,outs = [],[]
 
-def ZMQHandler(cur):
+def ZMQHandler():
     try:
         import zmq#.green as zmq
     except ImportError:
         logts("Error: Could not find pyzmq; ZMQ disabled")
         sqc.zmq = False
         return
+    sql = db.connect(*sqc.cfg['db'].split(':'))
+    cur = sql.cursor()
     logts("Initializing ZMQ at %s" % sqc.cfg['zmq'])
     zctx = zmq.Context()
     zsck = zctx.socket(zmq.SUB) # pylint:disable=no-member
@@ -179,7 +179,8 @@ def ZMQHandler(cur):
     while not sqc.done.isSet():
         started = time.time()
         msg = zsck.recv_multipart()
-        if msg not None:
+        logts("ZMQ msg recv: "+str(msg))
+        if msg is not None:
             (topic,body),_ = msg[:1],msg[-1]
             if topic == "rawblock":
                 logts("ZMQ rawblock decoding")
@@ -190,6 +191,7 @@ def ZMQHandler(cur):
                 logts("ZMQ rawtx inserting")
                 insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
     zctx.destroy()
+    sqc.zmq = False
 
 def checkMemPool(cur):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
@@ -390,6 +392,9 @@ def run():
     blkwrk.start()
     outwrk = threading.Thread(target = OutputHandler)
     outwrk.start()
+    if 'zmq' in sqc.cfg:
+        zmqwrk = threading.Thread(target = ZMQHandler)
+        zmqwrk.start()
 
     blksdone = None
     workstart = time.time()
