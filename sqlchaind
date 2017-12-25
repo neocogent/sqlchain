@@ -2,6 +2,7 @@
 #
 #   sqlchaind - daemon to update sql blockchain db
 #
+# pylint:disable=no-member
 from Queue import Queue, Empty
 from datetime import datetime
 from struct import pack, unpack
@@ -163,23 +164,23 @@ def ZMQHandler():
     try:
         import zmq#.green as zmq
     except ImportError:
-        logts("Error: Could not find pyzmq; ZMQ disabled")
+        log("Error: Could not find pyzmq; ZMQ disabled")
         sqc.zmq = False
         return
     sql = db.connect(*sqc.cfg['db'].split(':'))
     cur = sql.cursor()
-    logts("Initializing ZMQ at %s" % sqc.cfg['zmq'])
+    log("Initializing ZMQ at %s" % sqc.cfg['zmq'])
     zctx = zmq.Context()
-    zsck = zctx.socket(zmq.SUB) # pylint:disable=no-member
-    zctx.setsockopt(zmq.RCVTIMEO, 3000) 
-    zctx.setsockopt(zmq.LINGER, 0)
-    zctx.setsockopt(zmq.SUBSCRIBE, "rawblock")
-    zctx.setsockopt(zmq.SUBSCRIBE, "rawtx")
+    zsck = zctx.socket(zmq.SUB)
+    zsck.setsockopt(zmq.SUBSCRIBE, "rawblock")
+    zsck.setsockopt(zmq.SUBSCRIBE, "rawtx")
+    zsck.setsockopt(zmq.RCVTIMEO, 1000)
+    zsck.setsockopt(zmq.LINGER, 0)
     zsck.connect(sqc.cfg['zmq'])
     while not sqc.done.isSet():
         started = time.time()
         msg = zsck.recv_multipart()
-        logts("ZMQ msg recv: "+str(msg))
+        log("ZMQ msg recv: "+str(msg))
         if msg is not None:
             (topic,body),_ = msg[:1],msg[-1]
             if topic == "rawblock":
@@ -188,7 +189,7 @@ def ZMQHandler():
                 data['rpc'] = time.time()-started
                 blockQ.put(data)
             elif topic == "rawtx":
-                logts("ZMQ rawtx inserting")
+                log("ZMQ rawtx inserting")
                 insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
     zctx.destroy()
     sqc.zmq = False
@@ -292,13 +293,12 @@ def insertTx(cur, tx, tx_id, blk_id): # pylint:disable=too-many-locals
     ins,outs,sz,txhdr = mkBlobHdr(tx, len(inlist), len(outlist), sqc.cfg['no-sigs'])
     if (not sqc.cfg['no-sigs']) and 'segwit' in tx and tx['segwit']:
         txdata += tx['witness']
-    cur.execute("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)", 
+    cur.execute("insert ignore into trxs (id,hash,ins,outs,txsize,txdata,block_id) values(%s,%s,%s,%s,%s,%s,%s)",
         ( tx_id, tx['txid'], ins, outs, sz, insertBlob(txhdr + in_ids + txdata, sqc.cfg), blk_id ))
 
 def insertBlock(cur, data):
     checkReOrg(cur, data)
     blkstart = time.time()
-    txlist = []
     blk_id = data['height']*MAX_TX_BLK
     for n,tx in enumerate(data['tx']):
         tx_id,found = findTx(cur, tx['txid'], mkNew=True)
