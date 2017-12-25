@@ -25,6 +25,7 @@ memPool = set()
 
 def getBlocks(blk):
     sql = db.connect(*sqc.cfg['db'].split(':'))
+    sql.autocommit(True) # only mempool, most data inserted in handlers
     cur = sql.cursor()
     cur.execute("show tables like 'bech32';") # test if old db version and abort with log msg
     if cur.rowcount == 0:
@@ -51,10 +52,9 @@ def getBlocks(blk):
         blkinfo = sqc.rpc.getblockchaininfo()
         if blkinfo is None or blk > blkinfo['blocks']:
             if sqc.zmq and 'zmq' in sqc.cfg:
-                blk = getBlocksZMQ(cur, blk, chainwork) # try to upgrade to ZMQ, if available
+                blk = getBlocksZMQ(cur, blk, chainwork) # try to upgrade to ZMQ, more efficient
             else:
                 checkMemPool(cur)
-                sql.commit()
                 time.sleep(5)
             continue
         if blockQ.qsize() >= sqc.cfg['queue']:
@@ -132,13 +132,12 @@ def getBlocksZMQ(cur, blk, chainwork):
     zsck.setsockopt(zmq.RCVTIMEO, 1000)
     zsck.setsockopt(zmq.LINGER, 0)
     zsck.connect(sqc.cfg['zmq'])
-    log("Upgrade to ZMQ mode on %s." % sqc.cfg['zmq'])
+    log("Upgrade to ZMQ on %s." % sqc.cfg['zmq'])
     while not sqc.done.isSet():
         try:
             msg = zsck.recv_multipart()
             topic,body = msg[0],msg[1]
             if topic == "rawblock":
-                log("ZMQ rawblock decoding")
                 started = time.time()
                 data = decodeBlock(body)
                 data['height'] = blk
@@ -148,7 +147,6 @@ def getBlocksZMQ(cur, blk, chainwork):
                 blockQ.put(data)
                 blk += 1
             elif topic == "rawtx":
-                log("ZMQ rawtx inserting")
                 insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
         except zmq.Again:
             pass
