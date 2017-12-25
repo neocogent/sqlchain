@@ -46,6 +46,9 @@ def getBlocks(blk):
         blk = getBlocksDirect(cur, blk, chainwork) # use direct file access for catch up
     if not sqc.done.isSet():
         log("Using rpc mode. Monitoring blocks / mempool on " + sqc.cfg['cointype'])
+        if 'zmq' in sqc.cfg and sqc.zmqwrk is None:
+            sqc.zmqwrk = threading.Thread(target = ZMQHandler)
+            sqc.zmqwrk.start()
     poll_delay = 0.05
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
@@ -87,8 +90,8 @@ def getBlocksDirect(cur, blk, chainwork):
         if (sqc.bestblk - blk) < coincfg(BLKDAT_NEAR_SYNC):
             logts("Near sync %d. Aborting direct mode" % blk)
             return blk
-        if idle_count >= 20:
-            logts("No blkdat activity, 60 seconds. Aborting direct mode")
+        if idle_count >= 60:
+            logts("No blkdat activity, 3 minutes. Aborting direct mode")
             return blk
         cur.execute("select filenum,filepos from blkdat where id=%s limit 1;", (blk,))
         row = cur.fetchone()
@@ -391,9 +394,6 @@ def run():
     blkwrk.start()
     outwrk = threading.Thread(target = OutputHandler)
     outwrk.start()
-    if 'zmq' in sqc.cfg:
-        sqc.zmqwrk = threading.Thread(target = ZMQHandler)
-        sqc.zmqwrk.start()
 
     blksdone = None
     workstart = time.time()
