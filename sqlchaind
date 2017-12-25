@@ -19,7 +19,6 @@ __builtins__.sqc = dotdict()  # container for super globals
 
 sqc.cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain', 'cointype':'bitcoin' }
 sqc.bestblk = 120000
-sqc.zmqwrk = None
 blksecs = []
 memPool = set()
 
@@ -44,18 +43,16 @@ def getBlocks(blk):
     sqc.bestblk = blkinfo['headers'] if 'headers' in blkinfo else 0
     if 'blkdat' in sqc.cfg and (sqc.bestblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
         blk = getBlocksDirect(cur, blk, chainwork) # use direct file access for catch up
+    if 'zmq' in sqc.cfg:
+        blk = getBlocksZMQ(cur, blk, chainwork)
     if not sqc.done.isSet():
         log("Using rpc mode. Monitoring blocks / mempool on " + sqc.cfg['cointype'])
-        if 'zmq' in sqc.cfg and sqc.zmqwrk is None:
-            sqc.zmqwrk = threading.Thread(target = ZMQHandler)
-            sqc.zmqwrk.start()
     poll_delay = 0.05
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
         if blkinfo is None or blk > blkinfo['blocks']:
-            if sqc.zmqwrk is None:
-                checkMemPool(cur)
-                sql.commit()
+            checkMemPool(cur)
+            sql.commit()
             time.sleep(5)
             continue
         if blockQ.qsize() >= sqc.cfg['queue']:
@@ -119,6 +116,42 @@ def getBlocksDirect(cur, blk, chainwork):
     blkscan.join()
     return blk
 
+def getBlocksZMQ(cur, blk, chainwork):
+    try:
+        import zmq#.green as zmq
+    except ImportError:
+        log("Warning: Could not find pyzmq; ZMQ disabled")
+        return blk
+    zctx = zmq.Context()
+    zsck = zctx.socket(zmq.SUB)
+    zsck.setsockopt(zmq.SUBSCRIBE, "rawblock")
+    zsck.setsockopt(zmq.SUBSCRIBE, "rawtx")
+    zsck.setsockopt(zmq.RCVTIMEO, 1000)
+    zsck.setsockopt(zmq.LINGER, 0)
+    zsck.connect(sqc.cfg['zmq'])
+    log("Using ZMQ mode. Monitoring blocks / mempool on %s." % sqc.cfg['zmq'])
+    while not sqc.done.isSet():
+        try:
+            msg = zsck.recv_multipart()
+            topic,body = msg[0],msg[1]
+            if topic == "rawblock":
+                log("ZMQ rawblock decoding")
+                started = time.time()
+                data = decodeBlock(body)
+                data['height'] = blk
+                chainwork += blockwork(data['bits'])
+                data['chainwork'] = int2bin32(chainwork)
+                data['rpc'] = time.time()-started
+                blockQ.put(data)
+                blk += 1
+            elif topic == "rawtx":
+                log("ZMQ rawtx inserting")
+                insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
+        except zmq.Again:
+            pass
+    zctx.destroy()
+    return blk
+
 def chkPruning(blk):
     if blk > 120000 and blk % 100 == 0:
         blkinfo = sqc.rpc.getblockchaininfo()
@@ -162,39 +195,6 @@ def OutputHandler():
                 print "Flushed outQ - outs %d - ins %d" % (len(outs), len(ins))
                 return
             ins,outs = [],[]
-
-def ZMQHandler():
-    try:
-        import zmq#.green as zmq
-    except ImportError:
-        log("Error: Could not find pyzmq; ZMQ disabled")
-        sqc.zmqwrk = None
-        return
-    sql = db.connect(*sqc.cfg['db'].split(':'))
-    cur = sql.cursor()
-    zctx = zmq.Context()
-    zsck = zctx.socket(zmq.SUB)
-    zsck.setsockopt(zmq.SUBSCRIBE, "rawblock")
-    zsck.setsockopt(zmq.SUBSCRIBE, "rawtx")
-    zsck.setsockopt(zmq.RCVTIMEO, 1000)
-    zsck.setsockopt(zmq.LINGER, 0)
-    zsck.connect(sqc.cfg['zmq'])
-    log("Using ZMQ at %s" % sqc.cfg['zmq'])
-    while not sqc.done.isSet():
-        try:
-            msg = zsck.recv_multipart()
-            topic,body = msg[:2]
-            if topic == "rawblock":
-                started = time.time()
-                data = decodeBlock(body)
-                data['rpc'] = time.time()-started
-                blockQ.put(data)
-            elif topic == "rawtx":
-                log("ZMQ rawtx inserting")
-                insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
-        except zmq.Again:
-            pass
-    zctx.destroy()
 
 def checkMemPool(cur):
     cur.execute("select ifnull(max(sync_id),0) from mempool;")
@@ -407,8 +407,6 @@ def run():
 
     sqc.done.set()
     blkwrk.join()
-    if sqc.zmqwrk is not None:
-        sqc.zmqwrk.join()
     sqc.alldone.set()
     outwrk.join()
     if blksdone:
