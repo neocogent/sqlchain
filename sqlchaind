@@ -19,6 +19,7 @@ __builtins__.sqc = dotdict()  # container for super globals
 
 sqc.cfg = { 'log':sys.argv[0]+'.log', 'queue':8, 'no-sigs':False, 'db':'', 'rpc':'', 'path':'/var/data/sqlchain', 'cointype':'bitcoin' }
 sqc.bestblk = 120000
+sqc.zmq = True
 blksecs = []
 memPool = set()
 
@@ -43,17 +44,18 @@ def getBlocks(blk):
     sqc.bestblk = blkinfo['headers'] if 'headers' in blkinfo else 0
     if 'blkdat' in sqc.cfg and (sqc.bestblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
         blk = getBlocksDirect(cur, blk, chainwork) # use direct file access for catch up
-    if 'zmq' in sqc.cfg:
-        blk = getBlocksZMQ(cur, blk, chainwork)
     if not sqc.done.isSet():
         log("Using rpc mode. Monitoring blocks / mempool on " + sqc.cfg['cointype'])
     poll_delay = 0.05
     while not sqc.done.isSet():
         blkinfo = sqc.rpc.getblockchaininfo()
         if blkinfo is None or blk > blkinfo['blocks']:
-            checkMemPool(cur)
-            sql.commit()
-            time.sleep(5)
+            if sqc.zmq and 'zmq' in sqc.cfg:
+                blk = getBlocksZMQ(cur, blk, chainwork) # try to upgrade to ZMQ, if available
+            else:
+                checkMemPool(cur)
+                sql.commit()
+                time.sleep(5)
             continue
         if blockQ.qsize() >= sqc.cfg['queue']:
             time.sleep(min(poll_delay,5))
@@ -121,6 +123,7 @@ def getBlocksZMQ(cur, blk, chainwork):
         import zmq#.green as zmq
     except ImportError:
         log("Warning: Could not find pyzmq; ZMQ disabled")
+        sqc.zmq = False # prevent repeated inits
         return blk
     zctx = zmq.Context()
     zsck = zctx.socket(zmq.SUB)
@@ -129,7 +132,7 @@ def getBlocksZMQ(cur, blk, chainwork):
     zsck.setsockopt(zmq.RCVTIMEO, 1000)
     zsck.setsockopt(zmq.LINGER, 0)
     zsck.connect(sqc.cfg['zmq'])
-    log("Using ZMQ mode. Monitoring blocks / mempool on %s." % sqc.cfg['zmq'])
+    log("Upgrade to ZMQ mode on %s." % sqc.cfg['zmq'])
     while not sqc.done.isSet():
         try:
             msg = zsck.recv_multipart()
