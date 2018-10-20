@@ -271,7 +271,7 @@ def ConfigSystemd(cfg):
     try:
         os.utime(initfile, None)
     except OSError:
-        log += "Creating systemd init file: %s" % initfile
+        log += "Creating systemd init file: %s\n" % initfile
         with open(initfile, 'w') as f:
             s = "ExecStart=/sbin/start-stop-daemon --start --pidfile %s/%%i/api.pid --exec /usr/local/bin/sqlchain-api -- %s/sqlchain-api.%%i.cfg\n" % (sqlroot,cfg['cfgdir'])
             f.write(initsrc.replace('Type=forking\n','').replace('ExecStart',s).replace('title','Web/API Server Daemon'))
