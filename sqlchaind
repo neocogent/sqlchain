@@ -32,16 +32,25 @@ def getBlocks(blk):
         log("sqlChain Database upgrade required for this daemon version.\nCannot continue. Run sqlchain-upgrade-db.")
         sqc.done.set()
         return 0
+    blkinfo = sqc.rpc.getblockchaininfo() # wait for node to be ready
+    if blkinfo is None:
+        return 0
     if blk == 0:
         cur.execute('select ifnull(max(id), -1) from blocks')
         blk = int(cur.fetchone()[0] + 1)
         cur.execute("select hex(chainwork) from blocks where id=%s;", (blk-1,))
         row = cur.fetchone()
         chainwork = int(row[0],16) if row is not None else 0
+        if blk == 0 and 'max_blks' in sqc.cfg:
+            blk = blkinfo['blocks'] - sqc.cfg['max_blks']
+            log("Using block limit %d" % sqc.cfg['max_blks'])
+            blkhash = sqc.rpc.getblockhash(blk)
+            chainwork = int(sqc.rpc.getblockheader(blkhash)['chainwork'],16)
+    else:
+        blkhash = sqc.rpc.getblockhash(blk)
+        chainwork = int(sqc.rpc.getblockheader(blkhash)['chainwork'],16)
     startblk = blk
-    blkinfo = sqc.rpc.getblockchaininfo() # wait for node to be ready
-    if blkinfo is None:
-        return 0
+    
     sqc.bestblk = blkinfo['headers'] if 'headers' in blkinfo else 0
     if 'blkdat' in sqc.cfg and (sqc.bestblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
         blk = getBlocksDirect(cur, blk, chainwork) # use direct file access for catch up
@@ -162,15 +171,16 @@ def chkPruning(blk):
         sqc.bestblk = blkinfo['headers']
 
 def limitBlocks(cur, max_blks):
-    cur.execute("select id from blocks limit %s, 99999999 order by id desc", (max_blks,))
-    blks = [ blkid for blkid, in cur ]
-    for blkid in blks:
+    cur.execute("select id from blocks order by id desc limit %s, 1", (max_blks,))
+    row = cur.fetchone()
+    if row:
+        blkid = row[0]
         cur.execute("select id from trxs where block_id < %s", ((blkid+1)*MAX_TX_BLK,))
         txids = [ txid for txid, in cur ]
         for txid in txids:
-            cur.execute("delete from outputs where (id div {0}) = %s".format(MAX_IO_TX), (txid,))
+            cur.execute("delete from outputs where id >= %s*{0} and id < %s*{0}".format(MAX_IO_TX), (txid,txid))
             cur.execute("delete from trxs where id=%s", (txid,))
-        cur.execute("delete from blocks where id=%s", (blkid))
+        cur.execute("delete from blocks where id<=%s", (blkid,))
     
 def BlockHandler():
     sql = db.connect(*sqc.cfg['db'].split(':'))
@@ -241,6 +251,9 @@ def checkReOrg(cur, data):
     while True:
         cur.execute("select id from blocks where hash=%s limit 1;", (blkhash,))
         row = cur.fetchone()
+        if row is None:
+            log("No previous block %d - ok if first run, ReOrg aborted" % height)
+            return
         if row and row[0] == height: # rewind until block in good chain
             break
         height -= 1
