@@ -1,0 +1,53 @@
+#!/usr/bin/env python
+
+import os, sys, json, time, signal
+from urllib2 import urlopen, URLError
+from time import sleep
+
+cfg = { 'api':'http://localhost:8086' }
+
+def doSync():
+    sync_id = 0
+    lastblk = 0
+    while True:
+        print "Sync at %d" % sync_id
+        resp = apicall('/api/sync/'+str(sync_id))
+        if resp and 'error' in resp:
+            sleep(10)
+        elif resp:
+            for tx in resp['txs']:
+                print "TX:", tx['hash'], len(tx['out'])
+            if resp['block'] != lastblk:
+                lastblk = resp['block']
+                print "##################\nBlock %d\n##################" % lastblk
+                if sync_id > 0:
+                    blk = apicall('/bci/block-height/'+str(lastblk))
+                    blk = blk['blocks'][0]
+                    for tx in blk['tx'][:2]:
+                        print "TX:", tx['hash'], len(tx['out'])
+                    cfg['block'] = blk['height']
+                    print "Blk: %d" % blk['height']
+                    cfg['blockts'] = int(time.time())
+            sync_id = resp['sync_id']+1
+            
+def apicall(url, post=None):
+    try:
+        #print "call:", url
+        data = urlopen(cfg['api']+url, post).read()
+    except URLError:
+        print "Error: sqlchain-api not at %s" % cfg['api']
+        return { 'error':'No api connection' }
+    try:
+        data = json.loads(data)
+    except ValueError:
+        print "Error: api returned non-json data %s" % data
+        pass
+    return data
+    
+def sigterm_handler(_signo, _stack_frame):
+    print "\nClean shutdown.\n"
+    sys.exit(0)
+    
+if __name__ == '__main__':
+    signal.signal(signal.SIGINT, sigterm_handler)
+    doSync()
