@@ -88,10 +88,11 @@ def syncMonitor():
             sqc.dbwrk.start()
     while not sqc.done.isSet():
         with sqc.dbpool.get().cursor() as cur:
-            txs = []
-            cur.execute("select hash from mempool m, trxs t where m.sync_id > %s and t.id=m.id;", (sqc.sync_id,))
-            for txhash, in cur:
+            txs,lastsync = [],0
+            cur.execute("select hash,sync_id from mempool m, trxs t where m.sync_id > %s and t.id=m.id;", (sqc.sync_id,))
+            for txhash,sync_id in cur:
                 txs.append(sqlchain.bci.bciTxWS(cur, txhash[::-1].encode('hex')))
+                lastsync = max(lastsync, sync_id)
             if len(txs) > 0:
                 sqc.syncTxs = txs
             cur.execute("select count(*) from orphans where sync_id > %s;", (sqc.sync_id,))
@@ -100,7 +101,7 @@ def syncMonitor():
             block = cur.fetchone()[0]
             cur.execute("replace into info (class,`key`,value) values('info','ws-clients',%s),('info','connections',%s);", (len(sqc.clients), len(sqc.server.pool) if sqc.server.pool else 0))
         if block != sqc.cfg['block'] or new_orphans or len(txs) > 0:
-            do_Sync(block)
+            do_Sync(block, lastsync)
         if sqc.cfg['dbinfo'] > 0 and (datetime.now() - datetime.fromtimestamp(int(sqc.cfg['dbinfo-ts']))).total_seconds() > sqc.cfg['dbinfo']*60:
             sqc.dbwrk = threading.Thread(target = mkDBInfo)
             sqc.dbwrk.start()
@@ -108,7 +109,7 @@ def syncMonitor():
     if sqc.dbwrk:
         sqc.dbwrk.join()
 
-def do_Sync(block):
+def do_Sync(block, lastsync):
     if block != sqc.cfg['block']:
         sqc.cfg['block'] = min(block, sqc.cfg['block']+1)
         with sqc.dbpool.get().cursor() as cur:
@@ -116,7 +117,7 @@ def do_Sync(block):
         for client in sqc.server.clients.values():
             if 'blocks_sub' in sqc.clients[client]['subs']:
                 client.ws.send(json.dumps({ 'op': 'block', 'x': sqc.lastBlk }))
-    sqc.sync_id += 1
+    sqc.sync_id = lastsync
     with sqc.sync:
         sqc.sync.notifyAll()
     if len(sqc.syncTxs) > 0:

@@ -142,6 +142,8 @@ def getBlocksZMQ(cur, blk, chainwork):
     zsck.setsockopt(zmq.LINGER, 0)
     zsck.connect(sqc.cfg['zmq'])
     log("Upgrade to ZMQ on %s." % sqc.cfg['zmq'])
+    cur.execute("select ifnull(max(sync_id),0) from mempool;")
+    sync_id = cur.fetchone()[0]
     while not sqc.done.isSet():
         try:
             msg = zsck.recv_multipart()
@@ -156,7 +158,8 @@ def getBlocksZMQ(cur, blk, chainwork):
                 blockQ.put(data)
                 blk += 1
             elif topic == "rawtx":
-                insertTxMemPool(cur, decodeTx(body), 0) # 0 sync_id, no mempool
+                insertTxMemPool(cur, decodeTx(body), sync_id+1) # auto sync_id, no mempool
+                sync_id += 1
         except zmq.Again:
             pass
     zctx.destroy()
@@ -198,6 +201,8 @@ def BlockHandler():
 def OutputHandler():
     sql = db.connect(*sqc.cfg['db'].split(':'))
     cur = sql.cursor()
+    cur.execute("select count(*) from mempool;")
+    poolcnt = cur.fetchone()[0]
     ins,outs = [],[]
     while True:
         try:
@@ -205,7 +210,7 @@ def OutputHandler():
             sqc.flushed.clear()
             outs.extend(xo)
             ins.extend(xi)
-            if len(outs) + len(ins) > 8192:
+            if len(outs) + len(ins) > (8192 if not poolcnt else 0):
                 cur.executemany("insert ignore into outputs (id,addr_id,value) values(%s,%s,%s)", outs)
                 cur.executemany("update outputs set tx_id=%s where id=%s limit 1", ins)
                 sql.commit()
@@ -335,7 +340,7 @@ def insertBlock(cur, data):
         if found:
             if tx['txid'][:8] in memPool:
                 memPool.remove(tx['txid'][:8])
-                cur.execute("delete from mempool where id=%s limit 1;", (tx_id,))
+            cur.execute("delete from mempool where id=%s limit 1;", (tx_id,))
             cur.execute("update trxs set block_id=%s where id=%s limit 1;", (blk_id + n, tx_id))
             if cur.rowcount > 0:
                 continue
