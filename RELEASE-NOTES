@@ -1,3 +1,4 @@
+v0.2.7  - add config apis support, defaults as before
 v0.2.6  - add max_blks support, limit to recent blocks 
 v0.2.5  - initial bech32 and multi-coin support, db upgrade!
 v0.2.3  - fix script decode index error

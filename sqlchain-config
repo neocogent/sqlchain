@@ -376,7 +376,9 @@ def ConfigDaemons(cfg):
     apicfg = { "www": cfg['wwwdir'], "user": cfg['coinuser'], "db": "localhost:%s:%s:%s" % (cfg['dbuser'],cfg['dbpwd'],cfg['dbname']), "dbinfo": -1, "dbinfo-ts": "0", \
                "rpc": "http://%s:%s@localhost:%d" % (cfgcoin['rpcuser'],cfgcoin['rpcpassword'],coin_var[cfg['cointype']][DEF_RPC_PORT]), \
                "pool": 4, "log": cfg['sqldir']+"/api.log", "pid": cfg['sqldir']+"/api.pid", "cointype": cfg['cointype'], \
-               "path": cfg['sqldir'], "debug": False, "block": 0, "listen": "localhost:%d" % coin_var[cfg['cointype']][DEF_API_PORT], "sync": 0 }
+               "path": cfg['sqldir'], "debug": False, "block": 0, "listen": "localhost:%d" % coin_var[cfg['cointype']][DEF_API_PORT], "sync": 0,
+               "apis": [["/api","sqlchain.insight","do_API"],["/bci","sqlchain.bci","do_BCI"],["/rpc", "sqlchain.rpc","do_RPC"],
+                        ["/ws","","BCIWebSocket"],["/","","do_Root"]] }
     log += 'Writing config file: '+cfg['cfgdir']+'/sqlchain-api.%s.cfg\n' % cfg['cointype']
     with open(cfg['cfgdir']+'/sqlchain-api.%s.cfg' % cfg['cointype'], 'w') as f:
         json.dump(apicfg, f, indent=2)

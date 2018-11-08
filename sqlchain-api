@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-
 from collections import OrderedDict
+from importlib import import_module
 from datetime import datetime
 from time import time, sleep
 import threading, mimetypes, json
@@ -11,7 +11,8 @@ from geventwebsocket import WebSocketServer, WebSocketApplication, Resource
 
 from sqlchain.version import version, P2SH_FLAG, BECH32_FLAG
 from sqlchain.rpc import do_RPC
-from sqlchain.bci import isTxAddrs
+from sqlchain.bci import isTxAddrs, bciBlockWS, bciTxWS
+from sqlchain.insight import apiStatus
 from sqlchain.dbpool import DBPool
 from sqlchain.util import dotdict, loadcfg, savecfg, drop2user, getssl, log, logts
 
@@ -91,7 +92,7 @@ def syncMonitor():
             txs,lastsync = [],0
             cur.execute("select hash,sync_id from mempool m, trxs t where m.sync_id > %s and t.id=m.id;", (sqc.sync_id,))
             for txhash,sync_id in cur:
-                txs.append(sqlchain.bci.bciTxWS(cur, txhash[::-1].encode('hex')))
+                txs.append(bciTxWS(cur, txhash[::-1].encode('hex')))
                 lastsync = max(lastsync, sync_id)
             if len(txs) > 0:
                 sqc.syncTxs = txs
@@ -113,7 +114,7 @@ def do_Sync(block, lastsync):
     if block != sqc.cfg['block']:
         sqc.cfg['block'] = min(block, sqc.cfg['block']+1)
         with sqc.dbpool.get().cursor() as cur:
-            sqc.lastBlk = sqlchain.bci.bciBlockWS(cur, block)
+            sqc.lastBlk = bciBlockWS(cur, block)
         for client in sqc.server.clients.values():
             if 'blocks_sub' in sqc.clients[client]['subs']:
                 client.ws.send(json.dumps({ 'op': 'block', 'x': sqc.lastBlk }))
@@ -132,7 +133,7 @@ def mkDBInfo():
         logts("Updating server db info")
         sqc.cfg['dbinfo-ts'] = datetime.now().strftime('%s')
         savecfg(sqc.cfg)
-        sqlchain.insight.apiStatus(cur, 'db')
+        apiStatus(cur, 'db')
         cur.execute("select count(*) from address where (id & %s = %s);", (P2SH_FLAG,P2SH_FLAG))
         cur.execute("replace into info (class,`key`,value) values('db','address:p2sh',%s);", (cur.fetchone()[0], ))
         cur.execute("select count(*) from address where (id & %s = %s);", (BECH32_FLAG,BECH32_FLAG))
@@ -243,15 +244,11 @@ if __name__ == '__main__':
 
     loadcfg(sqc.cfg)
     options(sqc.cfg)
-
-    import sqlchain.insight, sqlchain.bci, sqlchain.rpc
-
-    APIs = Resource(OrderedDict((
-        ('/api', sqlchain.insight.do_API),
-        ('/bci', sqlchain.bci.do_BCI),
-        ('/rpc', sqlchain.rpc.do_RPC),
-        ('/ws',  BCIWebSocket),
-        ('/',    do_Root) ))) # order important
+    
+    apis = []
+    for api in sqc.cfg['apis']:
+        apis.append((api[0], getattr( import_module(api[1]) if api[1] else sys.modules[__name__], api[2])))
+    APIs = Resource(OrderedDict(apis))
 
     if sqc.cfg['debug']:
         signal.signal(signal.SIGINT, sigterm_handler)
