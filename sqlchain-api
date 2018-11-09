@@ -247,6 +247,7 @@ if __name__ == '__main__':
     
     apis = []
     for api in sqc.cfg['apis']:
+        log("Adding api at %s" % api[0])
         apis.append((api[0], getattr( import_module(api[1]) if api[1] else sys.modules[__name__], api[2])))
     APIs = Resource(OrderedDict(apis))
 
