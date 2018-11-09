@@ -126,17 +126,19 @@ def isTxAddrs(tx, addrs):
 
 def bciTxWS(cur, txhash): # reduced data for websocket subs
     data = bciTx(cur, txhash)
-    del data['block_height']
-    del data['lock_time']
-    for vi in data['inputs']:
-        if 'prev_out' in vi:
-            del vi['prev_out']['tx_index']
-            del vi['prev_out']['n']
-            del vi['prev_out']['spent']
-    for vo in data['out']:
-        del vo['tx_index']
-        del vo['n']
-    return data
+    if data:
+        del data['block_height']
+        del data['lock_time']
+        for vi in data['inputs']:
+            if 'prev_out' in vi:
+                del vi['prev_out']['tx_index']
+                del vi['prev_out']['n']
+                del vi['prev_out']['spent']
+        for vo in data['out']:
+            del vo['tx_index']
+            del vo['n']
+        return data
+    return {}
 
 def bciTx(cur, txhash):
     data = { 'hash':txhash }
