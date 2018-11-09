@@ -1,4 +1,4 @@
-{sqldir}/*.log {{
+{sqldir}/api.log {{
     weekly
     rotate 4
     compress
@@ -7,6 +7,17 @@
     notifempty
     postrotate
         [ -f {sqldir}/api.pid ] && kill -HUP `cat {sqldir}/api.pid`
+    endscript
+}}
+
+{sqldir}/daemon.log {{
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    postrotate
         [ -f {sqldir}/daemon.pid ] && kill -HUP `cat {sqldir}/daemon.pid`
     endscript
 }}
