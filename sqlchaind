@@ -50,7 +50,7 @@ def getBlocks(blk):
         blkhash = sqc.rpc.getblockhash(blk)
         chainwork = int(sqc.rpc.getblockheader(blkhash)['chainwork'],16)
     startblk = blk
-    
+
     sqc.bestblk = blkinfo['headers'] if 'headers' in blkinfo else 0
     if 'blkdat' in sqc.cfg and (sqc.bestblk - startblk) > coincfg(BLKDAT_NEAR_SYNC):
         blk = getBlocksDirect(cur, blk, chainwork) # use direct file access for catch up
@@ -184,7 +184,7 @@ def limitBlocks(cur, max_blks):
             cur.execute("delete from outputs where id >= %s*{0} and id < %s*{0}".format(MAX_IO_TX), (txid,txid))
             cur.execute("delete from trxs where id=%s", (txid,))
         cur.execute("delete from blocks where id<=%s", (blkid,))
-    
+
 def BlockHandler():
     sql = db.connect(*sqc.cfg['db'].split(':'))
     cur = sql.cursor()
