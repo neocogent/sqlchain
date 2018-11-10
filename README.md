@@ -14,7 +14,15 @@
 - **sqlchain-api**          - provides multiple API interfaces over the mysql database
 - **sqlchain-electrum**     - runs a private electrum server over the sqlchain-api layer
 
-#### Recent Updates (v0.2.5)
+#### Recent Updates 
+
+(v0.2.8)
+
+Made API modules config selectable or Insight compatible if none set. Now a supplied API can be customized and integrated by editing the config file. This makes it easier to build web apps that need specific API calls. sqlchain-config adds all 5 supplied APIs by default. If upgrading you may need to edit the config file to add ones you use.
+
+New config option called max_blks that limits how many blocks are kept in SQL db. This is useful when you primarily want to process realtime or not very old data. Used with a pruning node it indexes address/tx data back as far as max_blks, which is something you cannot do on a pruned node normally as txindex cannot be used. It also means you can start from a given block (set block in config) and not have to sync SQL db from Genesis; this allows a quick start up in some cases. Also fixed bugs in sync api.
+
+(v0.2.5)
 
 Database sync code updated for SQL transactional engines. Tested with MariaDB using the [RocksDB](https://en.wikipedia.org/wiki/MyRocks) engine. This engine has some nice features but the main ones of interest here are storage size reduction and indexing (instead of Btree) more suited to high entropy keys (tx,address ids). In my tests RocksDB was not much faster initially but didn't drop in speed so much as DB size grows. It's a bit early to fully recommend but initially it looks like a nice option. I'll update the install guide with RocksDB steps (soonish).
 
