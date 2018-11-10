@@ -387,6 +387,8 @@ def gethdr(blk, cfg, var=None):
     with open(cfg['path']+'/hdrs.dat', 'rb') as f:
         f.seek(blk*80)
         data = f.read(80)
+    if(len(data) < 80):
+        return None
     hdr = dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
     return hdr if var is None else hdr[var] if var != 'raw' else data
 
