@@ -16,7 +16,7 @@
 
 #### Recent Updates 
 
-(v0.2.8)
+(v0.2.9)
 
 Made API modules config selectable or Insight compatible if none set. Now a supplied API can be customized and integrated by editing the config file. This makes it easier to build web apps that need specific API calls. sqlchain-config adds all 5 supplied APIs by default. If upgrading you may need to edit the config file to add ones you use.
 
