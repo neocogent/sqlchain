@@ -17,6 +17,8 @@ sudo apt-get update
 sudo apt-get install bitcoind mysql-server libmysqlclient-dev python-pip python-dev build-essential dialog
 ```
 
+If you want to use mariadb instead (fork of mysql that is community based instead of corporate) then you can replace part of last line with `mariadb-server`. This is usually what I use for testing. Check out this [MariaDB page](https://downloads.mariadb.org/mariadb/repositories/) for commands to add a repository for keeping it updated.
+
 Then you can install sqlChain from PyPi the easy way, includes dependencies and demo API web pages.
 
     sudo pip install --upgrade pip  # may need this, won't hurt
@@ -50,7 +52,7 @@ sudo systemctl status sqlchain-api@bitcoin
 
 It's a good idea to add your normal user to the sqlchain/bitcoin group (by default "btc"),
 
-    sudo adduser <myuser> btc
+    sudo adduser `whoami` btc
     
 That allows you to use the config files easily, such as when using bitcoin-cli. It's also useful to have some aliases for common tasks. You can throw these in your .bash_aliases so they are present on login. Just the most basic ones to build on:
 
@@ -83,7 +85,7 @@ I've tested RocksDB and TokuDB using MariaDB 10.2. Both worked well and saved ar
 
 ### Other Details
 
-You should probably create an optimized my.cnf override file in /etc/mysql/conf.d/bitcoin.cnf which has values suited to your system. For example I use below with 8 GB RAM and it seems to improve speed (but don't claim this is optimal). The latest versions of MySQL seem to also add a mysql.conf.d directory and order of configuration is non-deterministic so you may need to play with the cnf location and name while checking how variables get set. This bizarre and confusing cnf loading wasn't a problem for me in earlier versions; call it progress.
+You should probably create an optimized my.cnf override file in /etc/mysql/conf.d/bitcoin.cnf which has values suited to your system. For example I use below with 8 GB RAM and it seems to improve speed (but I don't claim this is optimal). The latest versions of MySQL seem to also add a mysql.conf.d directory and order of configuration is non-deterministic so you may need to play with the cnf location and name while checking how variables get set. This bizarre and confusing cnf loading wasn't a problem for me in earlier versions; call it progress.
 
     #optimized for bitcoin database using values from mysqltuner.pl adjusted for other uses
     [mysqld]
