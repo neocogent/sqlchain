@@ -49,7 +49,7 @@ See re-organized **docs** directory for more detailed info on adding new altcoin
 - blkbtc - utility to block on/off node network traffic to allow more cpu for sqlchain to catch up, or limit disk used by syncing
 - sqlchain-config - dialog based utility to ease setup and generate optimal config files 
 
-sqlchain is still *Alpha level* software under sporadic active development (not ready for prime time). 
+sqlchain is still *Beta* software, under sporadic active development. 
 
 sqlchain-electrum has not received much love over the last 2 years but I do plan to get it caught up and functioning again.
 
