@@ -64,6 +64,6 @@ You can try it on Testnet and it doesn't take much time or resources. Even a 1vC
 - look further into pruning spent outputs (most of blob.dat) for a wallet api with even lower storage needs
 - add segwit specific API data 
 
-
+[Donations](https://www.neocogent.com/pages/btc-donation.html) supporting further development are welcome. 
 
 
