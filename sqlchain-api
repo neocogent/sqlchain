@@ -246,7 +246,7 @@ if __name__ == '__main__':
     options(sqc.cfg)
     
     if 'apis' not in sqc.cfg:
-        apis = [("/api","sqlchain.insight","do_API")]
+        apis = [("/api", getattr(import_module("sqlchain.insight"),"do_API"))]
     else:
         apis = []
         for api in sqc.cfg['apis']:
