@@ -59,7 +59,7 @@ You can try it on Testnet and it doesn't take much time or resources. Even a 1vC
 
 #### TODO
 
-- improve the included demo pages
+- improve the included demo pages (at minimum update jquery, old version is vulnerable)
 - fix up and do more testing on Electrum server  
 - look further into pruning spent outputs (most of blob.dat) for a wallet api with even lower storage needs
 - add segwit specific API data 
