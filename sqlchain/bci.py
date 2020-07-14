@@ -1,7 +1,7 @@
 #
 #  Blockchain.info compatible API module
 #
-import urlparse, json
+import urllib.parse, json
 
 from string import hexdigits
 from struct import unpack
@@ -18,7 +18,7 @@ def do_BCI(env, send_resp):
         env['PATH_INFO'] = '/rpc/'+args[1]
         return do_RPC(env, send_resp)
 
-    get,cur = urlparse.parse_qs(env['QUERY_STRING']), sqc.dbpool.get().cursor()
+    get,cur = urllib.parse.parse_qs(env['QUERY_STRING']), sqc.dbpool.get().cursor()
     send_resp('200 OK', [('Content-Type', 'application/json')])
     if args[0] == "block-height":
         return json.dumps(bciHeight(cur, args[1]))

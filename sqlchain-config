@@ -3,7 +3,7 @@
 import os, sys, signal, pwd, locale, random, string, shutil, json
 import MySQLdb as db
 
-from cStringIO import StringIO
+from io import StringIO
 from collections import OrderedDict
 from dialog import Dialog
 
@@ -58,7 +58,7 @@ def initcfg(d, cfg, cointype):
     }
 
 def sigterm_handler(_signo, _stack_frame):
-    print "\nClean shutdown"
+    print("\nClean shutdown")
     sys.exit(0)
 
 def doCfg():
@@ -318,7 +318,7 @@ def SetupDB(d, cfg):
     except (IOError, ImportError):
         log += "Cannot open: %s\n" % sqldef
         log += "Skipping further MySQL DB setup\n"
-    except db.Error, e: # pylint:disable=no-member
+    except db.Error as e: # pylint:disable=no-member
         log += "MySQL Error: %s\n" % str(e)
         log += "Skipping further MySQL DB setup\n"
     finally:
@@ -356,7 +356,7 @@ def ConfigDaemons(cfg):
         for k in cfgcoin:
             f.write("%s=%s\n" % (k,cfgcoin[k]))
     os.chown(cfg['cfgdir']+'/%s.conf' % cfg['cointype'], usr.pw_uid, usr.pw_gid)
-    os.chmod(cfg['cfgdir']+'/%s.conf' % cfg['cointype'], 0660)
+    os.chmod(cfg['cfgdir']+'/%s.conf' % cfg['cointype'], 0o660)
 
     ### Write sqlchaind.cfg
     sqlcfg = { "log": cfg['sqldir']+"/daemon.log", "pid": cfg['sqldir']+"/daemon.pid", "path": cfg['sqldir'], "db": "localhost:%s:%s:%s" % (cfg['dbuser'],cfg['dbpwd'],cfg['dbname']), \
@@ -370,7 +370,7 @@ def ConfigDaemons(cfg):
     with open(cfg['cfgdir']+'/sqlchain.%s.cfg' % cfg['cointype'], 'w') as f:
         json.dump(sqlcfg, f, indent=2)
     os.chown(cfg['cfgdir']+'/sqlchain.%s.cfg' % cfg['cointype'], usr.pw_uid, usr.pw_gid)
-    os.chmod(cfg['cfgdir']+'/sqlchain.%s.cfg' % cfg['cointype'], 0660)
+    os.chmod(cfg['cfgdir']+'/sqlchain.%s.cfg' % cfg['cointype'], 0o660)
 
     ### Write sqlchain-api.cfg
     apicfg = { "www": cfg['wwwdir'], "user": cfg['coinuser'], "db": "localhost:%s:%s:%s" % (cfg['dbuser'],cfg['dbpwd'],cfg['dbname']), "dbinfo": -1, "dbinfo-ts": "0", \
@@ -383,7 +383,7 @@ def ConfigDaemons(cfg):
     with open(cfg['cfgdir']+'/sqlchain-api.%s.cfg' % cfg['cointype'], 'w') as f:
         json.dump(apicfg, f, indent=2)
     os.chown(cfg['cfgdir']+'/sqlchain-api.%s.cfg' % cfg['cointype'], usr.pw_uid, usr.pw_gid)
-    os.chmod(cfg['cfgdir']+'/sqlchain-api.%s.cfg' % cfg['cointype'], 0660)
+    os.chmod(cfg['cfgdir']+'/sqlchain-api.%s.cfg' % cfg['cointype'], 0o660)
     return log
 
 def ConfigLogging(cfg):

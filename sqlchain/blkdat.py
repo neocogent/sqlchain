@@ -87,7 +87,7 @@ def findBlocks(cur, blockpath, verbose):
             lastpos = filenum+1,0
             return blkhash
     except IOError:
-        print "No file:", blockpath % filenum
+        print("No file:", blockpath % filenum)
         lastpos = filenum,pos
         sqc.done.set()
         return None
@@ -96,7 +96,7 @@ def linkMainChain(cur, highblk, blkhash, verbose):
     global todo # pylint:disable=global-statement
     todo[highblk] = blkhash
     if verbose:
-        print "TODO", [ (blk,todo[blk][::-1].encode('hex')) for blk in todo ]
+        print("TODO", [ (blk,todo[blk][::-1].encode('hex')) for blk in todo ])
     tmp = {}
     for blk in todo:
         blkhash = todo[blk]

@@ -115,14 +115,14 @@ def do_Sync(block, lastsync):
         sqc.cfg['block'] = min(block, sqc.cfg['block']+1)
         with sqc.dbpool.get().cursor() as cur:
             sqc.lastBlk = bciBlockWS(cur, block)
-        for client in sqc.server.clients.values():
+        for client in list(sqc.server.clients.values()):
             if 'blocks_sub' in sqc.clients[client]['subs']:
                 client.ws.send(json.dumps({ 'op': 'block', 'x': sqc.lastBlk }))
     sqc.sync_id = lastsync
     with sqc.sync:
         sqc.sync.notifyAll()
     if len(sqc.syncTxs) > 0:
-        for client in sqc.server.clients.values():
+        for client in list(sqc.server.clients.values()):
             for tx in sqc.syncTxs:
                 if 'unconfirmed_sub' in sqc.clients[client]['subs'] or (sqc.clients[client]['addrs'] and isTxAddrs(tx, sqc.clients[client]['addrs'])):
                     client.ws.send(json.dumps({ 'op': 'utx', 'x': tx }))
@@ -186,7 +186,7 @@ def options(cfg): # pylint:disable=too-many-branches
             cfg['debug'] = True
 
 def usage():
-    print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
+    print("""Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
 --debug\t\tRun in foreground with logging to console
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
 \nThese options get saved in cfg file as defaults.
@@ -194,7 +194,7 @@ def usage():
 -h,--listen\tSet host:port for web server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
 -d,--db  \tSet mysql db connection, "host:user:pwd:dbname"\n-l,--log\tSet log file path
 -r,--rpc\tSet rpc connection, "http://user:pwd@host:port"
--i,--dbinfo\tSet db info update period in minutes (default=180, 0=at start, -1=never) """.format(sys.argv[0])
+-i,--dbinfo\tSet db info update period in minutes (default=180, 0=at start, -1=never) """.format(sys.argv[0]))
     sys.exit(2)
 
 def sigterm_handler(_signo, _stack_frame):
@@ -260,7 +260,7 @@ if __name__ == '__main__':
     else:
         logpath = sqc.cfg['log'] if 'log' in sqc.cfg else sys.argv[0]+'.log'
         pidpath = sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid'
-        with daemon.DaemonContext(working_directory='.', umask=0002, stdout=open(logpath,'a'), stderr=open(logpath,'a'),
+        with daemon.DaemonContext(working_directory='.', umask=0o002, stdout=open(logpath,'a'), stderr=open(logpath,'a'),
                 signal_map={signal.SIGTERM:sigterm_handler, signal.SIGHUP:sighup_handler } ):
             with file(pidpath,'w') as f:
                 f.write(str(os.getpid()))

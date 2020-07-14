@@ -1,7 +1,7 @@
 #
 #  RPC compatible API module
 #
-import urlparse, json, decimal
+import urllib.parse, json, decimal
 
 from bitcoinrpc.authproxy import AuthServiceProxy
 from sqlchain.util import gethdr, bits2diff
@@ -14,7 +14,7 @@ class btcEncoder(json.JSONEncoder):
         return super(btcEncoder, self).default(o)
 
 def do_RPC(env, send_resp):
-    _,args,cur = urlparse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
+    _,args,cur = urllib.parse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
     send_resp('200 OK', [('Content-Type', 'application/json')])
     result = []
     if args[0] == "getblockcount":

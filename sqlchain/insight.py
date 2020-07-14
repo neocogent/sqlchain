@@ -1,7 +1,7 @@
 #
 #  Insight compatible API module
 #
-import os, urlparse, cgi, json
+import os, urllib.parse, cgi, json
 from string import hexdigits
 from struct import pack, unpack
 from datetime import datetime
@@ -20,7 +20,7 @@ zF = lambda x: int(x) if int(x) == x else x
 #main entry point for api calls
 def do_API(env, send_resp): # pylint:disable=too-many-branches
     result = []
-    get,args,cur = urlparse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
+    get,args,cur = urllib.parse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
     send_resp('200 OK', [('Content-Type', 'application/json')])
     if args[0] == 'auto' or env['REQUEST_METHOD'] == 'POST':
         result = apiAuto(cur, env, args, get)

@@ -9,7 +9,7 @@ from struct import unpack
 try:
     import MySQLdb as db
 except ImportError:
-    print "Cannot run database tests without MySQLdb module"
+    print("Cannot run database tests without MySQLdb module")
     
 import pytest   
  
@@ -38,7 +38,7 @@ def testdb(request):
     cur.execute("set sql_notes=0;")
     cur.execute("show databases like 'unittest';")
     if cur.rowcount > 0:
-        print "\nClearing test db"
+        print("\nClearing test db")
         cur.execute("drop database unittest;")
     sqlsrc = open('/usr/local/share/sqlchain/docs/sqlchain.sql').read()
     sqlcode = ''

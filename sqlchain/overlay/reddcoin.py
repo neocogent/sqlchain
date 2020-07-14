@@ -20,7 +20,7 @@ POW_TX_VERSION = 1
 def decodeBlock(data):
     hdr = ['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
     hv = unpack_from('<I32s32s3I', data)
-    block = dict(zip(hdr,hv))
+    block = dict(list(zip(hdr,hv)))
     block['hdr'] = data[:80]
     block['hash'] = hashlib.sha256(hashlib.sha256(block['hdr']).digest()).digest()
     block['bits'] = '%08x' % block['bits']

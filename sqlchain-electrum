@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
 from time import sleep
-from urllib2 import urlopen, URLError
+from urllib.request import urlopen
+from urllib.error import URLError
 
 import os, sys, getopt, signal, json, daemon
 
@@ -24,7 +25,7 @@ def ReqHandler():
     while True:
         #resp = None
         fp,req = sqc.reqQ.get()
-        print 'REQ', req
+        print('REQ', req)
         args = req['method'].split('.')
         val = req['params'][0] if len(req['params']) > 0 else 1
         if args[-1] == 'subscribe':
@@ -42,7 +43,7 @@ def RespHandler():
     while True:
         fp,reqid,resp = sqc.respQ.get()
         resp = json.dumps({ 'id':reqid, 'result':resp } if resp is None or not 'error' in resp else { 'id':reqid,'error':resp['error'] })
-        print "RESP", reqid, resp
+        print("RESP", reqid, resp)
         fp.write(resp+'\n')
         fp.flush()
 
@@ -94,7 +95,7 @@ def getSubs(sub, val=1, key=None):
     if key:
         return key in subs[sub] and val in subs[sub][key]
     if val == 1:
-        return subs[sub].keys()
+        return list(subs[sub].keys())
     fps = []
     for k in subs[sub]:
         if val in subs[sub][k]:
@@ -210,13 +211,13 @@ def options(cfg): # pylint:disable=too-many-branches
             cfg['debug'] = True
 
 def usage():
-    print """Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
+    print("""Usage: {0} [options...][cfg file]\nCommand options are:\n-h,--help\tShow this help info\n-v,--version\tShow version info
 --debug\t\tRun in foreground with logging to console
 --defaults\tUpdate cfg and exit\nDefault files are {0}.cfg, {0}.log
 \nThese options get saved in cfg file as defaults.
 -s,--listen\tSet host:port for Electrum server\n-w,--www\tWeb server root directory\n-u,--user\tSet user to run as
 -p,--path\tSet path for header data files (/var/data/sqlchain)
--b,--banner\tSet file path for banner text\n-a,--api\tSet host:port for API connection\n-l,--log\tSet log file path""".format(sys.argv[0])
+-b,--banner\tSet file path for banner text\n-a,--api\tSet host:port for API connection\n-l,--log\tSet log file path""".format(sys.argv[0]))
     sys.exit(2)
 
 def apicall(url, post=None):
@@ -278,7 +279,7 @@ if __name__ == '__main__':
     else:
         logpath = sqc.cfg['log'] if 'log' in sqc.cfg else sys.argv[0]+'.log'
         pidpath = sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid'
-        with daemon.DaemonContext(working_directory='.', umask=0002, stdout=open(logpath,'a'), stderr=open(logpath,'a'),
+        with daemon.DaemonContext(working_directory='.', umask=0o002, stdout=open(logpath,'a'), stderr=open(logpath,'a'),
                 signal_map={signal.SIGTERM:sigterm_handler, signal.SIGHUP:sighup_handler } ):
             with file(pidpath,'w') as f:
                 f.write(str(os.getpid()))

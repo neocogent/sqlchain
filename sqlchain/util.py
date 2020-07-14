@@ -1,7 +1,7 @@
 #
 # Common sqlchain support utils
 #
-import os, sys, pwd, time, json, threading, re, urllib2, hashlib
+import os, sys, pwd, time, json, threading, re, urllib.request, urllib.error, urllib.parse, hashlib
 
 from datetime import datetime
 from struct import pack, unpack, unpack_from
@@ -47,7 +47,7 @@ def addr2pkh(addr):
     if addr[:2].lower() == coincfg(BECH_HRP):
         pkh = bech32decode(addr)
         return str(pkh[2:]) if pkh else None
-    long_value = 0L
+    long_value = 0
     for (i, c) in enumerate(addr[::-1]):
         long_value += b58.find(c) * (58**i)
     result = ''
@@ -77,7 +77,7 @@ def mkaddr(pkh, aid=None, p2sh=False, bech32=False):
             pad += '1'
         else:
             break
-    num = long((an + hashlib.sha256(hashlib.sha256(an).digest()).digest()[0:4]).encode('hex'), 16)
+    num = int((an + hashlib.sha256(hashlib.sha256(an).digest()).digest()[0:4]).encode('hex'), 16)
     out = ''
     while num >= 58:
         num,m = divmod(num, 58)
@@ -199,7 +199,7 @@ def encodeVarInt(v):
 def decodeBlock(data):
     hdr = ['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce']
     hv = unpack_from('<I32s32s3I', data)
-    block = dict(zip(hdr,hv))
+    block = dict(list(zip(hdr,hv)))
     block['hdr'] = data[:80]
     block['hash'] = hashlib.sha256(hashlib.sha256(block['hdr']).digest()).digest()
     block['bits'] = '%08x' % block['bits']
@@ -389,7 +389,7 @@ def gethdr(blk, cfg, var=None):
         data = f.read(80)
     if(len(data) < 80):
         return None
-    hdr = dict(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data)))
+    hdr = dict(list(zip(['version','previousblockhash','merkleroot', 'time', 'bits', 'nonce'], unpack_from('<I32s32s3I', data))))
     return hdr if var is None else hdr[var] if var != 'raw' else data
 
 def getChunk(chunk, cfg):
@@ -531,9 +531,9 @@ def s3get(blob, pos, sz):
 @lru_cache(maxsize=512)
 def s3blk(blob, blk):
     log( "S3 REQ: %s %d" % (blob,blk) )
-    req = urllib2.Request(blob)
+    req = urllib.request.Request(blob)
     req.add_header('Range', 'bytes=%d-%d' % (blk*S3_BLK_SIZE,(blk+1)*S3_BLK_SIZE-1))
-    resp = urllib2.urlopen(req)
+    resp = urllib.request.urlopen(req)
     return resp.read(S3_BLK_SIZE)
 
 def getBlobsSize(cfg):
@@ -563,13 +563,13 @@ def savecfg(cfg):
 
 def logts(msg):
     tidylog.acquire()
-    print datetime.now().strftime('%d-%m-%Y %H:%M:%S'), msg
+    print(datetime.now().strftime('%d-%m-%Y %H:%M:%S'), msg)
     sys.stdout.flush()
     tidylog.release()
 
 def log(msg):
     tidylog.acquire()
-    print msg
+    print(msg)
     sys.stdout.flush()
     tidylog.release()
 
@@ -586,7 +586,7 @@ def drop2user(cfg, chown=False):
         os.setgroups([])
         os.setgid(pw.pw_gid)
         os.setuid(pw.pw_uid)
-        os.umask(0022)
+        os.umask(0o022)
         log('Dropped to user %s' % cfg['user'])
 
 def getssl(cfg):
@@ -635,7 +635,7 @@ class rpcPool(object): # pylint:disable=too-few-public-methods
                     return None
             except Exception as e: # pylint:disable=broad-except
                 log( 'RPC Error ' + str(e) + ' (retrying in %d seconds)' % wait )
-                print "===>", name, args
+                print("===>", name, args)
                 rpc_obj = AuthServiceProxy(self.url, None, self.timeout, None) # maybe broken, make new connection
                 if time.time()-start > 300:  # max wait time
                     return None
@@ -658,4 +658,4 @@ def sqlchain_overlay(pattern):
         globals().update(
             {n: getattr(module, n) for n in module.__all__} if hasattr(module, '__all__')
             else
-            {k: v for (k, v) in module.__dict__.items() if not k.startswith('_') })
+            {k: v for (k, v) in list(module.__dict__.items()) if not k.startswith('_') })

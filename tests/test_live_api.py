@@ -11,12 +11,12 @@ import sys, time, requests, json
 try:
     from deepdiff import DeepDiff
 except ImportError:
-    print "Cannot run database tests without deepdiff module"
+    print("Cannot run database tests without deepdiff module")
 
 try:
     import sqlite3 as db
 except ImportError:
-    print "Cannot run database tests without sqlite3 module"
+    print("Cannot run database tests without sqlite3 module")
 
 import pytest
 

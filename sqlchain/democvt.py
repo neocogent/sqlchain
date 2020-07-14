@@ -60,7 +60,7 @@ def democvt(src, dest, cointype):
     if not os.path.exists(src) or not cointype in demos:
         return False
     html = open(src).read()
-    for k in demos[cointype].keys():
+    for k in list(demos[cointype].keys()):
         for n,s in enumerate(demos[cointype][k]):
             html = html.replace(demos['bitcoin'][k][n], s)
     with open(dest, 'w') as f:
@@ -70,7 +70,7 @@ def democvt(src, dest, cointype):
 if __name__ == '__main__':
 
     if len(sys.argv) < 4:
-        print "Usage: %s <srcfile> <destfile> <cointype>" % sys.argv[0]
+        print("Usage: %s <srcfile> <destfile> <cointype>" % sys.argv[0])
         sys.exit(0)
 
     democvt(sys.argv[1], sys.argv[2], sys.argv[3])
