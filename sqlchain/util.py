@@ -115,11 +115,11 @@ def decodeScriptPK(data):
     if len(data) > 1:
         if len(data) == 25 and data[:3] == b'\x76\xa9\x14' and data[23:25] == b'\x88\xac': # P2PKH
             result = { 'type':'p2pkh', 'data':b'', 'addr':mkaddr(data[3:23]) }
-        elif len(data) == 23 and data[:2] == b'\xa9\x14' and data[22] == b'\x87': # P2SH
+        elif len(data) == 23 and data[:2] == b'\xa9\x14' and data[22:23] == b'\x87': # P2SH
             result = { 'type':'p2sh', 'data':b'', 'addr':mkaddr(data[2:22],p2sh=True)}
-        elif len(data) == 67 and data[0] == b'\x41' and data[66] == b'\xac': # P2PK
+        elif len(data) == 67 and data[0:1] == b'\x41' and data[66:67] == b'\xac': # P2PK
             result = { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) }
-        elif len(data) >= 35 and data[0] == b'\x21' and data[34] == b'\xac': # P2PK (compressed key)
+        elif len(data) >= 35 and data[0:1] == b'\x21' and data[34:35] == b'\xac': # P2PK (compressed key)
             result = { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:34])) }
         elif len(data) == 22 and data[:2] == b'\x00\x14': # P2WPKH
             result = { 'type':'p2wpkh', 'data':b'', 'addr':mkaddr(data[2:22],bech32=True) }
@@ -127,50 +127,50 @@ def decodeScriptPK(data):
             result = { 'type':'p2wsh', 'data':b'', 'addr':mkaddr(data[2:34],bech32=True) }
         elif len(data) >= 38 and data[:6] == b'\x6a\x24\xaa\x21\xa9\xed': # witness commitment
             result = { 'type':'witness', 'hash':data[6:38], 'data':data[38:] }
-        elif len(data) <= 41 and data[0] == b'\x6a': # OP_RETURN
+        elif len(data) <= 41 and data[0:1] == b'\x6a': # OP_RETURN
             result = { 'type':'null', 'data':data }
     return result
 
-OpCodes = { b'\x4F':'OP_1NEGATE', b'\x61':'OP_NOP', b'\x63':'OP_IF', b'\x64':'OP_NOTIF', b'\x67':'OP_ELSE', b'\x68':'OP_ENDIF',
-            b'\x69':'OP_VERIFY', b'\x6A':'OP_RETURN', b'\x6B':'OP_TOALTSTACK', b'\x6C':'OP_FROMALTSTACK', b'\x6D':'OP_2DROP', b'\x6E':'OP_2DUP',
-            b'\x6F':'OP_3DUP', b'\x70':'OP_2OVER', b'\x71':'OP_2ROT', b'\x72':'OP_2SWAP',b'\x73':'OP_IFDUP', b'\x74':'OP_DEPTH', b'\x75':'OP_DROP',
-            b'\x76':'OP_DUP', b'\x77':'OP_NIP', b'\x78':'OP_OVER', b'\x79':'OP_PICK', b'\x7A':'OP_ROLL', b'\x7B':'OP_ROT', b'\x7C':'OP_SWAP',
-            b'\x7D':'OP_TUCK',  b'\x7E':'OP_CAT', b'\x7F':'OP_SUBSTR', b'\x80':'OP_LEFT', b'\x81':'OP_RIGHT', b'\x82':'OP_SIZE', b'\x83':'OP_INVERT',
-            b'\x84':'OP_AND', b'\x85':'OP_OR', b'\x86':'OP_XOR', b'\x87':'OP_EQUAL', b'\x88':'OP_EQUALVERIFY', b'\x8B':'OP_1ADD', b'\x8C':'OP_1SUB',
-            b'\x8D':'OP_2MUL', b'\x8E':'OP_2DIV', b'\x8F':'OP_NEGATE', b'\x90':'OP_ABS', b'\x91':'OP_NOT', b'\x92':'OP_0NOTEQUAL', b'\x93':'OP_ADD',
-            b'\x94':'OP_SUB', b'\x95':'OP_MUL', b'\x96':'OP_DIV', b'\x97':'OP_MOD', b'\x98':'OP_LSHIFT', b'\x99':'OP_RSHIFT', b'\x9A':'OP_BOOLAND',
-            b'\x9B':'OP_BOOLOR', b'\x9C':'OP_NUMEQUAL', b'\x9D':'OP_NUMEQUALVERIFY', b'\x9E':'OP_NUMNOTEQUAL', b'\x9F':'OP_LESSTHAN',
-            b'\xA0':'OP_GREATERTHAN', b'\xA1':'OP_LESSTHANOREQUAL', b'\xA2':'OP_GREATERTHANOREQUAL', b'\xA3':'OP_MIN', b'\xA4':'OP_MAX',
-            b'\xA5':'OP_WITHIN', b'\xA6':'OP_RIPEMD160', b'\xA7':'OP_SHA1', b'\xA8':'OP_SHA256', b'\xA9':'OP_HASH160', b'\xAA':'OP_HASH256',
-            b'\xAB':'OP_CODESEPARATOR ', b'\xAC':'OP_CHECKSIG', b'\xAD':'OP_CHECKSIGVERIFY', b'\xAE':'OP_CHECKMULTISIG', b'\xAF':'OP_CHECKMULTISIGVERIFY',
-            b'\xFD':'OP_PUBKEYHASH', b'\xFE':'OP_PUBKEY', b'\xFF':'OP_INVALIDOPCODE', b'\x50':'OP_RESERVED', b'\x62':'OP_VER', b'\x65':'OP_VERIF',
-            b'\x66':'OP_VERNOTIF', b'\x89':'OP_RESERVED1', b'\x8A':'OP_RESERVED2', b'\xB1':'OP_CHECKLOCKTIMEVERIFY', b'\xB2':'OP_CHECKSEQUENCEVERIFY' }
+OpCodes = { 0x4F:'OP_1NEGATE', 0x61:'OP_NOP', 0x63:'OP_IF', 0x64:'OP_NOTIF', 0x67:'OP_ELSE', 0x68:'OP_ENDIF',
+            0x69:'OP_VERIFY', 0x6A:'OP_RETURN', 0x6B:'OP_TOALTSTACK', 0x6C:'OP_FROMALTSTACK', 0x6D:'OP_2DROP', 0x6E:'OP_2DUP',
+            0x6F:'OP_3DUP', 0x70:'OP_2OVER', 0x71:'OP_2ROT', 0x72:'OP_2SWAP',0x73:'OP_IFDUP', 0x74:'OP_DEPTH', 0x75:'OP_DROP',
+            0x76:'OP_DUP', 0x77:'OP_NIP', 0x78:'OP_OVER', 0x79:'OP_PICK', 0x7A:'OP_ROLL', 0x7B:'OP_ROT', 0x7C:'OP_SWAP',
+            0x7D:'OP_TUCK',  0x7E:'OP_CAT', 0x7F:'OP_SUBSTR', 0x80:'OP_LEFT', 0x81:'OP_RIGHT', 0x82:'OP_SIZE', 0x83:'OP_INVERT',
+            0x84:'OP_AND', 0x85:'OP_OR', 0x86:'OP_XOR', 0x87:'OP_EQUAL', 0x88:'OP_EQUALVERIFY', 0x8B:'OP_1ADD', 0x8C:'OP_1SUB',
+            0x8D:'OP_2MUL', 0x8E:'OP_2DIV', 0x8F:'OP_NEGATE', 0x90:'OP_ABS', 0x91:'OP_NOT', 0x92:'OP_0NOTEQUAL', 0x93:'OP_ADD',
+            0x94:'OP_SUB', 0x95:'OP_MUL', 0x96:'OP_DIV', 0x97:'OP_MOD', 0x98:'OP_LSHIFT', 0x99:'OP_RSHIFT', 0x9A:'OP_BOOLAND',
+            0x9B:'OP_BOOLOR', 0x9C:'OP_NUMEQUAL', 0x9D:'OP_NUMEQUALVERIFY', 0x9E:'OP_NUMNOTEQUAL', 0x9F:'OP_LESSTHAN',
+            0xA0:'OP_GREATERTHAN', 0xA1:'OP_LESSTHANOREQUAL', 0xA2:'OP_GREATERTHANOREQUAL', 0xA3:'OP_MIN', 0xA4:'OP_MAX',
+            0xA5:'OP_WITHIN', 0xA6:'OP_RIPEMD160', 0xA7:'OP_SHA1', 0xA8:'OP_SHA256', 0xA9:'OP_HASH160', 0xAA:'OP_HASH256',
+            0xAB:'OP_CODESEPARATOR ', 0xAC:'OP_CHECKSIG', 0xAD:'OP_CHECKSIGVERIFY', 0xAE:'OP_CHECKMULTISIG', 0xAF:'OP_CHECKMULTISIGVERIFY',
+            0xFD:'OP_PUBKEYHASH', 0xFE:'OP_PUBKEY', 0xFF:'OP_INVALIDOPCODE', 0x50:'OP_RESERVED', 0x62:'OP_VER', 0x65:'OP_VERIF',
+            0x66:'OP_VERNOTIF', 0x89:'OP_RESERVED1', 0x8A:'OP_RESERVED2', 0xB1:'OP_CHECKLOCKTIMEVERIFY', 0xB2:'OP_CHECKSEQUENCEVERIFY' }
 
 def mkOpCodeStr(data, sepOP=' ', sepPUSH='\n'):
     ops,pos = '',0
     while pos < len(data):
-        if data[pos] == b'\x00':
+        if data[pos] == 0x00:
             ops += 'OP_0'+sepOP
-        elif data[pos] <= b'\x4C':
-            sz, = unpack('<B', data[pos])
+        elif data[pos] <= 0x4C:
+            sz, = unpack('<B', data[pos:pos+1])
             ops += data[pos+1:pos+1+sz].hex()+sepPUSH
             pos += sz
-        elif data[pos] == b'\x4C':
+        elif data[pos] == 0x4C:
             sz, = unpack('<B', data[pos+1:])
             ops += data[pos+2:pos+2+sz].hex()+sepPUSH
             pos += sz
-        elif data[pos] == b'\x4D':
+        elif data[pos] == 0x4D:
             sz, = unpack('<H', data[pos+1:])
             ops += data[pos+2:pos+2+sz].hex()+sepPUSH
             pos += sz
-        elif data[pos] == b'\x4E':
+        elif data[pos] == 0x4E:
             sz, = unpack('<I', data[pos+1:])
             ops += data[pos+2:pos+2+sz].hex()+sepPUSH
             pos += sz
-        elif data[pos] >= b'\x50' and data[pos] <= b'\x60':
-            ops += 'OP_'+str(int(ord(data[pos]))-0x50)+sepOP
-        elif data[pos] >= b'\xB3' and data[pos] <= b'\xB9':
-            ops += 'OP_NOP'+str(int(ord(data[pos])-0xB2)+1)+sepOP
+        elif data[pos] >= 0x50 and data[pos] <= 0x60:
+            ops += 'OP_'+str(int(ord(data[pos:pos+1]))-0x50)+sepOP
+        elif data[pos] >= 0xB3 and data[pos] <= 0xB9:
+            ops += 'OP_NOP'+str(int(ord(data[pos:pos+1])-0xB2)+1)+sepOP
         else:
             ops += OpCodes[data[pos]]+sepOP
         pos += 1
