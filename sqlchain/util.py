@@ -5,12 +5,11 @@ import os, sys, pwd, time, json, threading, re, urllib.request, urllib.error, ur
 
 from datetime import datetime
 from struct import pack, unpack, unpack_from
-from binascii import unhexlify
 from glob import glob
 from importlib import import_module
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 
-from backports.functools_lru_cache import lru_cache # pylint:disable=relative-import
+from functools import lru_cache # pylint:disable=relative-import
 from sqlchain.version import coincfg, ADDR_PREFIX, P2SH_PREFIX, P2SH_CHAR, BECH_HRP, BECH32_FLAG, BECH32_LONG, P2SH_FLAG
 from sqlchain.version import S3_BLK_SIZE, BLOB_SPLIT_SIZE, BLK_REWARD, HALF_BLKS
 
@@ -33,7 +32,7 @@ def is_address(addr):
         n = 0
         for c in addr:
             n = n * 58 + b58.index(c)
-        btc = ('%%0%dx' % (25 << 1) % n).decode('hex')[-25:]
+        btc = bytes.fromhex('%%0%dx' % (25 << 1) % n)[-25:]
         return btc[-4:] == hashlib.sha256(hashlib.sha256(btc[:-4]).digest()).digest()[:4]
     except Exception: # pylint:disable=broad-except
         return False
@@ -46,38 +45,38 @@ def mkpkh(pk):
 def addr2pkh(addr):
     if addr[:2].lower() == coincfg(BECH_HRP):
         pkh = bech32decode(addr)
-        return str(pkh[2:]) if pkh else None
+        return bytes(pkh[2:]) if pkh else None
     long_value = 0
     for (i, c) in enumerate(addr[::-1]):
         long_value += b58.find(c) * (58**i)
-    result = ''
+    result = b''
     while long_value >= 256:
         div, mod = divmod(long_value, 256)
-        result = chr(mod) + result
+        result = bytes([mod]) + result
         long_value = div
-    result = chr(long_value) + result
+    result = bytes([long_value]) + result
     nPad = 0
     for c in addr:
         if c == b58[0]:
             nPad += 1
         else:
             break
-    result = chr(0)*nPad + result
+    result = b'\0'*nPad + result
     return result[1:-4]
 
 def mkaddr(pkh, aid=None, p2sh=False, bech32=False):
-    if pkh == '\0'*20 and aid==0:
+    if pkh == b'\0'*20 and aid==0:
         return '' # pkh==0 id==0, special case for null address when op_return or non-std script
     if bech32 or (aid and (aid & BECH32_FLAG != 0)):
         return bech32encode(coincfg(BECH_HRP), pkh)
     pad = ''
-    an = chr(coincfg(ADDR_PREFIX) if (aid is None and not p2sh) or (aid is not None and (aid & P2SH_FLAG != P2SH_FLAG)) else coincfg(P2SH_PREFIX)) + str(pkh)
+    an = bytes([coincfg(ADDR_PREFIX)] if (aid is None and not p2sh) or (aid is not None and (aid & P2SH_FLAG != P2SH_FLAG)) else [coincfg(P2SH_PREFIX)]) + bytes(pkh)
     for c in an:
-        if c == '\0':
+        if c == 0:
             pad += '1'
         else:
             break
-    num = int((an + hashlib.sha256(hashlib.sha256(an).digest()).digest()[0:4]).encode('hex'), 16)
+    num = int((an + hashlib.sha256(hashlib.sha256(an).digest()).digest()[0:4]).hex(), 16)
     out = ''
     while num >= 58:
         num,m = divmod(num, 58)
@@ -91,7 +90,7 @@ def addr2id(addr, cur=None, rtnPKH=False):
     pkh = addr2pkh(addr)
     if not pkh:
         return None,'' if rtnPKH else None
-    addr_id, = unpack('<q', hashlib.sha256(pkh).digest()[:5]+'\0'*3)
+    addr_id, = unpack('<q', hashlib.sha256(pkh).digest()[:5]+b'\0'*3)
     if addr[:2].lower() == coincfg(BECH_HRP): # bech32 has bit 42 set, >20 byte, encode as odd id and stored in bech32 table
         addr_id |= BECH32_FLAG
         if len(pkh) > 20:
@@ -108,69 +107,69 @@ def addr2id(addr, cur=None, rtnPKH=False):
 # script support stuff
 def mkSPK(pkh, addr_id):
     if addr_id & BECH32_FLAG: # bech32 id have witness spk
-        return ('\x16','\x00\x14%s'%pkh) if (addr_id & P2SH_FLAG != P2SH_FLAG) else ('\x22','\x00\x20%s'%pkh)
-    return ('\x19','\x76\xa9\x14%s\x88\xac'%pkh) if (addr_id & P2SH_FLAG != P2SH_FLAG) else ('\x17','\xa9\x14%s\x87'%pkh)
+        return (b'\x16','\x00\x14%s'%pkh) if (addr_id & P2SH_FLAG != P2SH_FLAG) else (b'\x22',b'\x00\x20%s'%pkh)
+    return (b'\x19',b'\x76\xa9\x14%s\x88\xac'%pkh) if (addr_id & P2SH_FLAG != P2SH_FLAG) else (b'\x17',b'\xa9\x14%s\x87'%pkh)
 
 def decodeScriptPK(data):
     result = { 'type':'other', 'data':data } # other, non-std
     if len(data) > 1:
-        if len(data) == 25 and data[:3] == '\x76\xa9\x14' and data[23:25] == '\x88\xac': # P2PKH
-            result = { 'type':'p2pkh', 'data':'', 'addr':mkaddr(data[3:23]) }
-        elif len(data) == 23 and data[:2] == '\xa9\x14' and data[22] == '\x87': # P2SH
-            result = { 'type':'p2sh', 'data':'', 'addr':mkaddr(data[2:22],p2sh=True)}
-        elif len(data) == 67 and data[0] == '\x41' and data[66] == '\xac': # P2PK
+        if len(data) == 25 and data[:3] == b'\x76\xa9\x14' and data[23:25] == b'\x88\xac': # P2PKH
+            result = { 'type':'p2pkh', 'data':b'', 'addr':mkaddr(data[3:23]) }
+        elif len(data) == 23 and data[:2] == b'\xa9\x14' and data[22] == b'\x87': # P2SH
+            result = { 'type':'p2sh', 'data':b'', 'addr':mkaddr(data[2:22],p2sh=True)}
+        elif len(data) == 67 and data[0] == b'\x41' and data[66] == b'\xac': # P2PK
             result = { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:66])) }
-        elif len(data) >= 35 and data[0] == '\x21' and data[34] == '\xac': # P2PK (compressed key)
+        elif len(data) >= 35 and data[0] == b'\x21' and data[34] == b'\xac': # P2PK (compressed key)
             result = { 'type':'p2pk', 'data':data, 'addr':mkaddr(mkpkh(data[1:34])) }
-        elif len(data) == 22 and data[:2] == '\x00\x14': # P2WPKH
-            result = { 'type':'p2wpkh', 'data':'', 'addr':mkaddr(data[2:22],bech32=True) }
-        elif len(data) == 34 and data[:2] == '\x00\x20': # P2WSH
-            result = { 'type':'p2wsh', 'data':'', 'addr':mkaddr(data[2:34],bech32=True) }
-        elif len(data) >= 38 and data[:6] == '\x6a\x24\xaa\x21\xa9\xed': # witness commitment
+        elif len(data) == 22 and data[:2] == b'\x00\x14': # P2WPKH
+            result = { 'type':'p2wpkh', 'data':b'', 'addr':mkaddr(data[2:22],bech32=True) }
+        elif len(data) == 34 and data[:2] == b'\x00\x20': # P2WSH
+            result = { 'type':'p2wsh', 'data':b'', 'addr':mkaddr(data[2:34],bech32=True) }
+        elif len(data) >= 38 and data[:6] == b'\x6a\x24\xaa\x21\xa9\xed': # witness commitment
             result = { 'type':'witness', 'hash':data[6:38], 'data':data[38:] }
-        elif len(data) <= 41 and data[0] == '\x6a': # OP_RETURN
+        elif len(data) <= 41 and data[0] == b'\x6a': # OP_RETURN
             result = { 'type':'null', 'data':data }
     return result
 
-OpCodes = { '\x4F':'OP_1NEGATE', '\x61':'OP_NOP', '\x63':'OP_IF', '\x64':'OP_NOTIF', '\x67':'OP_ELSE', '\x68':'OP_ENDIF',
-            '\x69':'OP_VERIFY', '\x6A':'OP_RETURN', '\x6B':'OP_TOALTSTACK', '\x6C':'OP_FROMALTSTACK', '\x6D':'OP_2DROP', '\x6E':'OP_2DUP',
-            '\x6F':'OP_3DUP', '\x70':'OP_2OVER', '\x71':'OP_2ROT', '\x72':'OP_2SWAP','\x73':'OP_IFDUP', '\x74':'OP_DEPTH', '\x75':'OP_DROP',
-            '\x76':'OP_DUP', '\x77':'OP_NIP', '\x78':'OP_OVER', '\x79':'OP_PICK', '\x7A':'OP_ROLL', '\x7B':'OP_ROT', '\x7C':'OP_SWAP',
-            '\x7D':'OP_TUCK',  '\x7E':'OP_CAT', '\x7F':'OP_SUBSTR', '\x80':'OP_LEFT', '\x81':'OP_RIGHT', '\x82':'OP_SIZE', '\x83':'OP_INVERT',
-            '\x84':'OP_AND', '\x85':'OP_OR', '\x86':'OP_XOR', '\x87':'OP_EQUAL', '\x88':'OP_EQUALVERIFY', '\x8B':'OP_1ADD', '\x8C':'OP_1SUB',
-            '\x8D':'OP_2MUL', '\x8E':'OP_2DIV', '\x8F':'OP_NEGATE', '\x90':'OP_ABS', '\x91':'OP_NOT', '\x92':'OP_0NOTEQUAL', '\x93':'OP_ADD',
-            '\x94':'OP_SUB', '\x95':'OP_MUL', '\x96':'OP_DIV', '\x97':'OP_MOD', '\x98':'OP_LSHIFT', '\x99':'OP_RSHIFT', '\x9A':'OP_BOOLAND',
-            '\x9B':'OP_BOOLOR', '\x9C':'OP_NUMEQUAL', '\x9D':'OP_NUMEQUALVERIFY', '\x9E':'OP_NUMNOTEQUAL', '\x9F':'OP_LESSTHAN',
-            '\xA0':'OP_GREATERTHAN', '\xA1':'OP_LESSTHANOREQUAL', '\xA2':'OP_GREATERTHANOREQUAL', '\xA3':'OP_MIN', '\xA4':'OP_MAX',
-            '\xA5':'OP_WITHIN', '\xA6':'OP_RIPEMD160', '\xA7':'OP_SHA1', '\xA8':'OP_SHA256', '\xA9':'OP_HASH160', '\xAA':'OP_HASH256',
-            '\xAB':'OP_CODESEPARATOR ', '\xAC':'OP_CHECKSIG', '\xAD':'OP_CHECKSIGVERIFY', '\xAE':'OP_CHECKMULTISIG', '\xAF':'OP_CHECKMULTISIGVERIFY',
-            '\xFD':'OP_PUBKEYHASH', '\xFE':'OP_PUBKEY', '\xFF':'OP_INVALIDOPCODE', '\x50':'OP_RESERVED', '\x62':'OP_VER', '\x65':'OP_VERIF',
-            '\x66':'OP_VERNOTIF', '\x89':'OP_RESERVED1', '\x8A':'OP_RESERVED2', '\xB1':'OP_CHECKLOCKTIMEVERIFY', '\xB2':'OP_CHECKSEQUENCEVERIFY' }
+OpCodes = { b'\x4F':'OP_1NEGATE', b'\x61':'OP_NOP', b'\x63':'OP_IF', b'\x64':'OP_NOTIF', b'\x67':'OP_ELSE', b'\x68':'OP_ENDIF',
+            b'\x69':'OP_VERIFY', b'\x6A':'OP_RETURN', b'\x6B':'OP_TOALTSTACK', b'\x6C':'OP_FROMALTSTACK', b'\x6D':'OP_2DROP', b'\x6E':'OP_2DUP',
+            b'\x6F':'OP_3DUP', b'\x70':'OP_2OVER', b'\x71':'OP_2ROT', b'\x72':'OP_2SWAP',b'\x73':'OP_IFDUP', b'\x74':'OP_DEPTH', b'\x75':'OP_DROP',
+            b'\x76':'OP_DUP', b'\x77':'OP_NIP', b'\x78':'OP_OVER', b'\x79':'OP_PICK', b'\x7A':'OP_ROLL', b'\x7B':'OP_ROT', b'\x7C':'OP_SWAP',
+            b'\x7D':'OP_TUCK',  b'\x7E':'OP_CAT', b'\x7F':'OP_SUBSTR', b'\x80':'OP_LEFT', b'\x81':'OP_RIGHT', b'\x82':'OP_SIZE', b'\x83':'OP_INVERT',
+            b'\x84':'OP_AND', b'\x85':'OP_OR', b'\x86':'OP_XOR', b'\x87':'OP_EQUAL', b'\x88':'OP_EQUALVERIFY', b'\x8B':'OP_1ADD', b'\x8C':'OP_1SUB',
+            b'\x8D':'OP_2MUL', b'\x8E':'OP_2DIV', b'\x8F':'OP_NEGATE', b'\x90':'OP_ABS', b'\x91':'OP_NOT', b'\x92':'OP_0NOTEQUAL', b'\x93':'OP_ADD',
+            b'\x94':'OP_SUB', b'\x95':'OP_MUL', b'\x96':'OP_DIV', b'\x97':'OP_MOD', b'\x98':'OP_LSHIFT', b'\x99':'OP_RSHIFT', b'\x9A':'OP_BOOLAND',
+            b'\x9B':'OP_BOOLOR', b'\x9C':'OP_NUMEQUAL', b'\x9D':'OP_NUMEQUALVERIFY', b'\x9E':'OP_NUMNOTEQUAL', b'\x9F':'OP_LESSTHAN',
+            b'\xA0':'OP_GREATERTHAN', b'\xA1':'OP_LESSTHANOREQUAL', b'\xA2':'OP_GREATERTHANOREQUAL', b'\xA3':'OP_MIN', b'\xA4':'OP_MAX',
+            b'\xA5':'OP_WITHIN', b'\xA6':'OP_RIPEMD160', b'\xA7':'OP_SHA1', b'\xA8':'OP_SHA256', b'\xA9':'OP_HASH160', b'\xAA':'OP_HASH256',
+            b'\xAB':'OP_CODESEPARATOR ', b'\xAC':'OP_CHECKSIG', b'\xAD':'OP_CHECKSIGVERIFY', b'\xAE':'OP_CHECKMULTISIG', b'\xAF':'OP_CHECKMULTISIGVERIFY',
+            b'\xFD':'OP_PUBKEYHASH', b'\xFE':'OP_PUBKEY', b'\xFF':'OP_INVALIDOPCODE', b'\x50':'OP_RESERVED', b'\x62':'OP_VER', b'\x65':'OP_VERIF',
+            b'\x66':'OP_VERNOTIF', b'\x89':'OP_RESERVED1', b'\x8A':'OP_RESERVED2', b'\xB1':'OP_CHECKLOCKTIMEVERIFY', b'\xB2':'OP_CHECKSEQUENCEVERIFY' }
 
 def mkOpCodeStr(data, sepOP=' ', sepPUSH='\n'):
     ops,pos = '',0
     while pos < len(data):
-        if data[pos] == '\x00':
+        if data[pos] == b'\x00':
             ops += 'OP_0'+sepOP
-        elif data[pos] <= '\x4C':
+        elif data[pos] <= b'\x4C':
             sz, = unpack('<B', data[pos])
-            ops += data[pos+1:pos+1+sz].encode('hex')+sepPUSH
+            ops += data[pos+1:pos+1+sz].hex()+sepPUSH
             pos += sz
-        elif data[pos] == '\x4C':
+        elif data[pos] == b'\x4C':
             sz, = unpack('<B', data[pos+1:])
-            ops += data[pos+2:pos+2+sz].encode('hex')+sepPUSH
+            ops += data[pos+2:pos+2+sz].hex()+sepPUSH
             pos += sz
-        elif data[pos] == '\x4D':
+        elif data[pos] == b'\x4D':
             sz, = unpack('<H', data[pos+1:])
-            ops += data[pos+2:pos+2+sz].encode('hex')+sepPUSH
+            ops += data[pos+2:pos+2+sz].hex()+sepPUSH
             pos += sz
-        elif data[pos] == '\x4E':
+        elif data[pos] == b'\x4E':
             sz, = unpack('<I', data[pos+1:])
-            ops += data[pos+2:pos+2+sz].encode('hex')+sepPUSH
+            ops += data[pos+2:pos+2+sz].hex()+sepPUSH
             pos += sz
-        elif data[pos] >= '\x50' and data[pos] <= '\x60':
+        elif data[pos] >= b'\x50' and data[pos] <= b'\x60':
             ops += 'OP_'+str(int(ord(data[pos]))-0x50)+sepOP
-        elif data[pos] >= '\xB3' and data[pos] <= '\xB9':
+        elif data[pos] >= b'\xB3' and data[pos] <= b'\xB9':
             ops += 'OP_NOP'+str(int(ord(data[pos])-0xB2)+1)+sepOP
         else:
             ops += OpCodes[data[pos]]+sepOP
@@ -178,11 +177,11 @@ def mkOpCodeStr(data, sepOP=' ', sepPUSH='\n'):
     return ops[:-1]
 
 def decodeVarInt(v):
-    if v[0] <= '\xfc':
-        return unpack('<B', v[0])[0],1
-    if v[0] == '\xfd':
+    if v[0] <= 0xfc:
+        return unpack('<B', v[0:1])[0],1
+    if v[0] == 0xfd:
         return unpack('<H', v[1:3])[0],3
-    if v[0] == '\xfe':
+    if v[0] == 0xfe:
         return unpack('<I', v[1:5])[0],5
     return unpack('<Q', v[1:9])[0],9
 
@@ -190,10 +189,10 @@ def encodeVarInt(v):
     if v <= 252:
         return pack('<B', v)
     if v < 2**16:
-        return '\xfd' + pack('<H', v)
+        return b'\xfd' + pack('<H', v)
     if v < 2**32:
-        return '\xfe' + pack('<I', v)
-    return '\xff' + pack('<Q', v)
+        return b'\xfe' + pack('<I', v)
+    return b'\xff' + pack('<Q', v)
 
 # raw data decoding stuff
 def decodeBlock(data):
@@ -214,14 +213,14 @@ def decodeBlock(data):
     block['size'] = off
     block['height'] = 0
     block['coinbase'] = block['tx'][0]['vin'][0]['coinbase']
-    if block['version'] > 1 and block['height'] >= 227836 and block['coinbase'][0] == '\x03':
-        block['height'] = unpack('<I', block['coinbase'][1:4]+'\0')[0]
+    if block['version'] > 1 and block['height'] >= 227836 and block['coinbase'][0] == b'\x03':
+        block['height'] = unpack('<I', block['coinbase'][1:4]+b'\0')[0]
     return block
 
 def decodeTx(data): # pylint:disable=too-many-locals
     vers, = unpack_from('<I', data)
     tx = { 'version': vers, 'vin':[], 'vout':[] }
-    tx['segwit'] = ( data[4:6] == '\0\1' )
+    tx['segwit'] = ( data[4:6] == b'\0\1' )
     off = 6 if tx['segwit'] else 4
     vicnt,ioff = decodeVarInt(data[off:off+9])
     off += ioff
@@ -231,7 +230,7 @@ def decodeTx(data): # pylint:disable=too-many-locals
         sigsz,soff = decodeVarInt(data[off+36:off+36+9])
         off += soff+36
         seq, = unpack_from('<I', data, off+sigsz)
-        if txid == '\0'*32 and vout == 0xffffffff:
+        if txid == b'\0'*32 and vout == 0xffffffff:
             tx['vin'].append({'coinbase':data[off:off+sigsz], 'sequence':seq })
         else:
             tx['vin'].append({'txid':txid, 'vout':vout, 'scriptSig':data[off:off+sigsz], 'sequence':seq })
@@ -327,7 +326,7 @@ def bech32decode(addr):
 
 # sqlchain ids support stuff
 def txh2id(txh):
-    return unpack('<q', txh[:5]+'\0'*3)[0] >> 3
+    return unpack('<q', txh[:5]+b'\0'*3)[0] >> 3
 
 addr_lock = threading.Lock()
 
@@ -344,7 +343,7 @@ def insertAddress(cur, addr):
             if row is None:
                 cur.execute("insert into {0} (id,addr) values(%s,%s)".format(tbl), (addr_id,pkh))
                 return addr_id
-            elif str(row[0]) == str(pkh):
+            elif bytes(row[0]) == bytes(pkh):
                 return addr_id
             addr_id += 1
 
@@ -358,7 +357,7 @@ def findTx(cur, txhash, mkNew=False, warn=32):
             if mkNew:
                 return (tx_id,False)
             return None
-        if str(row[0]) == str(txhash):
+        if bytes(row[0]) == bytes(txhash):
             return (tx_id,True) if mkNew else tx_id
         if tx_id > warn_id:
             logts("*** TxId collisions excessive %d => %s ***" % (tx_id,txhash))
@@ -372,9 +371,9 @@ def bits2diff(bits):
     return float(0x00ffff * 2**(8*(0x1d - 3))) / float((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3)))
 def blockwork(bits):
     bits = int(bits,16)
-    return 2**256/((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))+1)
+    return 2**256//((bits&0xFFFFFF) * 2**(8*((bits>>24) - 3))+1)
 def int2bin32(val):
-    return unhexlify('%064x' % val)
+    return bytes.fromhex('%064x' % val)
 
 # blob and header file support stuff
 def puthdr(blk, cfg, hdr):
@@ -426,13 +425,13 @@ def getBlobData(txdata, ins, outs=0, txsize=0):
     buf = readBlob(vpos, ins*7, sqc.cfg)
     vpos += ins*7
     for n in range(ins):
-        data['ins'].append({ 'outid': unpack('<Q', buf[n*7:n*7+7]+'\0')[0] })
+        data['ins'].append({ 'outid': unpack('<Q', buf[n*7:n*7+7]+b'\0')[0] })
     if not data['hdr'][7]: # no-sigs flag
         for n in range(ins):
             vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))
             sigbuf = readBlob(vpos, off+vsz+(0 if data['hdr'][6] else 4), sqc.cfg)
             data['ins'][n]['sigs'] = sigbuf[off:off+vsz]
-            data['ins'][n]['seq'] = '\xFF'*4 if data['hdr'][6] else sigbuf[off+vsz:]
+            data['ins'][n]['seq'] = b'\xFF'*4 if data['hdr'][6] else sigbuf[off+vsz:]
             vpos += off+vsz+(0 if data['hdr'][6] else 4)
     elif not data['hdr'][6]: # non-std seq flag
         buf = readBlob(vpos, ins*4, sqc.cfg)
@@ -441,7 +440,7 @@ def getBlobData(txdata, ins, outs=0, txsize=0):
         vpos += ins*4
     else:
         for n in range(ins):
-            data['ins'][n]['seq'] = '\xFF'*4
+            data['ins'][n]['seq'] = b'\xFF'*4
     for n in range(outs):
         vsz,off = decodeVarInt(readBlob(vpos, 9, sqc.cfg))
         pkbuf = readBlob(vpos+off, vsz, sqc.cfg)
@@ -450,7 +449,7 @@ def getBlobData(txdata, ins, outs=0, txsize=0):
     return data
 
 def mkBlobHdr(tx, ins, outs, nosigs):
-    flags,hdr = 0,''
+    flags,hdr = 0,b''
     sz = tx['size']
     if ins >= 0xC0:
         flags |= 0x80
@@ -517,7 +516,7 @@ def readBlob(pos, sz, cfg):
     if not os.path.exists(cfg['path']+fn): # file missing, try s3 if available
         if 's3' in cfg:
             return s3get(cfg['s3']+fn, pos, sz)
-        return '\0'*sz  # data missing, return zeros as null data (not ideal)
+        return b'\0'*sz  # data missing, return zeros as null data (not ideal)
     with open(cfg['path']+fn, 'rb') as blob:
         blob.seek(pos)
         return blob.read(sz)

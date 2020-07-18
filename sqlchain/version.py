@@ -1,6 +1,6 @@
 # like a version, touched for the very first time
 
-version = '0.2.10'
+version = '0.3.0'
 
 # definitions for coin types / chains supported
 # selected by sqc.cfg['cointype']

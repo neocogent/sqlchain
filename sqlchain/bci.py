@@ -39,26 +39,26 @@ def bciHeight(cur, blk):
     else:
         cur.execute("select hash from blocks order by id desc limit 1;")
     for blkhash, in cur:
-        return { 'blocks': [ bciBlock(cur, blkhash[::-1].encode('hex')) ] }
+        return { 'blocks': [ bciBlock(cur, blkhash[::-1].hex()) ] }
     return []
 
 def bciBlockWS(cur, block): # inconsistent websocket sub has different labels
     data = { 'height': int(block), 'tx':[], 'txIndexes':[] }
     cur.execute("select hash from blocks where id=%s limit 1;", (block,))
     for data['hash'], in cur:
-        data['hash'] = data['hash'][::-1].encode('hex')
+        data['hash'] = data['hash'][::-1].hex()
         hdr = gethdr(data['height'], sqc.cfg)
         data['blockIndex'] = data['height']
         data['version'] = hdr['version']
         data['time'] = hdr['time']
         data['prevBlockIndex'] = data['height']-1
-        data['mrklRoot'] = hdr['merkleroot'][::-1].encode('hex')
+        data['mrklRoot'] = hdr['merkleroot'][::-1].hex()
         data['nonce'] = hdr['nonce']
         data['bits'] = hdr['bits']
         cur.execute("select hash from trxs where block_id>=%s and block_id<%s;", (block*MAX_TX_BLK, block*MAX_TX_BLK+MAX_TX_BLK))
         for txhash, in cur:
-            data['tx'].append(bciTx(cur, txhash[::-1].encode('hex')))
-            data['txIndexes'].append(txhash[::-1].encode('hex'))
+            data['tx'].append(bciTx(cur, txhash[::-1].hex()))
+            data['txIndexes'].append(txhash[::-1].hex())
         data['nTx'] = len(data['tx'])
         data['reward'] = 0
         for out in data['tx'][0]['out']:
@@ -73,20 +73,20 @@ def bciBlockWS(cur, block): # inconsistent websocket sub has different labels
 
 def bciBlock(cur, blkhash):
     data = { 'hash':blkhash, 'tx':[] }
-    cur.execute("select id from blocks where hash=%s limit 1;", (blkhash.decode('hex')[::-1],))
+    cur.execute("select id from blocks where hash=%s limit 1;", (bytes.fromhex(blkhash)[::-1],))
     for blkid, in cur:
         data['height'] = data['block_index'] = int(blkid)
         hdr = gethdr(data['height'], sqc.cfg)
         data['ver'] = hdr['version']
         data['time'] = hdr['time']
-        data['prev_block'] = hdr['previousblockhash'][::-1].encode('hex')
-        data['mrkl_root'] = hdr['merkleroot'][::-1].encode('hex')
+        data['prev_block'] = hdr['previousblockhash'][::-1].hex()
+        data['mrkl_root'] = hdr['merkleroot'][::-1].hex()
         data['nonce'] = hdr['nonce']
         data['bits'] = hdr['bits']
         data['main_chain'] = True
         cur.execute("select hash from trxs where block_id>=%s and block_id<%s;", (blkid*MAX_TX_BLK, blkid*MAX_TX_BLK+MAX_TX_BLK))
         for txhash, in cur:
-            data['tx'].append(bciTx(cur, txhash[::-1].encode('hex')))
+            data['tx'].append(bciTx(cur, txhash[::-1].hex()))
         data['n_tx'] = len(data['tx'])
         data['fee'] = -(5000000000 >> (data['height'] / 210000))
         for out in data['tx'][0]['out']:
@@ -142,7 +142,7 @@ def bciTxWS(cur, txhash): # reduced data for websocket subs
 
 def bciTx(cur, txhash):
     data = { 'hash':txhash }
-    txh = txhash.decode('hex')[::-1]
+    txh = bytes.fromhex(txhash)[::-1]
     cur.execute("select id,txdata,(block_id div {0}),ins,txsize from trxs where id>=%s and hash=%s limit 1;".format(MAX_TX_BLK), (txh2id(txh), txh))
     for txid,blob,blkid,ins,txsize in cur:
         hdr = getBlobHdr(int(blob), sqc.cfg)

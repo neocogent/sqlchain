@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from time import sleep
 from urllib.request import urlopen
@@ -143,7 +143,7 @@ def blkHeader(fp, req):
     sqc.respQ.put((fp, req['id'], apicall('/block-index/'+req['params'][0]+'/electrum') ))
 
 def blkChunk(fp, req):
-    sqc.respQ.put((fp, req['id'], getChunk(int(req['params'][0]), sqc.cfg).encode('hex') ))
+    sqc.respQ.put((fp, req['id'], getChunk(int(req['params'][0]), sqc.cfg).hex() ))
 
 def utxoAddress(fp, req):
     sqc.respQ.put((fp, req['id'], apicall('/tx/'+req['params'][0]+'/output/%d' % req['params'][1]) ))
@@ -281,6 +281,6 @@ if __name__ == '__main__':
         pidpath = sqc.cfg['pid'] if 'pid' in sqc.cfg else sys.argv[0]+'.pid'
         with daemon.DaemonContext(working_directory='.', umask=0o002, stdout=open(logpath,'a'), stderr=open(logpath,'a'),
                 signal_map={signal.SIGTERM:sigterm_handler, signal.SIGHUP:sighup_handler } ):
-            with file(pidpath,'w') as f:
+            with open(pidpath,'w') as f:
                 f.write(str(os.getpid()))
             run()

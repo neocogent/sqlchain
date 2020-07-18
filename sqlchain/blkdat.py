@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Scan blockchain blk*.dat files and build index table.
 #  With the index, blocks can be read directly for processing.
@@ -48,7 +48,7 @@ def BlkDatHandler(verbose = False):
         if blkhash:
             blk,blkhash = getBlkRPC(blkhash)
             if blk:
-                log("Blkdat %d - %s" % (blk,blkhash[::-1].encode('hex')) )
+                log("Blkdat %d - %s" % (blk,blkhash[::-1].hex()) )
                 linkMainChain(cur, blk, blkhash, verbose)
 
 def findBlocks(cur, blockpath, verbose):
@@ -80,7 +80,7 @@ def findBlocks(cur, blockpath, verbose):
                 blkhash = sha256(sha256(buf).digest()).digest()
                 prevhash = buf[4:36]
                 if verbose:
-                    log("%05d:%d %s %s" % (filenum, pos, blkhash[::-1].encode('hex')[:32], prevhash[::-1].encode('hex')[:32]) )
+                    log("%05d:%d %s %s" % (filenum, pos, blkhash[::-1].hex()[:32], prevhash[::-1].hex()[:32]) )
                 cur.execute("insert ignore into blkdat (id,hash,prevhash,filenum,filepos) values(-1,%s,%s,%s,%s);", (blkhash,prevhash,filenum,pos))
                 pos += blksize
                 startpos = pos
@@ -96,13 +96,13 @@ def linkMainChain(cur, highblk, blkhash, verbose):
     global todo # pylint:disable=global-statement
     todo[highblk] = blkhash
     if verbose:
-        print("TODO", [ (blk,todo[blk][::-1].encode('hex')) for blk in todo ])
+        print("TODO", [ (blk,todo[blk][::-1].hex()) for blk in todo ])
     tmp = {}
     for blk in todo:
         blkhash = todo[blk]
         while not sqc.done.isSet():
             if verbose:
-                log("%d - %s" % (blk, blkhash[::-1].encode('hex')) )
+                log("%d - %s" % (blk, blkhash[::-1].hex()) )
             cur.execute("select id from blkdat where id=%s and hash=%s limit 1;", (blk, blkhash))
             row = cur.fetchone()
             if row:
@@ -122,11 +122,11 @@ def linkMainChain(cur, highblk, blkhash, verbose):
     todo = tmp
 
 def getBlkRPC(blkhash):
-    blk = sqc.rpc.getblock(blkhash[::-1].encode('hex'))
+    blk = sqc.rpc.getblock(blkhash[::-1].hex())
     if blk is None:
         return 0,''
     blkhash = sqc.rpc.getblockhash(blk['height']-120) # offset to avoid reorg, order problems
-    return ( blk['height']-120,blkhash.decode('hex')[::-1] )
+    return ( blk['height']-120,bytes.fromhex(blkhash)[::-1] )
 
 def initdb():
     global todo,lastpos # pylint:disable=global-statement

@@ -28,11 +28,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #  - adding executemany on cursor
 #  - original license copied into file to avoid confusion
 #
-import gevent.socket
+import unittest, time, imp
+import threading, logging, gevent.socket
 from gevent import queue
 
 # avoid socket monkey patching
-import imp
 fp, pathname, description = imp.find_module('socket')
 try:
     socket_ = imp.load_module('socket_', fp, pathname, description)
@@ -40,12 +40,11 @@ finally:
     if fp:
         fp.close()
 
-import threading
-import logging
+
 
 KEEPALIVE_PERIOD = 1800
 
-class DBPool():
+class DBPool(object):
     def __init__(self,connectionstring,poolsize,modulename='pyodbc'):
         self.conns = [DBConnection_(socket_.socketpair()) for x in xrange(poolsize)]
         self.threads = [threading.Thread(target=self.worker, args=(self.conns[x],)) for x in xrange(poolsize)]
@@ -86,7 +85,7 @@ class DBPool():
             c.conn.autocommit = commit
         return DBConnection(self,c)
 
-class DBConnection_():
+class DBConnection_(object):
     class State():
         pass
 
@@ -113,7 +112,7 @@ class DBConnection_():
             raise self.state.error
         return self.state.ret
 
-class DBConnection():
+class DBConnection(object):
     def __init__(self,pool,conn_):
         self.pool = pool
         self.conn_ = conn_
@@ -127,7 +126,7 @@ class DBConnection():
     def cursor(self):
         return DBCursor(self,self.conn_.apply(self.conn_.conn.cursor))
 
-class DBCursor():
+class DBCursor(object):
     def __init__(self,conn,cursor):
         self.conn = conn
         self.cursor = cursor
@@ -160,9 +159,6 @@ class DBCursor():
     def description(self):
         return self.cursor.description
 
-import unittest
-import time
-
 class TestDBPool(unittest.TestCase):
     def percentile(self,timings,percent):
         idx = int((len(timings)-1) * percent)
@@ -190,11 +186,11 @@ class TestDBPool(unittest.TestCase):
         for g in greenlets:
             g.join()
 
-        print '66%% %f' % self.percentile(timings,0.66)
-        print '90%% %f' % self.percentile(timings,0.90)
-        print '99%% %f' % self.percentile(timings,0.99)
-        print '99.9%% %f' % self.percentile(timings,0.999)
-        print '100%% %f' % self.percentile(timings,1.00)
+        print('66%% %f' % self.percentile(timings,0.66))
+        print('90%% %f' % self.percentile(timings,0.90))
+        print('99%% %f' % self.percentile(timings,0.99))
+        print('99.9%% %f' % self.percentile(timings,0.999))
+        print('100%% %f' % self.percentile(timings,1.00))
 
 if __name__ == '__main__':
     unittest.main()
