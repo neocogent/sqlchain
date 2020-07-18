@@ -43,10 +43,10 @@ setup(
         "gevent >= 1.2.0",
         "gevent-websocket >= 0.9.5",
         "python-daemon >= 1.5.5",
-        "MySQL-python >= 1.2.5",
+        "mysqlclient >= 2.0.1",
         "python-bitcoinrpc >= 0.1",
         "backports.functools_lru_cache >= 1.2.1",
-        "python2-pythondialog >= 3.4.0"
+        "pythondialog >= 3.4.0"
     ],
     data_files=datafiles
 
