@@ -1,26 +1,75 @@
-v0.2.9  - default api when none set
-v0.2.8  - fix bci ws bug, improve logrotate cfg
-v0.2.7  - add config apis support, defaults as before
-v0.2.6  - add max_blks support, limit to recent blocks 
-v0.2.5  - initial bech32 and multi-coin support, db upgrade!
-v0.2.3  - fix script decode index error
-v0.1.40 - alpha 1 release, update readme and release notes
-v0.1.39 - make split blobs default, update install docs
-v0.1.36 - fix s3 ranges, insight db status
-v0.1.35 - fix seek in single blobs
-v0.1.32 - add rpcPool, handle zero blob data
-v0.1.31 - update install guide, nginx proxy, demo web page info
-v0.1.30 - add locks to insertAddress, improve checkMemPool
-v0.1.28 - fix addOrphan bug
-v0.1.27 - chg near sync handling, update install guide
-v0.1.26 - Jan 20, 2017 -- add outQ threading, chg findTx, improve sync speed
-v0.1.25 - Jan 12, 2017 -- fix bugs, shutdown thread handling, add sslContext for python >= 2.7.9, logrotate support, sighup
-v0.1.23 - Jan 09, 2017 -- fix blkdat sync problems, install guide, bump version
-v0,1,21 - Jan 07, 2017 -- fix api, sqlchain-init
-v0.1.15 - Jan 06, 2017 -- update sqlchain-init, tag as 0.1.15, fix bugs
-v0.1.14 - Jan 06, 2017 -- fix api server, add www to pypi package, sqlchain-init copy www
-v0.1.13 - Dec 30, 2016 -- improve sqlchain-init, fix bugs
-v0.1.12 - Dec 29, 2016 -- pruneblockchain support, sqlchain-init script, fix bugs in daemon mode
-v0.1.1  - Aug 22, 2015 -- fix bug in orphan/re-org code
-v0.1.0  - Aug 22, 2015 -- Initial release.
+
+v0.3.0 - July 15, 2020
+- initial python 3 migration
+- improved tx queueing for mempool
+- don't manual prune when automatic true
+- fix reorg code when first run check
+
+v0.2.10 - Nov 11, 2018
+- fix gethdr bug
+
+v0.2.9 - Nov 10, 2018
+- default api when none set
+- fix bci ws bug, improve logrotate cfg
+- add config apis support, defaults as before
+- add max_blks support, limit to recent blocks
+
+v0.2.5 - Feb 3, 2018
+- initial bech32 and multi-coin support, db upgrade!
+- fix script decode index error
+
+v0.1.40 - May 6, 2017
+- alpha 1 release, update readme and release notes
+- make split blobs default, update install docs
+
+v0.1.36 - Feb 2, 2017
+- fix s3 ranges, insight db status
+
+v0.1.34 - Jan 28, 2017
+- fix seek in single blobs
+
+v0.1.32 - Jan 26, 2017
+- add rpcPool, handle zero blob data
+
+v0.1.31 - Jan 25, 2017
+- update install guide, nginx proxy, demo web page info
+
+v0.1.30 - Jan 25, 2017
+- add locks to insertAddress, improve checkMemPool
+
+v0.1.28 - Jan 24, 2017
+- fix addOrphan bug
+
+v0.1.27 - Jan 22, 2017
+- chg near sync handling, update install guide
+
+v0.1.26 - Jan 20, 2017
+- add outQ threading, chg findTx, improve sync speed
+
+v0.1.25 - Jan 12, 2017
+- fix bugs, shutdown thread handling, add sslContext for python >= 2.7.9, logrotate support, sighup
+
+v0.1.23 - Jan 09, 2017
+- fix blkdat sync problems, install guide, bump version
+
+v0,1,21 - Jan 07, 2017
+- fix api, sqlchain-init
+
+v0.1.15 - Jan 06, 2017
+- update sqlchain-init, tag as 0.1.15, fix bugs
+
+v0.1.14 - Jan 06, 2017
+- fix api server, add www to pypi package, sqlchain-init copy www
+
+v0.1.13 - Dec 30, 2016
+- improve sqlchain-init, fix bugs
+
+v0.1.12 - Dec 29, 2016
+- pruneblockchain support, sqlchain-init script, fix bugs in daemon mode
+
+v0.1.1  - Aug 22, 2015
+- fix bug in orphan/re-org code
+
+v0.1.0  - Aug 22, 2015
+- Initial release.
 
