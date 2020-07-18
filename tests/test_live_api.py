@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #   live api test - unit test module
 #     - supports multiple coins by selecting the db based on cointype
@@ -22,9 +22,6 @@ import pytest
 
 millis = lambda: int(round(time.time() * 1000))
 server = None
-
-live = pytest.mark.skipif(not pytest.config.getoption("--runlive"), reason = "need --runlive option to run")
-nosigs = pytest.mark.skipif(pytest.config.getoption("--nosigs"), reason = "cannot test with nosigs db")
 
 # livetest db created by mklivetestdb.py
 @pytest.fixture(scope="module")
@@ -71,52 +68,52 @@ def api_diff(cur, sqlstr, **kwargs):
     cur.executemany("insert into tests (url,result,diff,rtt) values (?,?,?,?);", log )
     return diff
 
-@live
+@pytest.mark.live
 def test_live_api_block(testdb):
     assert api_diff(testdb, "url like '/block/%'", exclude_paths={"root['confirmations']"}) == {}
 
-@live
+@pytest.mark.live
 def test_live_api_block_index(testdb):
     assert api_diff(testdb, "url like '/block-index/%'") == {}
 
-@live
-@nosigs
+@pytest.mark.live
+@pytest.mark.nosigs
 def test_live_api_rawblock(testdb): # not currently supported
     assert True
 
-@live
+@pytest.mark.live
 def test_live_api_blocks(testdb): # not currently supported
     assert True
 
-@live
+@pytest.mark.live
 def test_live_api_tx(testdb):
     assert api_diff(testdb, "url like '/tx/%'") == {}
 
-@live
-@nosigs
+@pytest.mark.live
+@pytest.mark.nosigs
 def test_live_api_rawtx(testdb):
     assert api_diff(testdb, "url like '/rawtx/%'") == {}
 
-@live
+@pytest.mark.live
 def test_live_api_addr(testdb):
     assert api_diff(testdb, "url like '/addr/%'") == {}
 
-@live
+@pytest.mark.live
 def test_live_api_utxo(testdb):
     assert api_diff(testdb, "url like '/addr/%/utxo'") == {}
 
-@live
+@pytest.mark.live
 def test_live_api_txs_block(testdb):
     assert api_diff(testdb, "url like '/txs/?block=%'") == {}
 
-@live
+@pytest.mark.live
 def test_live_api_txs_addr(testdb):
     assert api_diff(testdb, "url like '/txs/?address=%'") == {}
 
-@live
+@pytest.mark.live
 def test_live_api_addrs(testdb):
     assert api_diff(testdb, "url like '/addrs/%/utxo'") == {}
 
-@live
+@pytest.mark.live
 def test_live_api_status(testdb):
     assert True

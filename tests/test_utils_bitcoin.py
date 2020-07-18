@@ -1,9 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #   sqlchain.utils - unit test module
 #
 
-import os, sys
+import os, sys, builtins
 from struct import unpack
 
 try:
@@ -17,7 +17,7 @@ from sqlchain.version import ADDR_ID_FLAGS, P2SH_FLAG, BECH32_FLAG, BECH32_LONG
 from sqlchain.util import dotdict, is_address, addr2pkh, mkaddr, addr2id, decodeScriptPK, mkOpCodeStr, decodeVarInt, encodeVarInt
 from sqlchain.util import txh2id, insertAddress, findTx
 
-__builtins__['sqc'] = dotdict()  # container for super globals
+builtins.sqc = dotdict()  # container for super globals
 sqc.cfg = { 'cointype':'bitcoin' }
 
 # memory based test db with same schema
@@ -40,7 +40,7 @@ def testdb(request):
     if cur.rowcount > 0:
         print("\nClearing test db")
         cur.execute("drop database unittest;")
-    sqlsrc = open('/usr/local/share/sqlchain/docs/sqlchain.sql').read()
+    sqlsrc = open('/usr/local/share/sqlchain/etc/sqlchain.sql').read()
     sqlcode = ''
     for k,v in [('{dbeng}','Memory'),('{dbname}','unittest'),('{dbpwd}',dbpwd),('{dbuser}',dbuser)]:
         sqlsrc = sqlsrc.replace(k, v)
@@ -88,62 +88,62 @@ def test_is_address():
 
 def test_addr2pkh():
     #p2pkh
-    assert addr2pkh('127RhwC5vQJN4cJ6UaHc1A9NCSpz1e9B4i') =='0c2f3eb0fa5f65269236658bc361187dfaa964bb'.decode('hex')
-    assert addr2pkh('1JS2xvSfG2hD3rnMGd3xxEeYSoBs8r7eKh') =='bf362d4dda191483e789ccf3059d6447cd64bb9c'.decode('hex')
-    assert addr2pkh('1DK2kyHNMUx8XoWZm9t2GWqJGzqBNxUYuv') =='870a76dd469ab77084229a61984db634abaafb8b'.decode('hex')
+    assert addr2pkh('127RhwC5vQJN4cJ6UaHc1A9NCSpz1e9B4i') ==bytes.fromhex('0c2f3eb0fa5f65269236658bc361187dfaa964bb')
+    assert addr2pkh('1JS2xvSfG2hD3rnMGd3xxEeYSoBs8r7eKh') ==bytes.fromhex('bf362d4dda191483e789ccf3059d6447cd64bb9c')
+    assert addr2pkh('1DK2kyHNMUx8XoWZm9t2GWqJGzqBNxUYuv') ==bytes.fromhex('870a76dd469ab77084229a61984db634abaafb8b')
     #p2sh
-    assert addr2pkh('34H8pSTwFNEngG5xfadqctdQykcGgRmSgf') =='1c6426545908803de2a4ed61caf805ccc282900f'.decode('hex') #2of2
-    assert addr2pkh('3KKXcGTmxvedJr9GrzWayA8GVnS5AXm8tj') =='c161e4848786150e2add1a93f084fa94a7259b97'.decode('hex') #2of3
-    assert addr2pkh('38oAwJnDWRTWf1GUg7FJ112bjVRoMjvCmV') =='4df2e66aeb640a642c8476185f63e433ad074220'.decode('hex') #3of4
+    assert addr2pkh('34H8pSTwFNEngG5xfadqctdQykcGgRmSgf') ==bytes.fromhex('1c6426545908803de2a4ed61caf805ccc282900f') #2of2
+    assert addr2pkh('3KKXcGTmxvedJr9GrzWayA8GVnS5AXm8tj') ==bytes.fromhex('c161e4848786150e2add1a93f084fa94a7259b97') #2of3
+    assert addr2pkh('38oAwJnDWRTWf1GUg7FJ112bjVRoMjvCmV') ==bytes.fromhex('4df2e66aeb640a642c8476185f63e433ad074220') #3of4
     #p2wpkh-p2sh
-    assert addr2pkh('3F2YodB6PAzbov1rAkYVMNu6KBB1g9AHrG') =='924b50fdfc0e0afab1b1d12acae31c3b4a215154'.decode('hex')
-    assert addr2pkh('36LF9sFUJQAzGgxKtrVFDcXqmTF9yyVeow') =='32eaeff4e7e856e74dcf0926724d04324320eb75'.decode('hex')
-    assert addr2pkh('35FowTfm9qpeKGX9VQuuSrcgDiBd9SczAi') =='271c19a61825788201434354d2a3a6b03d23e316'.decode('hex')
-    assert addr2pkh('3Pux8TuPxZHm7RsBvAP9zjkF3jCcw9K7wL') =='f3c501dd6b3086911f7b9e7eea0dade0de025287'.decode('hex')
+    assert addr2pkh('3F2YodB6PAzbov1rAkYVMNu6KBB1g9AHrG') ==bytes.fromhex('924b50fdfc0e0afab1b1d12acae31c3b4a215154')
+    assert addr2pkh('36LF9sFUJQAzGgxKtrVFDcXqmTF9yyVeow') ==bytes.fromhex('32eaeff4e7e856e74dcf0926724d04324320eb75')
+    assert addr2pkh('35FowTfm9qpeKGX9VQuuSrcgDiBd9SczAi') ==bytes.fromhex('271c19a61825788201434354d2a3a6b03d23e316')
+    assert addr2pkh('3Pux8TuPxZHm7RsBvAP9zjkF3jCcw9K7wL') ==bytes.fromhex('f3c501dd6b3086911f7b9e7eea0dade0de025287')
     #p2wsh-p2sh - unavailble
     #p2wpkh
-    assert addr2pkh('BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4').encode('hex') == '751e76e8199196d454941c45d1b3a323f1433bd6' # bip173
-    assert addr2pkh('bc1q5lz8xffjt4azkzm4hled45qpgcu46thhl6j7vm').encode('hex') == 'a7c47325325d7a2b0b75bff2dad00146395d2ef7' # electrum
-    assert addr2pkh('bc1qzlc8mvcyww95ycfgf520y7yvu64qhta6uqxada').encode('hex') == '17f07db304738b4261284d14f2788ce6aa0bafba' # electrum
-    assert addr2pkh('bc1qtcpsntfzjx7mj6ljqy480sdufnh2nuwqhtsz8g').encode('hex') == '5e0309ad2291bdb96bf2012a77c1bc4ceea9f1c0' # electrum
-    assert addr2pkh('bc1q0yrdw9t2pyev94jfeyq9mm4a0smfdswfweht6t').encode('hex') == '7906d7156a0932c2d649c9005deebd7c3696c1c9' # electrum
+    assert addr2pkh('BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4').hex() == '751e76e8199196d454941c45d1b3a323f1433bd6' # bip173
+    assert addr2pkh('bc1q5lz8xffjt4azkzm4hled45qpgcu46thhl6j7vm').hex() == 'a7c47325325d7a2b0b75bff2dad00146395d2ef7' # electrum
+    assert addr2pkh('bc1qzlc8mvcyww95ycfgf520y7yvu64qhta6uqxada').hex() == '17f07db304738b4261284d14f2788ce6aa0bafba' # electrum
+    assert addr2pkh('bc1qtcpsntfzjx7mj6ljqy480sdufnh2nuwqhtsz8g').hex() == '5e0309ad2291bdb96bf2012a77c1bc4ceea9f1c0' # electrum
+    assert addr2pkh('bc1q0yrdw9t2pyev94jfeyq9mm4a0smfdswfweht6t').hex() == '7906d7156a0932c2d649c9005deebd7c3696c1c9' # electrum
     #p2wsh
     assert addr2pkh('bc1qm7fcgs9ugg66rw5tg2w7sy0m0afttnnucr59hcmpa87sezd769vsac7pmy') \
-                    =='df938440bc4235a1ba8b429de811fb7f52b5ce7cc0e85be361e9fd0c89bed159'.decode('hex') #2of2 electrum
+                    ==bytes.fromhex('df938440bc4235a1ba8b429de811fb7f52b5ce7cc0e85be361e9fd0c89bed159') #2of2 electrum
     assert addr2pkh('bc1q5gp20lfuhz2avvqwau6sgwmakrp5r2qv66x56rfr9t30halv4vfs283f6e') \
-                    =='a202a7fd3cb895d6300eef35043b7db0c341a80cd68d4d0d232ae2fbf7ecab13'.decode('hex') #2of2 electrum
+                    ==bytes.fromhex('a202a7fd3cb895d6300eef35043b7db0c341a80cd68d4d0d232ae2fbf7ecab13') #2of2 electrum
     assert addr2pkh('bc1qs5vep8zczr6rfskq3euz44zjnv05zmhkp84jhkufufsdy2ygfr7qr8x759') \
-                    =='8519909c5810f434c2c08e782ad4529b1f416ef609eb2bdb89e260d2288848fc'.decode('hex') #2of2 electrum
+                    ==bytes.fromhex('8519909c5810f434c2c08e782ad4529b1f416ef609eb2bdb89e260d2288848fc') #2of2 electrum
     #bech32, future versions from bip173 spec.
     assert addr2pkh('bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx') \
-                    == '751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6'.decode('hex') # witver 0x51
-    assert addr2pkh('BC1SW50QA3JX3S') == '751e'.decode('hex') # witver 0x60
-    assert addr2pkh('bc1zw508d6qejxtdg4y5r3zarvaryvg6kdaj') =='751e76e8199196d454941c45d1b3a323'.decode('hex') # witver 0x52
+                    == bytes.fromhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6') # witver 0x51
+    assert addr2pkh('BC1SW50QA3JX3S') == bytes.fromhex('751e') # witver 0x60
+    assert addr2pkh('bc1zw508d6qejxtdg4y5r3zarvaryvg6kdaj') ==bytes.fromhex('751e76e8199196d454941c45d1b3a323') # witver 0x52
 
 def test_mkaddr():
     #p2pkh
-    assert mkaddr('0c2f3eb0fa5f65269236658bc361187dfaa964bb'.decode('hex')) == '127RhwC5vQJN4cJ6UaHc1A9NCSpz1e9B4i'
-    assert mkaddr('bf362d4dda191483e789ccf3059d6447cd64bb9c'.decode('hex')) == '1JS2xvSfG2hD3rnMGd3xxEeYSoBs8r7eKh'
-    assert mkaddr('870a76dd469ab77084229a61984db634abaafb8b'.decode('hex')) == '1DK2kyHNMUx8XoWZm9t2GWqJGzqBNxUYuv'
+    assert mkaddr(bytes.fromhex('0c2f3eb0fa5f65269236658bc361187dfaa964bb')) == '127RhwC5vQJN4cJ6UaHc1A9NCSpz1e9B4i'
+    assert mkaddr(bytes.fromhex('bf362d4dda191483e789ccf3059d6447cd64bb9c')) == '1JS2xvSfG2hD3rnMGd3xxEeYSoBs8r7eKh'
+    assert mkaddr(bytes.fromhex('870a76dd469ab77084229a61984db634abaafb8b')) == '1DK2kyHNMUx8XoWZm9t2GWqJGzqBNxUYuv'
     #p2sh
-    assert mkaddr('1c6426545908803de2a4ed61caf805ccc282900f'.decode('hex'),p2sh=True) == '34H8pSTwFNEngG5xfadqctdQykcGgRmSgf'
-    assert mkaddr('c161e4848786150e2add1a93f084fa94a7259b97'.decode('hex'),p2sh=True) == '3KKXcGTmxvedJr9GrzWayA8GVnS5AXm8tj'
-    assert mkaddr('4df2e66aeb640a642c8476185f63e433ad074220'.decode('hex'),p2sh=True) == '38oAwJnDWRTWf1GUg7FJ112bjVRoMjvCmV'
+    assert mkaddr(bytes.fromhex('1c6426545908803de2a4ed61caf805ccc282900f'),p2sh=True) == '34H8pSTwFNEngG5xfadqctdQykcGgRmSgf'
+    assert mkaddr(bytes.fromhex('c161e4848786150e2add1a93f084fa94a7259b97'),p2sh=True) == '3KKXcGTmxvedJr9GrzWayA8GVnS5AXm8tj'
+    assert mkaddr(bytes.fromhex('4df2e66aeb640a642c8476185f63e433ad074220'),p2sh=True) == '38oAwJnDWRTWf1GUg7FJ112bjVRoMjvCmV'
     #p2wpkh-p2sh
-    assert mkaddr('924b50fdfc0e0afab1b1d12acae31c3b4a215154'.decode('hex'),p2sh=True) == '3F2YodB6PAzbov1rAkYVMNu6KBB1g9AHrG'
-    assert mkaddr('32eaeff4e7e856e74dcf0926724d04324320eb75'.decode('hex'),p2sh=True) == '36LF9sFUJQAzGgxKtrVFDcXqmTF9yyVeow'
-    assert mkaddr('271c19a61825788201434354d2a3a6b03d23e316'.decode('hex'),p2sh=True) == '35FowTfm9qpeKGX9VQuuSrcgDiBd9SczAi'
+    assert mkaddr(bytes.fromhex('924b50fdfc0e0afab1b1d12acae31c3b4a215154'),p2sh=True) == '3F2YodB6PAzbov1rAkYVMNu6KBB1g9AHrG'
+    assert mkaddr(bytes.fromhex('32eaeff4e7e856e74dcf0926724d04324320eb75'),p2sh=True) == '36LF9sFUJQAzGgxKtrVFDcXqmTF9yyVeow'
+    assert mkaddr(bytes.fromhex('271c19a61825788201434354d2a3a6b03d23e316'),p2sh=True) == '35FowTfm9qpeKGX9VQuuSrcgDiBd9SczAi'
     #p2wsh-p2sh - unavailble
     #p2wpkh
-    assert mkaddr('751e76e8199196d454941c45d1b3a323f1433bd6'.decode('hex'),bech32=True) == 'BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4'.lower()
-    assert mkaddr('a7c47325325d7a2b0b75bff2dad00146395d2ef7'.decode('hex'),bech32=True) == 'bc1q5lz8xffjt4azkzm4hled45qpgcu46thhl6j7vm'
-    assert mkaddr('7906d7156a0932c2d649c9005deebd7c3696c1c9'.decode('hex'),bech32=True) == 'bc1q0yrdw9t2pyev94jfeyq9mm4a0smfdswfweht6t'
+    assert mkaddr(bytes.fromhex('751e76e8199196d454941c45d1b3a323f1433bd6'),bech32=True) == 'BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4'.lower()
+    assert mkaddr(bytes.fromhex('a7c47325325d7a2b0b75bff2dad00146395d2ef7'),bech32=True) == 'bc1q5lz8xffjt4azkzm4hled45qpgcu46thhl6j7vm'
+    assert mkaddr(bytes.fromhex('7906d7156a0932c2d649c9005deebd7c3696c1c9'),bech32=True) == 'bc1q0yrdw9t2pyev94jfeyq9mm4a0smfdswfweht6t'
     #p2wsh
-    assert mkaddr('df938440bc4235a1ba8b429de811fb7f52b5ce7cc0e85be361e9fd0c89bed159'.decode('hex'),bech32=True) \
+    assert mkaddr(bytes.fromhex('df938440bc4235a1ba8b429de811fb7f52b5ce7cc0e85be361e9fd0c89bed159'),bech32=True) \
                 == 'bc1qm7fcgs9ugg66rw5tg2w7sy0m0afttnnucr59hcmpa87sezd769vsac7pmy'
-    assert mkaddr('a202a7fd3cb895d6300eef35043b7db0c341a80cd68d4d0d232ae2fbf7ecab13'.decode('hex'),bech32=True) \
+    assert mkaddr(bytes.fromhex('a202a7fd3cb895d6300eef35043b7db0c341a80cd68d4d0d232ae2fbf7ecab13'),bech32=True) \
                 == 'bc1q5gp20lfuhz2avvqwau6sgwmakrp5r2qv66x56rfr9t30halv4vfs283f6e'
-    assert mkaddr('8519909c5810f434c2c08e782ad4529b1f416ef609eb2bdb89e260d2288848fc'.decode('hex'),bech32=True) \
+    assert mkaddr(bytes.fromhex('8519909c5810f434c2c08e782ad4529b1f416ef609eb2bdb89e260d2288848fc'),bech32=True) \
                 == 'bc1qs5vep8zczr6rfskq3euz44zjnv05zmhkp84jhkufufsdy2ygfr7qr8x759'
 
 def test_addr2id():
@@ -155,17 +155,17 @@ def test_addr2id():
     assert addr2id('bc1qm7fcgs9ugg66rw5tg2w7sy0m0afttnnucr59hcmpa87sezd769vsac7pmy') & ADDR_ID_FLAGS == BECH32_LONG
     assert addr2id('bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx') & ADDR_ID_FLAGS == BECH32_LONG
 
-    assert addr2id('127RhwC5vQJN4cJ6UaHc1A9NCSpz1e9B4i', rtnPKH=True) == (369302191541,'0c2f3eb0fa5f65269236658bc361187dfaa964bb'.decode('hex'))
-    assert addr2id('34H8pSTwFNEngG5xfadqctdQykcGgRmSgf', rtnPKH=True) == (1260639692375,'1c6426545908803de2a4ed61caf805ccc282900f'.decode('hex'))
-    assert addr2id('3Pux8TuPxZHm7RsBvAP9zjkF3jCcw9K7wL', rtnPKH=True) == (1905635504253,'f3c501dd6b3086911f7b9e7eea0dade0de025287'.decode('hex'))
+    assert addr2id('127RhwC5vQJN4cJ6UaHc1A9NCSpz1e9B4i', rtnPKH=True) == (369302191541,bytes.fromhex('0c2f3eb0fa5f65269236658bc361187dfaa964bb'))
+    assert addr2id('34H8pSTwFNEngG5xfadqctdQykcGgRmSgf', rtnPKH=True) == (1260639692375,bytes.fromhex('1c6426545908803de2a4ed61caf805ccc282900f'))
+    assert addr2id('3Pux8TuPxZHm7RsBvAP9zjkF3jCcw9K7wL', rtnPKH=True) == (1905635504253,bytes.fromhex('f3c501dd6b3086911f7b9e7eea0dade0de025287'))
     assert addr2id('BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4', rtnPKH=True) \
-                == (2239906766591,'751e76e8199196d454941c45d1b3a323f1433bd6'.decode('hex'))
+                == (2239906766591,bytes.fromhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
     assert addr2id('bc1q0yrdw9t2pyev94jfeyq9mm4a0smfdswfweht6t', rtnPKH=True) \
-                == (2322962910768,'7906d7156a0932c2d649c9005deebd7c3696c1c9'.decode('hex'))
+                == (2322962910768,bytes.fromhex('7906d7156a0932c2d649c9005deebd7c3696c1c9'))
     assert addr2id('bc1qm7fcgs9ugg66rw5tg2w7sy0m0afttnnucr59hcmpa87sezd769vsac7pmy', rtnPKH=True) \
-                == (3310624892327,'df938440bc4235a1ba8b429de811fb7f52b5ce7cc0e85be361e9fd0c89bed159'.decode('hex'))
+                == (3310624892327,bytes.fromhex('df938440bc4235a1ba8b429de811fb7f52b5ce7cc0e85be361e9fd0c89bed159'))
     assert addr2id('bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx', rtnPKH=True) \
-                == (4041402476188,'751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6'.decode('hex'))
+                == (4041402476188,bytes.fromhex('751e76e8199196d454941c45d1b3a323f1433bd6751e76e8199196d454941c45d1b3a323f1433bd6'))
 
 data = [
      ['76a9140c2f3eb0fa5f65269236658bc361187dfaa964bb88ac','p2pkh','','127RhwC5vQJN4cJ6UaHc1A9NCSpz1e9B4i',
@@ -203,15 +203,15 @@ data = [
 
 def test_decodeScriptPK():
     for row in data:
-        r = decodeScriptPK(row[0].decode('hex'))
+        r = decodeScriptPK(bytes.fromhex(row[0]))
         assert r['type'] == row[1]
-        assert r['data'].encode('hex').lower() == row[2].lower()
+        assert r['data'].hex().lower() == row[2].lower()
         if 'addr' in r:
             assert r['addr'] == row[3]
 
 def test_mkOpCodeStr():
     for row in data:
-        assert mkOpCodeStr(row[0].decode('hex'), sepPUSH=' ') == row[4]
+        assert mkOpCodeStr(bytes.fromhex(row[0]), sepPUSH=' ') == row[4]
 
 def test_VarInt():
     values = [  (1, [ 0,1,2,55,192,192,234,252]),
@@ -244,7 +244,7 @@ def test_findTx(testdb):
     trxs = []
     tx1 = bytearray(os.urandom(32))
     for x in range(16):
-        tx1[-1] = chr((int(tx1[-1])+x)&0xFF) # use sequential tx hashes to test collisions
+        [tx1[-1]] = [(int(tx1[-1])+x)&0xFF] # use sequential tx hashes to test collisions
         tid,new = findTx(testdb, tx1, True)
         testdb.execute("insert ignore into trxs (id,hash,ins,outs,txsize) values (%s,%s,0,0,0);", (tid,tx1))
         trxs.append(tid)
@@ -252,4 +252,4 @@ def test_findTx(testdb):
     
     for x in range(1000):
         tx1 = os.urandom(32)
-        assert txh2id(tx1) == unpack('<q', tx1[:5]+'\0'*3)[0] >> 3 # test 1000 randoms hashes match, just for heck of it
+        assert txh2id(tx1) == unpack('<q', tx1[:5]+b'\0'*3)[0] >> 3 # test 1000 randoms hashes match, just for heck of it
