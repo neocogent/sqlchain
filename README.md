@@ -16,6 +16,10 @@
 
 #### Recent Updates 
 
+(v0.3.0) (In progress) Migration to Python3.
+
+Also now added a [Roadmap Project](https://github.com/neocogent/sqlchain/projects/1) to Github. So if you are interested in the future of this project and a renewed committment to taking it into the next decade then have a look.
+
 (v0.2.9)
 
 Made API modules config selectable or Insight compatible if none set. Now a supplied API can be customized and integrated by editing the config file. This makes it easier to build web apps that need specific API calls. sqlchain-config adds all 5 supplied APIs by default. If upgrading you may need to edit the config file to add ones you use.
@@ -59,10 +63,7 @@ You can try it on Testnet and it doesn't take much time or resources. Even a 1vC
 
 #### TODO
 
-- improve the included demo pages (at minimum update jquery, old version is vulnerable)
-- fix up and do more testing on Electrum server  
-- look further into pruning spent outputs (most of blob.dat) for a wallet api with even lower storage needs
-- add segwit specific API data 
+See the new [Roadmap Project](https://github.com/neocogent/sqlchain/projects/1).
 
 [Donations](https://www.neocogent.com/pages/btc-donation.html) supporting further development are welcome. 
 
