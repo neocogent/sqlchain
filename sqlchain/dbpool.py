@@ -46,10 +46,10 @@ KEEPALIVE_PERIOD = 1800
 
 class DBPool(object):
     def __init__(self,connectionstring,poolsize,modulename='pyodbc'):
-        self.conns = [DBConnection_(socket_.socketpair()) for x in xrange(poolsize)]
-        self.threads = [threading.Thread(target=self.worker, args=(self.conns[x],)) for x in xrange(poolsize)]
+        self.conns = [DBConnection_(socket_.socketpair()) for x in range(poolsize)]
+        self.threads = [threading.Thread(target=self.worker, args=(self.conns[x],)) for x in range(poolsize)]
         self.queue = queue.Queue(poolsize)
-        for i in xrange(poolsize):
+        for i in range(poolsize):
             self.threads[i].daemon = True
             self.threads[i].start()
             self.conns[i].connect(connectionstring,modulename)
@@ -75,7 +75,7 @@ class DBPool(object):
                 conn.state.error = inst
                 conn.state.status = -1
             finally:
-                conn.pipe[1].send('\0')
+                conn.pipe[1].send(b'\0')
 
     def get(self, commit=True):
         c = self.queue.get()
@@ -94,7 +94,7 @@ class DBConnection_(object):
         self.state = self.State()
 
     def connect(self,connectionstring,modulename):
-        self.conn = self.apply(__import__(modulename).connect,*(connectionstring,) if isinstance(connectionstring, basestring) else connectionstring)
+        self.conn = self.apply(__import__(modulename).connect,*(connectionstring,) if isinstance(connectionstring, str) else connectionstring)
 
     def __del__():
         self.conn.close()
@@ -105,7 +105,7 @@ class DBConnection_(object):
         self.state.function = function
         self.state.args = args
         gevent.socket.wait_write(self.pipe[0].fileno())
-        self.pipe[0].send('\0')
+        self.pipe[0].send(b'\0')
         gevent.socket.wait_read(self.pipe[0].fileno())
         self.pipe[0].recv(1)
         if self.state.status != 0:
@@ -180,7 +180,7 @@ class TestDBPool(unittest.TestCase):
         pool = DBPool(':memory:',concurrency,'sqlite3')
 
         greenlets = []
-        for i in xrange(requests):
+        for i in range(requests):
             greenlets.append(gevent.spawn(timer,pool,sql))
 
         for g in greenlets:

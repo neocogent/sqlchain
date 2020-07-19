@@ -165,10 +165,10 @@ def bciInputs(cur, blob, ins):
         return [{}],ins # only sequence and script here
     else:
         buf = readBlob(blob+hdr[0], ins*7, sqc.cfg)
-        if len(buf) < ins*7 or buf == '\0'*ins*7: # means missing blob data
+        if len(buf) < ins*7 or buf == b'\0'*ins*7: # means missing blob data
             return [{ 'error':'missing data' }],ins
         for n in range(ins):
-            in_id, = unpack('<Q', buf[n*7:n*7+7]+'\0')
+            in_id, = unpack('<Q', buf[n*7:n*7+7]+b'\0')
             cur.execute("select value,addr_id from outputs where id=%s limit 1;", (in_id,))
             rows = cur.fetchall()
             for value,aid in rows:

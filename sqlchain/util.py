@@ -401,15 +401,15 @@ def getBlobHdr(pos, cfg):
     bits = [ (1,'B',0), (1,'B',0), (2,'H',0), (4,'I',1), (4,'I',0) ]  # ins,outs,tx size,version,locktime
     out,mask = [1],0x80
     for sz,typ,default in bits:
-        if ord(buf[0])&mask:
+        if ord(buf[0:1])&mask:
             out.append(unpack('<'+typ, buf[out[0]:out[0]+sz])[0])
             out[0] += sz
         else:
             out.append(default)
         mask >>= 1
-    out.append( ord(buf[0])&0x04 == 0 )  # stdSeq
-    out.append( ord(buf[0])&0x02 != 0 )  # nosigs
-    out.append( ord(buf[0])&0x01 != 0 )  # segwit
+    out.append( ord(buf[0:1])&0x04 == 0 )  # stdSeq
+    out.append( ord(buf[0:1])&0x02 != 0 )  # nosigs
+    out.append( ord(buf[0:1])&0x01 != 0 )  # segwit
     return out # out[0] is hdr size
 
 def getBlobData(txdata, ins, outs=0, txsize=0):

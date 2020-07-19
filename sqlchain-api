@@ -41,14 +41,14 @@ def do_Root(env, send_resp):
             if os.path.isfile(sqc.cfg['www']+path):
                 _,ext = os.path.splitext(path)
                 filesize = str(os.path.getsize(sqc.cfg['www']+path))
-                with open(sqc.cfg['www']+path) as fd:
+                with open(sqc.cfg['www']+path, 'rb') as fd:
                     send_resp('200 OK', [('Content-Type', mimetypes.types_map[ext]), ('Content-Length', filesize),
                                          ('Expires', datetime.utcfromtimestamp(time()+3600).strftime("%a, %d %b %Y %H:%M:%S %ZGMT"))])
                     return [ fd.read() ]
         send_resp('404 - File Not Found: %s' % path, [("Content-Type", "text/html")], sys.exc_info())
         if not sqc.cfg['www']:
             return []
-        with open(sqc.cfg['www']+'/404.html') as fd:
+        with open(sqc.cfg['www']+'/404.html','rb') as fd:
             return [ fd.read() ]
     except IOError:
         pass

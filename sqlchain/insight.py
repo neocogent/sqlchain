@@ -19,7 +19,7 @@ zF = lambda x: int(x) if int(x) == x else x
 
 #main entry point for api calls
 def do_API(env, send_resp): # pylint:disable=too-many-branches
-    result = []
+    result = ''
     get,args,cur = urllib.parse.parse_qs(env['QUERY_STRING']), env['PATH_INFO'].split('/')[2:], sqc.dbpool.get().cursor()
     send_resp('200 OK', [('Content-Type', 'application/json')])
     if args[0] == 'auto' or env['REQUEST_METHOD'] == 'POST':
@@ -48,10 +48,10 @@ def do_API(env, send_resp): # pylint:disable=too-many-branches
         result = json.dumps(apiSync(cur, *[int(x) if x.isdigit() else 0 for x in args[1:]]))
     elif args[0] == "closure":
         result = json.dumps(apiClosure(cur, args[1].split(',') ))
-    return result
+    return [ bytes(result.encode('ascii')) ]
 
 def apiAuto(cur, env, args, get):
-    result = []
+    result = ''
     form = cgi.FieldStorage(fp=env['wsgi.input'], environ=env, keep_blank_values=True)
     if args[0] == "auto":
         param = form['data'].value if 'data' in form else args[1]
@@ -286,7 +286,7 @@ def apiSpent(cur, txid, out_id):
     return {}
 
 def txoAddr(cur, txhash, n):
-    txid = txh2id(bytes(.fromhex(txhash)[::-1])
+    txid = txh2id(bytes.fromhex(txhash)[::-1])
     cur.execute("select addr_id from outputs o where o.id>=%s*{0} and o.id<%s*{0} and o.id%%{0}=%s limit 1;".format(MAX_IO_TX), (txid,txid+1,int(n)))
     aids = cur.fetchall()
     for aid, in aids:
